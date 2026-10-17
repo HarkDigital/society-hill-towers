@@ -9,10 +9,8 @@ outside the image read as visible. So a pin turning into view behind a building 
   two images or PIN_HOLD and PIN_DWELL since the last covered answer after a covered one) and fades in over PIN_FADE
 - the 5 by 5 stay-visible test is gone (it showed pins whose own 3 by 3 neighbourhood was covered)
 - the cadence: while the eye moves an image every moveEvery drawn frames and at once when the newest no longer holds the
-  screen; a still eye keeps the old cadence; a pin waiting for an image asks for one
-Round 202 (Mike: "they should show regardless unless the user is very close, 0.1 miles. At close range buildings should hide
-them"): a tip past PIN_OCC_NEAR is shown at once whatever the images say, and an image is drawn only while a tip in view
-stands within PIN_OCC_PREP; so the phone's near images between complete ones (for a far tip) are never drawn now
+  screen; a still eye keeps the old cadence; a pin waiting for an image asks for one; a phone with a far tip in view
+  draws near images between complete ones every fullEvery frames
 The block (the state, the step, the judge, the cadence and pinOccUpdate) is cut from app.js and run under Node against
 scripted images; the answers themselves (pinOccAnswer and the gate) are test_pin_gate.py's."""
 import json
@@ -42,10 +40,10 @@ class PinPolicy(unittest.TestCase):
         # truth(x, f): the answer an image drawn at frame f gives for the pin at x (1 clear, 0 covered, -1 outside). zone(x): in view
         script = r'''
 let frameNo = 0, moving = true, LAT = 1, covers = true, dirty = false, step2 = 1;   // dirty: the eye has moved since the last image, by step2 (squared)
-const isTouch = TOUCH, PIN_NEAR = 900, PIN_JUMP = 300, PIN_COVER = 1.25, PIN_OCC_NEAR = 160.93, PIN_OCC_PREP = 300;
+const isTouch = TOUCH, PIN_NEAR = 900, PIN_JUMP = 300, PIN_COVER = 1.25;
 let truth = () => 1, zone = () => true;
 const mkCh = () => ({ slots: [], gate: -1, cpu: { ok: false, frame: -1e9 }, last: -1e9 });
-const PIN_OCC = { ok: false, every: isTouch ? 10 : 5, moveEvery: isTouch ? 2 : 1, fullEvery: isTouch ? 10 : 1, far: 30000, want: -99, close: -99, hid: 0, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false,
+const PIN_OCC = { ok: false, every: isTouch ? 10 : 5, moveEvery: isTouch ? 2 : 1, fullEvery: isTouch ? 10 : 1, far: 30000, want: -99, hid: 0, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false,
   lastFrame: -1e9, fresh: false, reach: 0, reachTip: 0, near: mkCh(), full: mkCh(), cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 },
   lastPos: { copy() { dirty = false; } }, lastQuat: { copy() {} }, pvPos: { copy() {} }, pvQuat: { copy() {} } };
 const PIN_ASYNC = { eye: {} };
@@ -86,11 +84,9 @@ BODY
 
     def test_hidden_until_an_image_drawn_after_its_arrival_says_clear(self):
         # the pin is out of view, then comes into view at frame 21: the image the CPU holds then is older, so the pin waits for one
-        # drawn after its arrival, shows on the frame that image lands, and rises over PIN_FADE. Round 202: a second pin, in view
-        # and within PIN_OCC_PREP throughout, keeps an image standing (with nothing near in view none is drawn)
+        # drawn after its arrival, shows on the frame that image lands, and rises over PIN_FADE
         out = self.run_js('''
-m.count = 2; m.instanceMatrix.array[16 + 12] = 50;
-zone = (x) => x === 50 || frameNo > 20; moving = false;
+zone = () => frameNo > 20; moving = false;
 run(20);
 const s = run(40);
 console.log(JSON.stringify({ s, renders, landed }));''')
@@ -172,10 +168,10 @@ console.log(JSON.stringify({ hide, at: back.findIndex((v) => v > 0), images: ren
         self.assertLessEqual(out['at'], 29)
 
     def test_a_new_pin_in_a_slot_arrives(self):
-        # the slot now holds a pin 100 m away (the set reshuffled), and a pin new to slot 1: both wait for an image drawn after them
+        # the slot now holds a pin 500 m away (the set reshuffled), and a pin new to slot 1: both wait for an image drawn after them
         out = self.run_js('''
 moving = false; run(30);
-m.instanceMatrix.array[12] = 100; m.count = 2; m.instanceMatrix.array[16 + 12] = 150;
+m.instanceMatrix.array[12] = 500; m.count = 2; m.instanceMatrix.array[16 + 12] = 900;
 const a = []; for (let i = 0; i < 12; i++) { step(); a.push([vis(0), vis(1)]); }
 console.log(JSON.stringify({ first: a[0], later: a[a.length - 1] }));''')
         self.assertEqual(out['first'], [0, 0])
@@ -233,12 +229,12 @@ console.log(JSON.stringify({ a, b, c, e }));''')
         # a pin that was nowhere near still arrives
         out = self.run_js('''
 moving = true; m.count = 3; const e = m.instanceMatrix.array;
-e[12] = 0; e[16 + 12] = 50; e[32 + 12] = 100;   // all within the near line (Round 202)
+e[12] = 0; e[16 + 12] = 100; e[32 + 12] = 200;
 run(40); const before = [vis(0), vis(1), vis(2)];
-e[12] = 100; e[16 + 12] = 0; e[32 + 12] = 50; step(); const shuffled = [vis(0), vis(1), vis(2)];
+e[12] = 200; e[16 + 12] = 0; e[32 + 12] = 100; step(); const shuffled = [vis(0), vis(1), vis(2)];
 for (let i = 0; i < 3; i++) e[i * 16 + 12] += 12; step(); const moved = [vis(0), vis(1), vis(2)];   // moving pins, not new
 e[12] = e[16 + 12]; e[16 + 12] = e[32 + 12] + 12; m.count = 2; step(); const shifted = [vis(0), vis(1)];   // the first went: a shift down
-m.count = 3; e[32 + 12] = 150; step(); const arrived = vis(2);
+m.count = 3; e[32 + 12] = 900; step(); const arrived = vis(2);
 console.log(JSON.stringify({ before, shuffled, moved, shifted, arrived }));''')
         self.assertEqual(out['before'], [1, 1, 1])
         self.assertEqual(out['shuffled'], [1, 1, 1])
@@ -253,49 +249,20 @@ console.log(JSON.stringify({ gaps: f.slice(1).map((q, i) => q[0] - f[i][0]), kin
         self.assertTrue(all(g == 1 for g in out['gaps']))
         self.assertEqual(out['kinds'], ['full'])
 
-    def test_a_far_pin_shows_at_once_whatever_the_images_say(self):
-        # Round 202: a tip past the near line (161 m) is shown the frame it comes into view, at full, though every image says
-        # covered, and no image is drawn for it (nothing in view stands within PIN_OCC_PREP); a layer's far pins the same
+    def test_near_images_between_complete_ones_on_a_phone(self):
+        # a far tip (a flight, a placard) in view while the eye moves: a complete image every fullEvery frames, near ones between
         out = self.run_js('''
-truth = () => 0;
-zone = () => frameNo > 5;
-m.count = 3; const e = m.instanceMatrix.array; e[12] = 400; e[16 + 12] = 5000; e[32 + 12] = 170;
-const a = []; for (let i = 0; i < 40; i++) { step(); a.push([vis(0), vis(1), vis(2)]); }
-const near = renders.length;   // the tip at 170 m stands within PIN_OCC_PREP: the images come for it
-m.count = 2; renders.length = 0; run(20);
-console.log(JSON.stringify({ before: a[4], first: a[5], all: a.slice(5).every((q) => q.every((v) => v === 1)), near, renders: renders.length, reach: PIN_OCC.reach }));''')
-        self.assertEqual(out['before'], [0, 0, 0])          # out of view
-        self.assertEqual(out['first'], [1, 1, 1])           # in view: at once, no wait for an image, no fade
-        self.assertTrue(out['all'])
-        self.assertGreater(out['near'], 0)
-        self.assertEqual(out['renders'], 0)                 # 400 m and 5 km alone: no image
-        self.assertEqual(out['reach'], 0)
-
-    def test_crossing_the_near_line(self):
-        # Round 202: a pin behind a building (every image says covered) walks in from 400 m, 10 m a frame: it shows past the
-        # near line, the images start once it stands within PIN_OCC_PREP so they already hold it when it crosses, and it is
-        # hidden the frame it crosses; walking back out it eases in over PIN_FADE past the line, and the images stop
-        out = self.run_js('''
-truth = () => 0;
-const e = m.instanceMatrix.array, rows = [];
-for (let x = 400; x >= 100; x -= 10) { e[12] = x; const r0 = renders.length; step(); rows.push([x, vis(), renders.length - r0]); }
-for (let x = 110; x <= 400; x += 10) { e[12] = x; const r0 = renders.length; step(); rows.push([x, vis(), renders.length - r0]); }
-renders.length = 0; run(10);
-console.log(JSON.stringify({ rows, after: renders.length }));''')
-        rows = out['rows']
-        inward = rows[:31]
-        self.assertTrue(all(v == 1 for x, v, _ in inward if x > 160.93))
-        self.assertTrue(all(v == 0 for x, v, _ in inward if x <= 160))       # hidden at the first frame inside
-        first_img = next(x for x, _, r in inward if r)
-        self.assertLessEqual(first_img, 300)
-        self.assertGreater(first_img, 200)                                     # drawn ahead of the line
-        self.assertEqual([r for x, _, r in inward if x > 300], [0] * len([1 for x, _, r in inward if x > 300]))
-        outward = rows[31:]
-        past = [v for x, v, _ in outward if x > 160.93]
-        self.assertEqual(past, sorted(past))
-        self.assertTrue(any(0 < v < 1 for v in past))                          # an ease, not a snap
-        self.assertEqual(past[-1], 1)
-        self.assertEqual(out['after'], 0)                                      # nothing within the prep line: no images
+m.count = 2; m.instanceMatrix.array[16 + 12] = 5000; m.instanceMatrix.array[16 + 14] = 0;
+camera.position.x = 0;
+run(80);
+const f = renders.filter(([q]) => q > 20);
+console.log(JSON.stringify({ kinds: f.map((q) => q[1][0]).join(''), reach: PIN_OCC.reach }));''')
+        k = out['kinds']
+        self.assertIn('n', k)
+        self.assertIn('f', k)
+        full = [i for i, c in enumerate(k) if c == 'f']
+        self.assertTrue(all(4 <= b - a <= 6 for a, b in zip(full, full[1:])), k)   # every 10 drawn frames: every 5th image
+        self.assertGreater(out['reach'], 900)
 
     def test_constants_and_wiring(self):
         self.assertIn('const PIN_FADE = 0.2, PIN_HOLD = 0.45, PIN_DWELL = 0.3;', SRC)
@@ -310,20 +277,7 @@ console.log(JSON.stringify({ rows, after: renders.length }));''')
         # the pick still refuses a pin that is more than half gone, and one the gate hides (review)
         self.assertIn('if (v.getX(hit.instanceId) < 0.5 || !pinGateShows(...pinTipOf(hit.object, hit.instanceId))) continue;', SRC)
         # and the things a tap finds without a gate ask the same images whether a building covers them (review)
-        self.assertIn('      if (pinGateCovers(tx, ty, tz)) return true;   // Round 169 (review)', SRC)
-        # Round 202: past the images' reach the building tap's one-pixel render answers, once a tap
-        self.assertIn('q = bldgPointAt(cx, cy, PIN_OCC.far * 0.99);', SRC)
-        self.assertIn('return tapT < L - 3;', SRC)
-        # Round 202: the near line in the gate, the judge and the placards; the placards' roof-grid line of sight is gone
-        self.assertIn('const PIN_OCC_NEAR = 160.93;', SRC)
-        self.assertIn('const PIN_OCC_PREP = 300;', SRC)
-        self.assertIn('if (dot(ve, ve) > uPinOccReach.w * uPinOccReach.w) return 1.0;', SRC)
-        self.assertIn('G.reach.value.set(aNew ? a.reach : 0, b ? b.reach : 0, aNew ? 1 : 0, PIN_OCC_NEAR);', SRC)
-        blocked = SRC[SRC.index('  function pinBlocked('):SRC.index('  const PIN_FADE = ')]
-        self.assertIn('if (d < PIN_OCC_PREP) PIN_OCC.want = frameNo;', blocked)
-        self.assertNotIn('losClear', blocked)
-        # and the search destination's name has no line of sight either
-        self.assertNotIn('!losClear(searchMark', SRC)
+        self.assertIn('      return pinGateCovers(tx, ty, tz);   // Round 169 (review)', SRC)
         # the still eye's image the frame it stops (review), never after `every` frames
         self.assertIn('if (moving ? since >= PIN_OCC.moveEvery : off) { C.cadence++; due = 1; }', SRC)
         # and by the moving test's own centimetre: a slow flight's last step (16 cm) under the old 30 cm stood through a hold

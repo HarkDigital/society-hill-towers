@@ -153,12 +153,7 @@
     // the post pass: truth at every frame's exact camera; the gate's image re-rendered from its recorded camera
     post(opts = {}) {
       const { frames } = PM.last, po = d.pinOcc(), W = po.w, H = po.h;
-      // Round 202: past the page's near line (__dbg.pinOcc().nearLine, 161 m) a pin is meant to show whatever stands in front of
-      // it: the gate is taken as open there, `through` counts only the pins within the line, `farThrough` the ones past it (by
-      // design), `farNotFull` a far pin on screen drawn under full (10 m past the line, clear of the fade after a crossing), and
-      // `flash` / `flashFar` any pin hidden and shown again within 10 frames, whatever the truth says. A build before it: no line
-      const NEAR = po.nearLine || Infinity, EYE = new THREE.Vector3();
-      const out = { nearLine: po.nearLine || null, farOn: 0, farThrough: 0, farNotFull: 0, flash: 0, flashFar: 0, frames: frames.length, pinFrames: 0, onScreen: 0, displayed: 0, through: 0, throughFrames: 0, throughPins: new Set(), placardShown: 0, placardThrough: 0, placardThroughFrames: 0, lat: [], never: 0, blinks: 0, clearShown: 0, clearAll: 0, gateOff: 0, placardClear: 0, placardClearShown: 0, placardBlinks: 0, latCov: [], latView: [], missCpu: 0, missFade: 0, missGate: 0 };
+      const out = { frames: frames.length, pinFrames: 0, onScreen: 0, displayed: 0, through: 0, throughFrames: 0, throughPins: new Set(), placardShown: 0, placardThrough: 0, placardThroughFrames: 0, lat: [], never: 0, blinks: 0, clearShown: 0, clearAll: 0, gateOff: 0, placardClear: 0, placardClearShown: 0, placardBlinks: 0, latCov: [], latView: [], missCpu: 0, missFade: 0, missGate: 0 };
       const gateCache = new Map();
       const hist = new Map(), phist = new Map();   // key -> { clearSince, shownAt, lastShown, hideAt }
       const view = new THREE.Matrix4();
@@ -169,9 +164,7 @@
         let GA = null, GB = null;
         const img = (q) => { const k = q.frame + ':' + q.reach; if (!gateCache.has(k)) { if (gateCache.size > 6) gateCache.delete(gateCache.keys().next().value); gateCache.set(k, Object.assign(capture(q.view, q.proj, r.gate.W, r.gate.H, q.noFlats), { reach: q.reach, viewInv: q.viewInv })); } return gateCache.get(k); };
         if (r.gate && r.gate.on) { GB = img(r.gate.B); if (r.gate.aNewer) GA = img(r.gate.A); }
-        EYE.setFromMatrixPosition(r.cam);
         const gateOf = (x, y, z) => {
-          if (V.set(x, y, z).distanceTo(EYE) > NEAR) return 1;
           if (!GB) return 0;
           if (!GA) return answer(GB, x, y, z) === 1 ? 1 : 0;
           V.set(x, y, z).applyMatrix4(GA.view);
@@ -188,16 +181,12 @@
           if (r.gate && !r.gate.on) out.gateOff++;
           const shown = a > 0.5 && gate === 1;
           if (shown) out.displayed++;
-          const dist = V.set(x, y, z).distanceTo(EYE), far = dist > NEAR;
-          if (far) { out.farOn++; if (a < 0.999 && dist > NEAR + 10) out.farNotFull++; if (shown && t === 0) out.farThrough++; }
-          if (shown && t === 0 && !far) { thr++; out.through++; out.throughPins.add(mi + ':' + i); if (r.gate) { if (r.gate.lag === 0 && (out.ex0 || (out.ex0 = [])).length < 12) { V.set(x, y, z); const dd = Math.round(V.distanceTo(new THREE.Vector3().setFromMatrixPosition(r.cam))); let vza = null; if (GA) { V.applyMatrix4(GA.view); vza = Math.round(-V.z); } out.ex0.push({ f, mi, i, d: dd, vza, aReach: GA && Math.round(GA.reach), bReach: Math.round(GB.reach), aF: r.gate.A && r.gate.A.frame, bF: r.gate.B.frame }); } const kk = 'thrLag' + r.gate.lag + (r.gate.aNewer ? 'A' : ''); out[kk] = (out[kk] || 0) + 1; } }
+          if (shown && t === 0) { thr++; out.through++; out.throughPins.add(mi + ':' + i); if (r.gate) { if (r.gate.lag === 0 && (out.ex0 || (out.ex0 = [])).length < 12) { V.set(x, y, z); const dd = Math.round(V.distanceTo(new THREE.Vector3().setFromMatrixPosition(r.cam))); let vza = null; if (GA) { V.applyMatrix4(GA.view); vza = Math.round(-V.z); } out.ex0.push({ f, mi, i, d: dd, vza, aReach: GA && Math.round(GA.reach), bReach: Math.round(GB.reach), aF: r.gate.A && r.gate.A.frame, bF: r.gate.B.frame }); } const kk = 'thrLag' + r.gate.lag + (r.gate.aNewer ? 'A' : ''); out[kk] = (out[kk] || 0) + 1; } }
           // appearance: the truth says clear from some frame on; how long until the pin is displayed
           const key = mi + ':' + i + ':' + Math.round(x / 30) + ',' + Math.round(z / 30);
           seen.add(key);
           let h = hist.get(key);
-          if (!h) { h = { clearSince: -1, shown: false, wasShown: false, lastHide: -99, lastCov: -99, first: f, hideF: -99 }; hist.set(key, h); }
-          if (h.wasShown && !shown) h.hideF = f;
-          if (!h.wasShown && shown && f - h.hideF <= 10) { out.flash++; if (far) out.flashFar++; }
+          if (!h) { h = { clearSince: -1, shown: false, wasShown: false, lastHide: -99, lastCov: -99, first: f }; hist.set(key, h); }
           if (t === 0) h.lastCov = f;
           if (t === 1) {
             out.clearAll++; if (shown) out.clearShown++; else if (a <= 0.5) { if (a > 0.001) out.missFade++; else { out.missCpu++; if (r.st) { const w = r.st[(q / 6) * 5]; out['why' + w] = (out['why' + w] || 0) + 1; if (w === 2) { const ago = f - h.lastCov; const b = ago <= 10 ? 'cov10' : ago <= 30 ? 'cov30' : h.first > f - 3 ? 'new' : 'never30'; out[b] = (out[b] || 0) + 1; } } } } else out.missGate++;

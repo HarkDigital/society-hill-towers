@@ -12199,3 +12199,31 @@ pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, p
   lower part beside it and a U with a light court: no two copings overlap, none lies over a roof as high as it, the whole
   outside is covered with every corner closed, the lower part keeps its own. The code before fails it (35 overlapping
   samples, 119 on a roof).
+
+## Round 204 — buildings hide pins again, pins within 0.2 mile; a phone's floor is 1.0 (Oct 16)
+
+Mike, from build 10 on his iPhone: "The not having buildings hide pins thing is not good. Lets go back to buildings hiding
+pins. Lessen the distance for those pins to draw to .2 miles." And: "On mobile, when flying around at night there is a sharp
+decline in image quality occasionally. What is that?"
+
+**Pins.** Round 202's pin half is reversed hunk by hunk (`PIN_OCC_NEAR`, `PIN_OCC_PREP`, the gate's `uPinOccReach.w` line, the
+judge's far branch, `pinBlocked`'s near-only asking, the tap's one-pixel fallback, the search name's dropped line of sight,
+the first image's reach), with its tests and the capture skill's `pin_through.js` and SKILL.md; its ship half (`SHIP_PIN_R`,
+the anchors and the ferry, the hull tap) and Round 203's cornices stay. The pins over the ground things now draw within
+`PIN_R` 321.87 m through `pinNear` (never past `NEAR_R`): the SEPTA badges, the Indego badges (compacted per frame, their
+tiles and pick list with them, and they take `pinRise` now), the Amtrak and PATCO pins, the closures', markers' and art's
+pins, the stops and stations, the libraries and rec centres. The things under them (the buses, the docks, the posts, the
+plinths, the drums) keep the half mile. Headless at (-260, 70, -170) over Independence Mall, every layer: 19 of 84 marker
+posts and 12 of 59 plinths carry a pin, the farthest 321 and 307 m (all 84 and 59 to 803 m before); the gate's line is 0;
+a 360-degree turn at 60 fps: 0 pin-frames through a building, 98.4% of the clear pins shown (33.9% on Round 202's build by
+the reverted counter, which recomputes the gate without the line).
+
+**The night blur.** His two beacons tonight (build 10, Auto, tier 1) carried the controller's record: `dpt` 1.1.1.0, `dpl`
+0.72, `dpf` 160:74.125:60.72:68, and at settled 7.9 M triangles, 640 calls, a GPU frame of 84 ms against the 30 fps pace. A
+refused step down from the top had fired the one floor probe, 1.6 to 0.72 in a frame, and 68 ms at the floor was kept against
+60 to 74 above: the sharp decline, buying nothing on a phone held back by geometry. So a phone never probes the floor
+(`!isTouch`), and its floor is 1.0 on every Graphics choice (`DPR.min`, `GFX_PERF.touch`): the ladder on a 3x phone is 1.6,
+1.25, 1.0. The beacons also showed `dpr` (window.devicePixelRatio) equal to `rd` after Enter on every app session: the iOS web
+view reports the render ratio once the page sets it, so a Graphics change after Enter took the current rung as the device's
+top. `DEV_DPR` reads it once at boot. The controller's logic tests keep the four-rung ladder through a prelude (`LADDER4`);
+the phone's own: two rungs, no floor jump, 2.33 changes a minute on the swinging pixel-bound device (2.67 before).

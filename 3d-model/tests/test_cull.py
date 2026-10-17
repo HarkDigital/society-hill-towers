@@ -267,7 +267,6 @@ class PinAsync(unittest.TestCase):
 const THREE = require(THREE_PATH);
 (async () => {
 const window = { innerWidth: 800, innerHeight: 400 }, isTouch = TOUCH, scene = { add() {} }, zrevDT = () => undefined;   // zrevDT: Round 192's reversed Z, off here
-const PIN_OCC_NEAR = 160.93;   // Round 202: the gate's near line (pinGateSync)
 let frameNo = 1;
 const G = { PIXEL_PACK_BUFFER: 0x88EB, STREAM_READ: 0x88E1, SYNC_GPU_COMMANDS_COMPLETE: 0x9117, SYNC_STATUS: 0x9114, SIGNALED: 0x9119, UNSIGNALED: 0x9118, NO_ERROR: 0,
   bound: null, lost: false, err: 0, signal: false, fences: 0, deleted: 0, log: [], data: null,
@@ -423,10 +422,10 @@ const g2 = { aNewer: PIN_GATE.reach.value.z };
 G.signal = false; pinOccRead(); const readFull = renderer.reads[renderer.reads.length - 1].rt, fullRts = PIN_OCC.full.slots.map((s) => s.rt.id);
 console.log(JSON.stringify({ first, reaches: reachAsked, g1, g2, readFull: fullRts.includes(readFull), nearOk: N.ok, rendersNear: PIN_OCC.rendersNear, nearRts: PIN_OCC.near.slots.map((s) => s.rt.id), fullRts }));''')
         self.assertEqual(out['first'], 'now')
-        self.assertAlmostEqual(out['reaches'][0], 4000 * 1.1 + 50)   # Round 202: the first image reaches what the tips need too (it took the 30 km range)
+        self.assertEqual(out['reaches'][0], 30000)                # the first image reaches the packing range
         self.assertAlmostEqual(out['reaches'][1], 900 * 1.05)     # a near image: 5% past PIN_NEAR
         self.assertAlmostEqual(out['reaches'][3], 4000 * 1.1 + 50)   # a complete one: the farthest tip, 10% and 50 m on
-        self.assertEqual(out['g1'], {'a': 945, 'b': 4450, 'aNewer': 1, 'texA': out['nearRts'][0]})
+        self.assertEqual(out['g1'], {'a': 945, 'b': 26000, 'aNewer': 1, 'texA': out['nearRts'][0]})
         self.assertEqual(out['g2'], {'aNewer': 0})
         self.assertTrue(out['readFull'])
         self.assertEqual(out['rendersNear'], 2)

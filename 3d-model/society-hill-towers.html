@@ -7660,7 +7660,11 @@ RB.add({
   // working on mobile") puts back Round 74's 1.25 and 0.72: at 2.0 a phone drew 2.6 times the pixels of every frame, with
   // the multisampled backbuffer on top, over the same 11 million triangles, and that is the change that broke it
   const DPR_CAP = isTouch ? 1.25 : 1.75;   // the fill cost is the square of it
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
+  // Round 204: the display's own ratio, read once here. In the iOS app the web view reports the render ratio as
+  // window.devicePixelRatio once the page has set it (every perf beacon after Enter carried dpr equal to rd: 0.72, 1.0, 1.25,
+  // 1.6), so a later dprMode (a Graphics change after Enter) took the current rung as the device's top and could never climb
+  const DEV_DPR = window.devicePixelRatio || 1;
+  renderer.setPixelRatio(Math.min(DEV_DPR, DPR_CAP));
   // adaptive resolution: the cap alone treated a 2019 integrated GPU and a 4090 alike, so frame() hands the median of every
   // window of frames to dprJudge, which moves the ratio along a ladder from the cap down to the floor. ?dpr=1.5 pins it.
   // Round 166 (Mike, from the TestFlight app: "The graphics are looking pretty pixelated. Are we able to spruce those up while
@@ -7680,7 +7684,7 @@ RB.add({
   // above what the page allocates at the start, so the load's peak is unchanged; but a phone that used to rest at 0.72
   // after Enter now rests at its cap, three times the drawing-buffer pixels (about 15 MB more on a landscape iPhone with the
   // multisampled backbuffer), which is why the TestFlight build goes to a real phone before the site does
-  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 0.72 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
+  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 1.0 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
   {
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
     if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
@@ -7772,7 +7776,10 @@ RB.add({
           D.tri[1]++;
           // frames paced by the display can gain nothing one rung down and half at the floor: the first refusal from the cap
           // tries the floor once before the hold (frame time only falls with the ratio, so a miss there settles it)
-          if (t.from === 0 && t.to < last && !D.floorProbed) {
+          // Round 204 (Mike, from the app: "when flying around at night there is a sharp decline in image quality occasionally"):
+          // never on a phone. His night beacons show the probe jumping 1.6 to the floor in one frame and keeping it for 68 ms
+          // against 60 to 74 above; a phone steps one rung at a time, and its floor is 1.0 (GFX_PERF), sharpness over smoothness
+          if (!isTouch && t.from === 0 && t.to < last && !D.floorProbed) {
             D.floorProbed = true; D.next = 0;
             D.trial = { dn: true, from: 0, to: last, a: t.a.slice(), na: t.a.length, b: [], settle: DPR_SETTLE, back: false }; dprGo(last);
             return;
@@ -7844,7 +7851,8 @@ RB.add({
   // phone holds its pace. GFX_PERF is the Graphics choice's performance side (the choice, its strip and its storage are GFX, in
   // the boot region): Smoother paces at 60 with a lighter ratio and a 9 km view, Auto at 30 up to 1.6, Sharper at 30 from 1.6 to 2.
   const GFX_PERF = {
-    touch: { smoother: { fps: 60, top: 1.0, min: 0.72, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 0.72, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },
+    // Round 204: a phone never draws under 1.0 (Mike: the drop to 0.72 at night was the sharp decline, and bought nothing)
+    touch: { smoother: { fps: 60, top: 1.0, min: 1.0, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 1.0, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },
     // Mike, Oct 14 (asked with the 60 fps plan): a computer keeps full sharpness always, so Auto and Sharper hold their top
     // and never step down (min = top); Smoother, the choice of speed over sharpness, keeps its ladder
     desk: { smoother: { fps: 0, top: 1.25, min: 0.9, start: 1.25, far: 0 }, auto: { fps: 0, top: 1.75, min: 1.75, start: 1.75, far: 0 }, sharper: { fps: 0, top: 2.0, min: 2.0, start: 2.0, far: 0 } },
@@ -7860,7 +7868,7 @@ RB.add({
   // the ladder for the choice: its top, floor and the rung to stand on (the load's own ratio until Enter, the choice's start after)
   function dprMode() {
     if (DPR.pinned) return;
-    const g = gfxPerf(), dev = window.devicePixelRatio || 1;
+    const g = gfxPerf(), dev = DEV_DPR;
     DPR.top = Math.min(dev, g.top); DPR.min = Math.min(g.min, DPR.top);
     const keep = { tri: DPR.tri, tw: DPR.tw, tt: DPR.tt, live: DPR.live, low: DPR.low, nch: DPR.nch, chT: DPR.chT };   // review: vs is measured afresh (Smoother's 60 would hold a 30 pace's headroom test at 19 ms)
     DPR.cur = DPR.live ? clamp(g.start, DPR.min, DPR.top) : Math.min(DPR.cur, DPR.top);
@@ -41158,7 +41166,6 @@ if (uNjLamp > 0.001) {
     septaRay.setFromCamera(septaNdc, camera);
     // Both models and pins must clear foreground buildings before taking a click.
     // The renderer performs exact per-pixel depth testing for every pin family.
-    let tapT;   // Round 202: the city's own depth through the tap, rendered once a tap and only when asked
     const pickOccluded = (tx, ty, tz) => {
       _ssv.set(tx, ty, tz).sub(camera.position);
       const L = _ssv.length();
@@ -41178,12 +41185,7 @@ if (uNjLamp > 0.001) {
       for (let t = 30, tEnd = L - 12; t < tEnd; t += 40) {
         if (o.y + d.y * t < demY(o.x + d.x * t, o.z + d.z * t) - 0.5) return true;
       }
-      if (pinGateCovers(tx, ty, tz)) return true;   // Round 169 (review): every building, from the pins' own depth images
-      // Round 202: the images reach only the tips within PIN_OCC_PREP now, so past them the building tap's one-pixel render of the
-      // city through the tap (every instanced mesh left out, so the post, bus or tree itself never answers) says whether a
-      // building stands in front of the point, which lies on the tap's own ray
-      if (tapT === undefined) { let q = null; try { q = bldgPointAt(cx, cy, PIN_OCC.far * 0.99); } catch (e) { q = null; } tapT = q ? q[3] : Infinity; }
-      return tapT < L - 3;
+      return pinGateCovers(tx, ty, tz);   // Round 169 (review): every building, from the pins' own depth images
     };
     const targets = [];
     if (sAct) targets.push(septaSolid, septaBadge);
@@ -41546,6 +41548,12 @@ if (uNjLamp > 0.001) {
   // keep their range. The distance is the straight line to the eye, so the circle tightens with height.
   let NEAR_R = 804.67;   // 0.5 mile
   const nearCam = (x, y, z) => { const dx = x - camera.position.x, dy = y - camera.position.y, dz = z - camera.position.z; return dx * dx + dy * dy + dz * dz <= NEAR_R * NEAR_R; };
+  // Round 204 (Mike: "Lets go back to buildings hiding pins. Lessen the distance for those pins to draw to .2 miles"): the pins
+  // over the ground things (the SEPTA and Indego badges, the Amtrak and PATCO pins, the closures, the markers and the art, the
+  // stops and stations, the libraries and rec centres) draw within PIN_R; what they stand over keeps NEAR_R. Flights keep their
+  // range and the ships their mile. Never past NEAR_R (__dbg.near can pull it in)
+  const PIN_R = 321.87;   // 0.2 mile
+  const pinNear = (x, y, z) => { const dx = x - camera.position.x, dy = y - camera.position.y, dz = z - camera.position.z, r = Math.min(PIN_R, NEAR_R); return dx * dx + dy * dy + dz * dz <= r * r; };
   // the ground pins (Round 82): the aircraft badge's casing in a layer's colours with a glyph inside,
   // one billboard per instance, masked out of the bloom and depth-tested against the city
   function pinTexture(body, frame, paint) {
@@ -41595,19 +41603,13 @@ if (uNjLamp > 0.001) {
   // alone, and a tip past it reads each of A's samples round it through both: clear when nothing within A's reach stands in it
   // and B, read along the same ray at the tip's depth, lies behind the tip. aPinVis still multiplies in: it carries the showing
   // (a pin new in view waits for an image, the guard, the fade in), which only the CPU decides
-  // Round 202 (Mike: "they should show regardless unless the user is very close, 0.1 miles. At close range buildings should
-  // hide them"): a building hides a pin only while its tip stands within PIN_OCC_NEAR of the eye. Past it the gate, the CPU's
-  // state, the placards and the tap all take the pin as shown, at once and whatever an image says, so nothing out there can
-  // flash; the gate carries the line as uPinOccReach.w and measures from the eye in view space (MeshBasicMaterial never
-  // receives cameraPosition in r149)
-  const PIN_OCC_NEAR = 160.93;
   const PIN_GATE = { texA: { value: null }, texB: { value: null }, viewA: { value: new THREE.Matrix4() }, viewAInv: { value: new THREE.Matrix4() }, projA: { value: new THREE.Matrix4() },
-    viewB: { value: new THREE.Matrix4() }, projB: { value: new THREE.Matrix4() }, info: { value: new THREE.Vector4(1, 1, 30000, 0) }, reach: { value: new THREE.Vector4(0, 0, 0, PIN_OCC_NEAR) }, frame: -1e9 };
+    viewB: { value: new THREE.Matrix4() }, projB: { value: new THREE.Matrix4() }, info: { value: new THREE.Vector4(1, 1, 30000, 0) }, reach: { value: new THREE.Vector4(0, 0, 0, 0) }, frame: -1e9 };
   const PIN_GATE_GLSL = `
 uniform highp sampler2D uPinOccA, uPinOccB;
 uniform mat4 uPinOccViewA, uPinOccViewAInv, uPinOccProjA, uPinOccViewB, uPinOccProjB;
 uniform vec4 uPinOccInfo;   // the images' width and height, the packing range
-uniform vec4 uPinOccReach;  // A's reach, B's reach (0: no image yet), 1 while A is the newer, the near line (Round 202)
+uniform vec4 uPinOccReach;  // A's reach, B's reach (0: no image yet), 1 while A is the newer
 float pinOccDepth(highp sampler2D t, vec2 q) { return dot(texture2D(t, (q + 0.5) / uPinOccInfo.xy), vec4(1.0 / 16777216.0, 1.0 / 65536.0, 1.0 / 256.0, 1.0)) * (255.0 / 256.0) * uPinOccInfo.z; }
 bool pinOccOut(vec2 q) { return q.x < 0.0 || q.y < 0.0 || q.x >= uPinOccInfo.x || q.y >= uPinOccInfo.y; }
 vec2 pinOccPix(vec4 c) { return floor((c.xy / c.w * 0.5 + 0.5) * uPinOccInfo.xy); }
@@ -41626,8 +41628,6 @@ float pinOccOne(highp sampler2D t, mat4 V, mat4 P, float reach, vec4 w) {
   return 0.0;
 }
 float pinOccGate() {
-  vec3 ve = (modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-  if (dot(ve, ve) > uPinOccReach.w * uPinOccReach.w) return 1.0;   // past the near line a pin always shows
   if (uPinOccReach.y < 0.5) return 0.0;
   vec4 w = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
   if (uPinOccReach.z < 0.5) return pinOccOne(uPinOccB, uPinOccViewB, uPinOccProjB, uPinOccReach.y, w);
@@ -41871,7 +41871,7 @@ float pinOccGate() {
       // the SEPTA-badge billboard, trolleys keep the line-colored lollipop pin
       // every vehicle — bus, trolley, el — wears the SEPTA badge now: the
       // line-colored lollipops read as a different system from the air
-      if (bi < 1024) {
+      if (bi < 1024 && pinNear(v.dx, v.gy + spec.h + 0.6, v.dz)) {
         const py0 = v.gy + spec.h + 0.6;
         _sp.set(v.dx, py0, v.dz);
         const s = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(v, now);
@@ -42349,7 +42349,7 @@ float pinOccGate() {
     searchMark.mesh.position.set(searchMark.x, searchMark.y + Math.sin(now * 0.004) * 0.5, searchMark.z);
     searchMark.mesh.scale.setScalar(s);
     _ssv.set(searchMark.x, searchMark.y + 5.2 * s + 2, searchMark.z).project(camera);
-    if (_ssv.z > 1 || _ssv.z < -1) { searchMark.el.style.opacity = '0'; return; }   // Round 202: no line of sight (it hid the name only past 150 m, the opposite of the pins' rule)
+    if (_ssv.z > 1 || _ssv.z < -1 || !losClear(searchMark.x, searchMark.y + 5.2 * s + 2, searchMark.z)) { searchMark.el.style.opacity = '0'; return; }
     searchMark.el.style.opacity = '1';
     searchMark.el.style.transform = 'translate(-50%,-100%) translate(' +
       ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
@@ -44225,14 +44225,20 @@ float pinOccGate() {
     // bobbing is the vehicles' signature. Own quaternion copy: _sqB is only
     // fresh while the SEPTA layer is on.
     _iqB.copy(camera.quaternion);
+    const tileA = indegoBadge.geometry.attributes.aTile;
+    let bi = 0;
     for (let i = 0; i < indegoLive.length; i++) {
       const st = indegoLive[i];
       _sp.set(st.x, st.y + 3.1, st.z);
-      const s = pinScaleAt(camera.position.distanceTo(_sp), 14);
+      if (!pinNear(_sp.x, _sp.y, _sp.z)) continue;   // Round 204: the badge within PIN_R, the dock within NEAR_R
+      const s = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(st, now);
       _ss.set(s, s, s);
       _sm.compose(_sp, _iqB, _ss);
-      indegoBadge.setMatrixAt(i, _sm);
+      indegoBadge.setMatrixAt(bi, _sm);
+      if (indegoPickB[bi] !== st) { tileA.setXY(bi, (st.tile % 32) / 32, 1 - (((st.tile / 32) | 0) + 1) / 16); indegoPickB[bi] = st; tileA.needsUpdate = true; }
+      bi++;
     }
+    indegoBadge.count = bi;
     flushInst(indegoBadge);
     if (pickedStation) {
       _ssv.set(pickedStation.x, pickedStation.y + 6, pickedStation.z).project(camera);
@@ -45750,7 +45756,7 @@ float pinOccGate() {
         mesh.setMatrixAt(i, _sm);
         amtrakPick[ck][i] = p;
       }
-      if (np < AMTRAK_CAP && !((p.hfl & 1) && !(p.hfl & 4)) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
+      if (np < AMTRAK_CAP && !((p.hfl & 1) && !(p.hfl & 4)) && insideLimit(p.hx, p.hz) && pinNear(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
         _sp.set(p.hx, ((p.hfl & 4) ? Math.max(p.hy, siteY(p.hx, p.hz, 'ground')) : p.hy) + 6, p.hz);   // a train at the platforms carries its pin over the concourse, never under it (Round 85)
         const aps = pinScaleAt(camera.position.distanceTo(_sp), 190) * pinRise(p, now);
         _ss.set(aps, aps, aps);
@@ -46061,7 +46067,7 @@ float pinOccGate() {
         p.vis = true;
         if (!front) { front = true; patcoAt(tr, sc + dir * PATCO_LEN / 2, _pcA); p.hx = _pcA.x; p.hy = _pcA.y; p.hz = _pcA.z; }   // the pin over the car's nose
       }
-      if (front && np < PATCO_CAP) {   // the badge over the leading drawn car, above the walkway and the trusses on the span
+      if (front && np < PATCO_CAP && pinNear(p.hx, p.hy, p.hz)) {   // the badge over the leading drawn car, above the walkway and the trusses on the span (Round 204: within PIN_R)
         const ta = ((p.hx - BFB_A[0]) * ux + (p.hz - BFB_A[1]) * uz) / L;
         p.pinY = Math.max(p.hy + 6, ta >= 0 && ta <= 1 ? bfbDeckY(ta) + 12 : -1e9);
         _sp.set(p.hx, p.pinY, p.hz);
@@ -50207,7 +50213,7 @@ float pinOccGate() {
     _kqB.copy(camera.quaternion);
     let nf = 0;
     for (const rec of CLOSURES.drawn) {
-      if (rec.o < 3 || nf >= CLOSURE_PIN_CAP) continue;
+      if (rec.o < 3 || nf >= CLOSURE_PIN_CAP || !pinNear(rec.mx, rec.my + 2.2, rec.mz)) continue;
       _sp.set(rec.mx, rec.my + 2.2, rec.mz);
       const sc = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
@@ -50576,6 +50582,7 @@ float pinOccGate() {
     let nm = 0, na = 0;
     for (const { rec, isM } of markersNear) {
       _sp.set(rec.x, rec.gy + (isM ? 3.2 : 2.9), rec.z);
+      if (!pinNear(_sp.x, _sp.y, _sp.z)) continue;   // Round 204: the pin within PIN_R, the post or plinth within NEAR_R
       const sc = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
       _sm.compose(_sp, _kqB, _ss);
@@ -50683,6 +50690,7 @@ float pinOccGate() {
     let nb = 0, nr = 0;
     for (const rec of STOPS.near) {
       _tp.set(rec.x, rec.gy + (rec.kind === 'bus' ? 2.8 : 4.5), rec.z);
+      if (!pinNear(_tp.x, _tp.y, _tp.z)) continue;   // Round 204
       const sc = pinScaleAt(camera.position.distanceTo(_tp), 14) * pinRise(rec, now) * (rec.kind === 'bus' ? 0.85 : 1.15);
       _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
       if (rec.kind === 'bus') { if (nb < 900) { busStopPin.setMatrixAt(nb, _tm); busStopPick[nb++] = rec; } }
@@ -50838,6 +50846,7 @@ float pinOccGate() {
     let nl = 0, nr = 0;
     for (const rec of CIVIC_S.near) {
       _tp.set(rec.x, rec.gy + 3.4, rec.z);
+      if (!pinNear(_tp.x, _tp.y, _tp.z)) continue;   // Round 204
       const sc = pinScaleAt(camera.position.distanceTo(_tp), 14) * pinRise(rec, now);
       _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
       if (rec.kind === 'lib') { if (nl < 40) { libPin.setMatrixAt(nl, _tm); libPick[nl++] = rec; } }
@@ -54226,17 +54235,12 @@ float pinOccGate() {
   const PIN_OCC_READ_EVERY = isTouch ? 4 : 2;
   const PIN_NEAR = 900;   // metres: the near image's tips (every ground pin stands within the half mile, NEAR_R), and it reaches 5% past them
   const PIN_REACH_MIN = 300;
-  // Round 202: only a tip within PIN_OCC_NEAR is judged, so an image is drawn only while a tip in view stands within PIN_OCC_PREP
-  // (or a placard there asks), and reaches only as far as those tips need: the images already hold a tip the frame it crosses
-  // the near line, and the far tips (a flight, a ship, a placard, the pins across the half mile) no longer take every image out
-  // to where they stand. Since every such tip stands within PIN_REACH_MIN, the phone's near images (PIN_NEAR) are never drawn
-  const PIN_OCC_PREP = 300;
   const PIN_COVER = 1.25;   // the screen widened to this (its own NDC) must stand inside the newest image, 500 m out, or an image is drawn now
   const pinOccImg = () => ({ buf: null, view: new THREE.Matrix4(), viewInv: new THREE.Matrix4(), proj: new THREE.Matrix4(), frame: -1e9, reach: 0, eye: new THREE.Vector3(), quat: new THREE.Quaternion(), ok: false });
   const PIN_OCC = { w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5, cam: new THREE.PerspectiveCamera(), h: 0, mat: null, ok: false, far: 30000,
     every: isTouch ? 10 : 5, moveEvery: PIN_OCC_MOVE_EVERY, fullEvery: PIN_OCC_FULL_EVERY,
     near: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 }, full: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 },
-    n: 0, renders: 0, rendersNear: 0, cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 }, hid: 0, want: -99, close: -99, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false, lastRead: -1e9, fresh: false, reach: 0, reachTip: 0,
+    n: 0, renders: 0, rendersNear: 0, cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 }, hid: 0, want: -99, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false, lastRead: -1e9, fresh: false, reach: 0, reachTip: 0,
     lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9, pvPos: new THREE.Vector3(1e9, 0, 0), pvQuat: new THREE.Quaternion() };
   const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
     new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, colorWrite: false }));
@@ -54281,7 +54285,7 @@ float pinOccGate() {
     if (now) pinOccDrop();   // a read in flight is of the place before the jump
     A.eye.copy(camera.position);
     const k = A.sync && A.chan === ch ? 1 - A.slot : ch.gate === 0 ? 1 : 0;   // never the target a read is in flight from
-    const reach = kind === 'near' ? PIN_NEAR * 1.05 : Math.min(PIN_OCC.far, Math.max(PIN_REACH_MIN, PIN_OCC.reach * 1.1 + 50));   // Round 202: the first image too (it reached 30 km)
+    const reach = !PIN_OCC.ok ? PIN_OCC.far : kind === 'near' ? PIN_NEAR * 1.05 : Math.min(PIN_OCC.far, Math.max(PIN_REACH_MIN, PIN_OCC.reach * 1.1 + 50));
     const s = ch.slots[k], c = pinOccCam(reach), nf = occFlatsOff();
     // Round 168 (Mike: "Only buildings hide pins"): the capture leaves out every instanced mesh (the trees, the cars, the tie runs,
     // the rooftop units), as the building tap's render always has; trees were the largest part of a capture three times a second in flight
@@ -54302,7 +54306,7 @@ float pinOccGate() {
     if (b) { G.texB.value = b.rt.texture; G.viewB.value.copy(b.view); G.projB.value.copy(b.proj); }
     if (aNew) { G.texA.value = a.rt.texture; G.viewA.value.copy(a.view); G.viewAInv.value.copy(a.viewInv); G.projA.value.copy(a.proj); }
     G.info.value.set(PIN_OCC.w, PIN_OCC.h, PIN_OCC.far, 0);
-    G.reach.value.set(aNew ? a.reach : 0, b ? b.reach : 0, aNew ? 1 : 0, PIN_OCC_NEAR);
+    G.reach.value.set(aNew ? a.reach : 0, b ? b.reach : 0, aNew ? 1 : 0, 0);
     G.frame = Math.max(a ? a.frame : -1e9, b ? b.frame : -1e9);
   }
   function pinOccInstall(ch, s) {   // the CPU's image of this kind is this slot's now (its pixels already stand in ch.cpu.buf)
@@ -54624,15 +54628,15 @@ float pinOccGate() {
     if (!s || (frameNo - s.frame > PIN_OCC.moveEvery && (camera.position.distanceToSquared(s.eye) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(s.quat)) > 1e-9))) return false;
     try { return pinGateAnswer(x, y, z) === 0; } catch (e) { return false; }
   }
-  // the building-anchored pins (concert placards, score bubbles) ask here. Each tip keeps the same state as an instanced pin
-  // (Round 169: unknown is hidden, a covered answer hides at once, showing waits as a pin's does; Round 202: past PIN_OCC_NEAR
-  // shown, at once, and the roof grid's line of sight past the images' range is gone with it), kept by where it stands so a
-  // feed's new records carry it over; asking within PIN_OCC_PREP keeps the images coming while they stand, and a tip waiting
-  // for an image drawn after its arrival asks for one as a pin does
+  // the building-anchored pins (concert placards, score bubbles) ask here: the depth images within their range, the roof grid's
+  // line of sight beyond it. Each tip keeps the same state as an instanced pin (Round 169: unknown is hidden, a covered answer
+  // hides at once, showing waits as a pin's does), kept by where it stands so a feed's new records carry it over; asking keeps
+  // the images coming while they stand, and a tip waiting for an image drawn after its arrival asks for one as a pin does
   const PIN_TIPS = new Map(), _pbm = new THREE.Matrix4();
   function pinBlocked(x, y, z) {
+    PIN_OCC.want = frameNo;
     const d = camera.position.distanceTo(_pov.set(x, y, z));
-    if (d < PIN_OCC_PREP) PIN_OCC.want = frameNo;
+    if (d >= PIN_OCC.far * 0.95) return !losClear(x, y, z);
     const key = Math.round(x) + ',' + Math.round(y) + ',' + Math.round(z), t = performance.now();
     let st = PIN_TIPS.get(key);
     if (!st) {
@@ -54644,7 +54648,7 @@ float pinOccGate() {
     camera.updateMatrixWorld();
     _pbm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     pinOccJudge(st, 0, x, y, z, pinZone(x, y, z, _pbm), gap > 1000, !!PIN_OCC.fresh, dt, pinOccTipAnswer);   // a tip not asked after for a second arrives anew
-    if (st.on[0] && d < PIN_OCC_PREP) {
+    if (st.on[0]) {
       PIN_OCC.reachTip = Math.max(PIN_OCC.reachTip, d);
       if (!st.tgt[0] && st.why[0] === 0) {
         if (st.arr[0] > PIN_OCC.waitTip) PIN_OCC.waitTip = st.arr[0];
@@ -54680,15 +54684,10 @@ float pinOccGate() {
     if ((st.okC[i] >= (cov ? 2 : 1) || st.okT[i] >= PIN_HOLD) && (!cov || st.age[i] >= PIN_DWELL)) { st.tgt[i] = 1; st.why[i] = 1; st.okC[i] = 0; st.okT[i] = 0; }
   }
   // a pin's frame: out of view it is hidden; coming into view (or new in its slot) it starts hidden, arrived now; in view it
-  // takes the CPU images' answer (ask). Round 202: a tip past PIN_OCC_NEAR is shown whatever the images say, at full the
-  // frame it arrives (its record's own entrance, pinRise, eases a new pin in) and over PIN_FADE when it was hidden up close
-  // and the eye backs away; crossing in, it keeps its state until an image says covered. Returns nothing: st.tgt and st.lin
-  // carry it
+  // takes the CPU images' answer (ask). Returns nothing: st.tgt and st.lin carry it
   function pinOccJudge(st, i, x, y, z, on, fresh, captured, dt, ask = pinOccAnswer) {
     if (!on) { st.on[i] = 0; st.tgt[i] = 0; st.lin[i] = 0; st.why[i] = 0; return; }
-    const p = camera.position, dx = x - p.x, dy = y - p.y, dz = z - p.z, far = dx * dx + dy * dy + dz * dz > PIN_OCC_NEAR * PIN_OCC_NEAR;
-    if (fresh || !st.on[i]) { st.on[i] = 1; st.arr[i] = frameNo; st.tgt[i] = 0; st.lin[i] = far ? 1 : 0; st.why[i] = 0; st.okC[i] = 0; st.okT[i] = 0; }
-    if (far) { st.tgt[i] = 1; st.why[i] = 1; st.okC[i] = 0; st.okT[i] = 0; st.age[i] += dt; return; }
+    if (fresh || !st.on[i]) { st.on[i] = 1; st.arr[i] = frameNo; st.tgt[i] = 0; st.lin[i] = 0; st.why[i] = 0; st.okC[i] = 0; st.okT[i] = 0; }
     pinOccStep(st, i, ask(x, y, z, st.arr[i]), captured, dt);
   }
   // the cadence (Round 169): 0 when no image is due, else its kind. A complete image when there is none, after 120 frames, after a
@@ -54762,25 +54761,11 @@ float pinOccGate() {
     a.needsUpdate = true; st.off = true;
   }
   function pinOccUpdate(dt = 1 / 60) {
-    const asked = frameNo - PIN_OCC.want < 3;
-    let any = asked;
+    let any = frameNo - PIN_OCC.want < 3;
     for (const m of PIN_MESHES) if (m.visible && m.count > 0) { any = true; break; }
     if (!any) { for (const m of PIN_MESHES) if (!m.visible) pinOccOff(m); return; }
     camera.updateMatrixWorld();
-    // Round 202: an image only while a tip in view stands within PIN_OCC_PREP (or a placard there asked)
-    _pzm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    if (!asked) {
-      const px = camera.position.x, py = camera.position.y, pz = camera.position.z, P2 = PIN_OCC_PREP * PIN_OCC_PREP;
-      find: for (const m of PIN_MESHES) {
-        if (!m.visible) continue;
-        const e = m.instanceMatrix.array;
-        for (let i = 0, k = 12; i < m.count; i++, k += 16) {
-          const x = e[k], y = e[k + 1], z = e[k + 2];
-          if ((x - px) * (x - px) + (y - py) * (y - py) + (z - pz) * (z - pz) < P2 && pinZone(x, y, z, _pzm)) { PIN_OCC.close = frameNo; break find; }
-        }
-      }
-    } else PIN_OCC.close = frameNo;
-    const kind = PIN_OCC.close === frameNo ? pinOccDue() : 0;
+    const kind = pinOccDue();
     if (kind) {
       if (pinOccCapture(kind) === 'now') PIN_OCC.fresh = true;
       PIN_OCC.lastPos.copy(camera.position); PIN_OCC.lastQuat.copy(camera.quaternion); PIN_OCC.lastFrame = frameNo;
@@ -54789,7 +54774,7 @@ float pinOccGate() {
     PIN_OCC.pvPos.copy(camera.position); PIN_OCC.pvQuat.copy(camera.quaternion);
     const captured = !!PIN_OCC.fresh;   // an image installed this frame: landed (pinOccPoll), read at once, or refused and read in its place
     _pzm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
-    const step = Math.min(1, dt / PIN_FADE), cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, N2 = PIN_NEAR * PIN_NEAR, P2 = PIN_OCC_PREP * PIN_OCC_PREP;
+    const step = Math.min(1, dt / PIN_FADE), cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, N2 = PIN_NEAR * PIN_NEAR;
     let hid = 0, wait = -1e9, waitFar = false, reach = 0;
     for (const m of PIN_MESHES) {
       const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count, st = pinOccState(m);
@@ -54804,7 +54789,7 @@ float pinOccGate() {
         st.px[i] = x; st.pz[i] = z;
         pinOccJudge(st, i, x, y, z, pinZone(x, y, z, _pzm), fresh, captured, dt);
         let r2 = 0;
-        if (st.on[i]) { r2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz); if (r2 < P2 && r2 > reach) reach = r2; }
+        if (st.on[i]) { r2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz); if (r2 > reach) reach = r2; }
         if (st.tgt[i]) st.lin[i] = Math.min(1, st.lin[i] + step);
         else {
           hid++;
@@ -55098,7 +55083,7 @@ float pinOccGate() {
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ nearLine: PIN_OCC_NEAR, prep: PIN_OCC_PREP, close: PIN_OCC.close, now: frameNo, shipPinR: SHIP_PIN_R, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const im = (ch) => { const t = ch.slots[ch.gate]; return t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null; }; const r = PIN_GATE.reach.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), vertexTextures: renderer.capabilities.vertexTextures }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, off: ROOFKIT.off, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), roofKitOn, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ shipPinR: SHIP_PIN_R, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const im = (ch) => { const t = ch.slots[ch.gate]; return t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null; }; const r = PIN_GATE.reach.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), vertexTextures: renderer.capabilities.vertexTextures }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, off: ROOFKIT.off, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), roofKitOn, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

@@ -3,7 +3,7 @@
 <title>Pin Gate Checks</title>
 <style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
 <h1>Pin Gate Checks</h1>
-<p>Round 169 (Round 202: and past the near line every pin shows): every instanced pin's vertex shader reads the latest images of the city itself (PIN_GATE_GLSL, the production block from app.js, on a real GPU) and must collapse exactly the pins whose tips the CPU's own answer (pinOccAnswer, cut from app.js) calls covered or unknown: one image, and two (a near image that is the newer, a complete one drawn from another eye), with no image at all hiding every pin. Each pin is drawn alone into a small target that its quad fills, and a pin that leaves a pixel was shown.</p>
+<p>Round 169: every instanced pin's vertex shader reads the latest images of the city itself (PIN_GATE_GLSL, the production block from app.js, on a real GPU) and must collapse exactly the pins whose tips the CPU's own answer (pinOccAnswer, cut from app.js) calls covered or unknown: one image, and two (a near image that is the newer, a complete one drawn from another eye), with no image at all hiding every pin. Each pin is drawn alone into a small target that its quad fills, and a pin that leaves a pixel was shown.</p>
 <pre id="result">Running…</pre>
 <script src="../three.min.js"></script>
 <script>
@@ -46,12 +46,11 @@
     const PIN_OCC = { w: W, h: H, far: FAR, wide: 1.5, near: { cpu: { ok: false, frame: -1e9 } }, full: { cpu: { ok: false, frame: -1e9 } } };
     const api = new Function('THREE', 'PIN_OCC', 'camera', 'frameNo', 'const _pov = new THREE.Vector3();\n' + pins + answers + '\nreturn { PIN_GATE, pinSceneDepth, pinOccAnswer };')(THREE, PIN_OCC, eye, 0);
     const G = api.PIN_GATE;
-    let nearLine = 1e9;   // Round 202: the line past which a pin always shows (the page's PIN_OCC_NEAR); the image checks keep every tip inside it
     const gateFrom = (A, B) => {   // pinGateSync's selection, from the images themselves
       const aNew = !!(A && B && A.frame > B.frame);
       if (B) { G.texB.value = B.rt.texture; G.viewB.value.copy(B.view); G.projB.value.copy(B.proj); }
       if (aNew) { G.texA.value = A.rt.texture; G.viewA.value.copy(A.view); G.viewAInv.value.copy(A.viewInv); G.projA.value.copy(A.proj); }
-      G.info.value.set(W, H, FAR, 0); G.reach.value.set(aNew ? A.reach : 0, B ? B.reach : 0, aNew ? 1 : 0, nearLine);
+      G.info.value.set(W, H, FAR, 0); G.reach.value.set(aNew ? A.reach : 0, B ? B.reach : 0, aNew ? 1 : 0, 0);
       PIN_OCC.full.cpu = B || { ok: false, frame: -1e9 }; PIN_OCC.near.cpu = A || { ok: false, frame: -1e9 };
     };
     // the pins: a badge-sized quad per instance, a white MeshBasicMaterial through the production hook
@@ -77,12 +76,6 @@
     };
     gateFrom(null, null);
     { let any = false; for (const t of tips.slice(0, 40)) if (shown(t)) any = true; check(!any, 'no image yet: every pin collapsed'); }
-    // Round 202: each pin is drawn from 9.5 m off, so a line at 5 m stands inside the eye's distance and one at 20 m outside it
-    nearLine = 5; gateFrom(null, null);
-    { let all = true; for (const t of tips.slice(0, 40)) if (!shown(t)) all = false; check(all, 'past the near line: every pin shown, with no image'); }
-    nearLine = 20; gateFrom(null, null);
-    { let any = false; for (const t of tips.slice(0, 40)) if (shown(t)) any = true; check(!any, 'inside the near line: no image still collapses them'); }
-    nearLine = 1e9;
     const B = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 26000, 10);
     gateFrom(null, B); compare('one image');
     const Bn = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 900, 10);

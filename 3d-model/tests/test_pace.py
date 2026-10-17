@@ -28,7 +28,7 @@ class Pace(unittest.TestCase):
 
     def test_the_choices(self):
         s = self.src
-        self.assertIn("touch: { smoother: { fps: 60, top: 1.0, min: 0.72, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 0.72, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },", s)
+        self.assertIn("touch: { smoother: { fps: 60, top: 1.0, min: 1.0, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 1.0, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },", s)
         self.assertIn('const PACE_IDLE_FPS = 12, PACE_IDLE_AFTER = 2500;', s)
         self.assertIn('const DPR_CAP = isTouch ? 1.25 : 1.75;', s)            # the load's ratio, and so its peak, unchanged
         # the choice changes the pace and the ladder live, through the Graphics strip's hooks
@@ -87,7 +87,7 @@ class Pace(unittest.TestCase):
     @unittest.skipUnless(shutil.which('node'), 'Node.js unavailable')
     def test_the_ladder_passes_through_the_start(self):
         o = self.sim('DPR.top = 1.6; dprInit();', '20', seconds=1)
-        self.assertEqual(o['levels'], [1.6, 1.25, 1.0, 0.8, 0.72])                   # Auto on a 3x phone: one rung above the load's 1.25
+        self.assertEqual(o['levels'], [1.6, 1.25, 1.0])                              # Auto on a 3x phone: one rung above the load's 1.25, the floor 1.0 (Round 204)
         o = self.sim('DPR.cur = 1.6; DPR.top = 2.0; DPR.min = 1.0; dprInit();', '20', seconds=1)
         self.assertEqual(o['levels'], [2.0, 1.6, 1.28, 1.0])                         # Sharper after Enter
 

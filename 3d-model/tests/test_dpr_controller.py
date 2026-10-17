@@ -48,6 +48,10 @@ console.log(JSON.stringify({ end: +DPR.cur.toFixed(3), levels: DPR.levels.map((x
 
 
 class DprController(unittest.TestCase):
+    # Round 204: a phone's floor is 1.0 (its ladder 1.25, 1.0) and it never probes the floor. The controller's own logic is
+    # still tested on the four-rung ladder it had (0.72 floor), which this prelude puts back; the phone's own tests run without it
+    LADDER4 = 'DPR.min = 0.72; dprInit(); DPR.live = true;'
+
     @classmethod
     def setUpClass(cls):
         if not shutil.which('node'):
@@ -71,7 +75,8 @@ class DprController(unittest.TestCase):
         return json.loads(r.stdout)
 
     def test_the_ladder(self):
-        self.assertEqual(self.sim('10', seconds=1)['levels'], [1.25, 1.0, 0.8, 0.72])
+        self.assertEqual(self.sim('10', seconds=1)['levels'], [1.25, 1.0])
+        self.assertEqual(self.sim('10', seconds=1, pre=self.LADDER4)['levels'], [1.25, 1.0, 0.8, 0.72])
         self.assertEqual(self.sim('10', seconds=1, touch=False)['levels'], [1.75, 1.488, 1.264, 1.075, 0.9])
 
     def test_held_back_by_geometry_it_stays_sharp(self):
@@ -86,9 +91,11 @@ class DprController(unittest.TestCase):
 
     def test_held_back_by_pixels_it_steps_down(self):
         # the fill is the cost: 42 ms at 1.25, 30 at 1.0, 22.1 at 0.8, 19.4 at 0.72
-        o = self.sim('8 + 22 * r * r')
+        o = self.sim('8 + 22 * r * r', pre=self.LADDER4)
         self.assertLessEqual(o['end'], 0.8)
         self.assertGreater(o['below'], 0.9)
+        o = self.sim('8 + 22 * r * r')                          # Round 204: a phone stops at its floor, 1.0
+        self.assertEqual(o['end'], 1.0)
         # paced at 60 Hz the same device draws 50 ms at 1.25 and 33.3 at every rung below: it stops at 1.0, where the gain stops
         o = self.sim('8 + 22 * r * r', q=16.667, jitter=0.03)
         self.assertEqual(o['end'], 1.0)
@@ -109,7 +116,7 @@ class DprController(unittest.TestCase):
     def test_it_climbs_back_from_a_wrong_low(self):
         # started at the floor on a geometry-bound phone: back at the cap within a minute, and it stays
         for kw in ({}, {'q': 16.667, 'jitter': 0.03}):
-            o = self.sim('29', seconds=180, start=3, **kw)
+            o = self.sim('29', seconds=180, start=3, pre=self.LADDER4, **kw)
             back = next(t for t, r in o['trace'] if r == 1.25)
             self.assertLess(back, 60000, kw)
             self.assertEqual(o['end'], 1.25, kw)
@@ -126,11 +133,17 @@ class DprController(unittest.TestCase):
     def test_a_gain_only_at_the_floor_is_found(self):
         # paced at 60 Hz, one rung down buys nothing (33.3 ms either way) and the floor halves the frame: the first refusal
         # from the cap tries the floor, keeps it, and the up trials then climb back to the highest rung that holds 60 fps
-        o = self.sim('4 + 13 * r * r', q=16.667, jitter=0.03)      # 33.3 ms at 1.25 and 1.0, 16.7 at 0.8 and 0.72
-        self.assertEqual(o['end'], 0.8)
-        self.assertLessEqual(o['lateRate'], 1.0)
         o = self.sim('3 + 9 * r * r', q=16.667, jitter=0.03, touch=False)   # a desktop: 33.3 down to 1.264, 16.7 below
         self.assertEqual(o['end'], 1.075)
+
+    def test_a_phone_never_jumps_to_the_floor(self):
+        # Round 204 (Mike: "when flying around at night there is a sharp decline in image quality occasionally"): the same
+        # device on a phone, even on the old four-rung ladder, refuses the one rung that buys nothing and never probes the floor
+        for pre in ('', self.LADDER4):
+            o = self.sim('4 + 13 * r * r', q=16.667, jitter=0.03, pre=pre)
+            self.assertEqual(o['end'], 1.25, pre)
+            self.assertGreaterEqual(min([r for t, r in o['trace']] or [1.25]), 1.0, (pre, o['trace']))
+            self.assertEqual(o['trials'][0], 0, pre)
 
     def test_a_refused_step_waits_for_a_changed_load(self):
         # a geometry-bound phone: after the first refusal (and the floor probe) nothing is retried at the same load until
@@ -156,7 +169,9 @@ class DprController(unittest.TestCase):
         for sd in (3, 7, 11):
             o = self.sim('(8 + 22 * r * r) * (1 + 0.35 * Math.sin(t / 7000))', q=16.667, jitter=0.05, seed=sd)
             self.assertLessEqual(o['lateRate'], 3.0, (sd, o['lateRate'], o['trials']))
-            self.assertGreater(o['below'], 0.8, sd)              # and it does shed resolution: this device needs it
+            # and it does shed resolution when the view is heavy (Round 204: only to the phone's floor, 1.0; 0.99 of the time below
+            # the cap on the old four-rung ladder, 0.26 on the phone's two, sharpness over smoothness)
+            self.assertGreater(o['below'], 0.2, sd)
 
     def test_the_app_in_the_background_mid_trial(self):
         # a trial under way when the app goes to the background for a minute, and the phone comes back cooler: the trial is
@@ -226,7 +241,7 @@ class DprController(unittest.TestCase):
         o = self.sim('t < 400000 ? 29 : 8 + 30 * r * r', seconds=480)
         first = next(t for t, r in o['trace'] if t > 400000 and r < 1.25)
         self.assertLess(first - 400000, 15000)
-        self.assertLessEqual(o['end'], 0.8)
+        self.assertEqual(o['end'], 1.0)                        # Round 204: the phone's floor
 
     def test_the_beacon_says_what_happened(self):
         # a geometry-bound phone that makes 60 fps in lighter views (frames of 16.7 and 33.3 ms)
@@ -234,8 +249,8 @@ class DprController(unittest.TestCase):
         b = o['beacon']
         self.assertEqual(set(b), {'dpt', 'dpm', 'dpl', 'dpv', 'dpf'})
         self.assertRegex(b['dpt'], r'^\d+\.\d+\.\d+\.\d+$')
-        self.assertRegex(b['dpf'], r'^125:\d+\.100:\d+\.80:\d+\.72:\d+$')
-        self.assertEqual(b['dpl'], '0.72')                    # the lowest ratio tried: the one floor probe, undone
+        self.assertRegex(b['dpf'], r'^125:\d+\.100:\d+$')    # Round 204: the phone's two rungs
+        self.assertIn(b['dpl'], ('1.00', '1.25'))             # the lowest ratio tried: never under the floor
         self.assertGreater(float(b['dpm']), 1.2)              # the time-weighted ratio: nearly all of it at the cap
         self.assertAlmostEqual(float(b['dpv']), 16.7, delta=1.0)   # it found the display's 60 Hz
 
@@ -247,7 +262,14 @@ class DprController(unittest.TestCase):
         self.assertEqual(s.count('dprJudge(sum / n, DPR.tmp[o + 1], now);'), 1)
         self.assertNotIn('DPR.fast', s)
         self.assertIn('const DPR_CAP = isTouch ? 1.25 : 1.75;', s)          # the cap, and so the load's peak, unchanged
-        self.assertIn('min: isTouch ? 0.72 : 0.9', s)
+        self.assertIn('min: isTouch ? 1.0 : 0.9', s)
+        # Round 204: the phone's floor is 1.0 on every Graphics choice, no floor probe on a phone, the display's ratio read once
+        self.assertIn("smoother: { fps: 60, top: 1.0, min: 1.0,", s)
+        self.assertIn("auto: { fps: 30, top: 1.6, min: 1.0,", s)
+        self.assertIn('if (!isTouch && t.from === 0 && t.to < last && !D.floorProbed) {', s)
+        self.assertIn('const DEV_DPR = window.devicePixelRatio || 1;', s)
+        self.assertIn('const g = gfxPerf(), dev = DEV_DPR;', s)
+        self.assertEqual(s.count('window.devicePixelRatio'), 3)   # DEV_DPR, the beacon's display field and the comment
         enter = s[s.index("  btnEnter.addEventListener('click', () => {"):]
         enter = enter[:enter.index('\n  });\n')]
         self.assertLess(enter.index('if (gateGo) { gateGo(); return; }'), enter.index('DPR.live = true;'))

@@ -169,12 +169,7 @@ Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flic
   `await __PM.run(...)`, then `__PM.post()`: every recorded frame against a ground-truth image at its own
   camera, the gate recomputed. Compare `through` and `placardThrough` on `before.html` and the new build;
   set `__PM.fps = 60` on a computer-sized page. Round 169 went from 981 to 8,388 pin-frames a run to 0 to
-  105 on a phone (every one on a frame a phone draws no image) and 0 on a computer. Since Round 202 a building
-  hides a pin only within `__dbg.pinOcc().nearLine` (161 m): `post()` reads the line from the page, counts `through`
-  inside it only, and adds `farThrough` (by design), `farNotFull` (a far pin drawn under full) and `flash` /
-  `flashFar` (hidden and shown again within 10 frames, whatever the truth). A whole run can go through
-  `render.mjs --eval` (wrap the file in an async IIFE and return the post's numbers; add `#l=262143` to the query
-  for every layer).
+  105 on a phone (every one on a frame a phone draws no image) and 0 on a computer.
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
 
