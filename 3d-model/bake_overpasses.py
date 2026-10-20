@@ -302,15 +302,24 @@ def other_end(w, n):
 
 # ---------------------------------------------------------------- chaining
 used = set()
-def fill_path(node, want, lim, mo):
+def turn_ok(arr, n, oid):
+    """Through node n from the way arr onto oid without a turn sharper than pick_next allows (Round 212)."""
+    hx, hz = dir_from(W[arr], n)
+    cx, cz = dir_from(W[oid], n)
+    return -(hx * cx + hz * cz) > 0.64
+
+def fill_path(node, want, lim, mo, arr=None):
     """BFS through plain ways to another `want` way; returns the path (plain ways +
-    the reached way) or None."""
-    q = deque([(node, [], 0.0)])
+    the reached way) or None. Every step goes on through its node no sharper than pick_next's turn (Round 212: a
+    divided mainline's gap used to be bridged onto the other carriageway, a U-turn the profile drew as a hairpin)."""
+    q = deque([(node, [], 0.0, arr)])
     seen = {node}
     while q:
-        n, path, dist = q.popleft()
+        n, path, dist, pw = q.popleft()
         for oid in ends.get(n, ()):
             if oid in used or oid not in W or W[oid]["skipname"]:
+                continue
+            if pw is not None and not turn_ok(pw, n, oid):
                 continue
             o = W[oid]
             if o[want] and path:
@@ -328,7 +337,7 @@ def fill_path(node, want, lim, mo):
             if far in seen:
                 continue
             seen.add(far)
-            q.append((far, path + [oid], dist + L))
+            q.append((far, path + [oid], dist + L, oid))
     return None
 
 def dir_from(w, n):
@@ -340,9 +349,10 @@ def dir_from(w, n):
     return dx / L, dz / L
 
 def pick_next(node, endw, cand):
-    """Continuation through a junction: same highway type first, then smallest turn."""
-    if len(cand) == 1:
-        return cand[0]
+    """Continuation through a junction: same highway type first, then smallest turn. A lone candidate takes the
+    same turn test (Round 212: at Fairmount Avenue a ramp splits into two parallel bridges, both leaving one node,
+    and the lone-candidate shortcut chained the second branch onto the first nose to nose, a hairpin whose
+    junction the profile then held 8 m up while the traffic ran on down to the street)."""
     same = [o for o in cand if W[o]["hw"] == endw["hw"]]
     pool = same if same else cand
     hx, hz = dir_from(endw, node)          # direction back along the arriving way
@@ -370,7 +380,7 @@ def grow(seed, want, fill_lim):
                     step = [nxt]
             if step is None:
                 lim = fill_lim if endw["mo"] else 45
-                step = fill_path(node, want, lim, endw["mo"])
+                step = fill_path(node, want, lim, endw["mo"], c[-1] if side else c[0])
             if not step:
                 break
             for oid in step:

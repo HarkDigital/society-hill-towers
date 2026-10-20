@@ -64,7 +64,8 @@ class I95Elevation(unittest.TestCase):
                 self.assertLess(abs(b[2] - a[2]) / math.hypot(b[0] - a[0], b[1] - a[1]), .055)
 
     def test_ramps_meet_the_through_deck_without_a_vertical_step(self):
-        self.assertEqual(2, len(self.ramps))
+        # Round 212: three, the Columbus Boulevard off-ramp and on-ramp no longer chained nose to nose into one hairpin
+        self.assertEqual(3, len(self.ramps))
         junctions = 0
         for ramp in self.ramps:
             for p in (ramp['p'][0], ramp['p'][-1]):
@@ -80,6 +81,19 @@ class I95Elevation(unittest.TestCase):
                     junctions += 1
                     self.assertLess(best[1], .03)
         self.assertEqual(3, junctions)
+
+    def test_no_chain_doubles_back(self):
+        """Round 212 (Mike: cars "flying up to the elevated section" at Fairmount Avenue): a chain never turns back on
+        itself. Two branches leaving one node, or a divided mainline's two carriageways, were chained nose to nose and the
+        profile held the turn in the air; pick_next and fill_path take the same turn limit now."""
+        for key in ('el', 'sk'):
+            for c in self.data[key]:
+                P = c['p']
+                for a, b, d in zip(P, P[1:], P[2:]):
+                    ax, az, bx, bz = b[0] - a[0], b[1] - a[1], d[0] - b[0], d[1] - b[1]
+                    la, lb = math.hypot(ax, az), math.hypot(bx, bz)
+                    if la > 1 and lb > 1:
+                        self.assertGreater((ax * bx + az * bz) / (la * lb), -0.3, '%s chain turns back at %s' % (key, b))
 
     @unittest.skipUnless(shutil.which('node'), 'Node.js unavailable')
     def test_production_deck_index_and_paint_follow_the_raised_geometry(self):

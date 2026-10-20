@@ -12450,3 +12450,19 @@ toward the east. If the build throws, the extrusion is closed over the chamber's
 triangles. `?bell=0` and `?real=0` keep the whole extrusion; `__dbg.lbell()`; `tests/test_liberty_bell.py` runs the split on
 scene.json under JavaScriptCore. Rendered by day, at dusk and at night from Chestnut Street and close to the glass, and on
 the phone path.
+
+## Round 212 — the ramp at Fairmount Avenue, and no chain doubles back (Oct 20)
+
+Mike, two screenshots by I-95 at Fairmount Avenue: "There is a broken elevated highway here. cars are just flying up to the
+elevated section", then a ground street running under a raised slab at Brown Street. One cause, in `bake_overpasses.py`'s
+chaining: the southbound ramp alongside I-95 crosses Brown Street on a bridge, runs 96 m untagged, and splits into two
+parallel bridges over Fairmount Avenue, both leaving node 109738982. `pick_next` accepted a lone candidate with no turn test,
+so the chain that reached the split by the second branch went straight on up the first, nose to nose: a hairpin whose
+turn the profile held 8.3 m up while the traffic ran on down to the street, and the Brown Street bridge was left as the
+tapered end of another chain, 1.3 m over the street (the slab the cross traffic drove through). A lone candidate now takes
+the same 50 degree turn limit, and so does every step of `fill_path` (the BFS that bridges untagged gaps, which had crossed
+a divided mainline onto its other carriageway in 13 places). The ramp is one chain at 7.6 to 11 m from I-95 across Brown
+Street and the gap to the split, the second branch its own chain from the split down to grade. Across the city the hairpin
+vertices go from 34 to 0 (553 chains, 147.8 km); near Penn's Landing the Columbus Boulevard off-ramp and on-ramp, which had
+been one U-shaped `i95-ramp` chain, are two, each tapering to the street, and still meet the mainline at three junctions
+with no step. `tests/test_i95_elevation.py`: three core ramps, and no chain in `el` or `sk` turns back on itself.
