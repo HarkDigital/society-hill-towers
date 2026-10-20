@@ -50025,7 +50025,7 @@ float pinOccGate() {
       if (y < -500 || !mirNearWater(x, z)) continue;
       P.push(x, y, z); C.push(pcol[i * 3], pcol[i * 3 + 1], pcol[i * 3 + 2]);
     }
-    for (let i = 0; i + 2 < bfbLampPts.length; i += 3) { P.push(bfbLampPts[i], bfbLampPts[i + 1], bfbLampPts[i + 2]); C.push(1.0, 0.8, 0.55); }
+    for (let i = 0; i + 2 < bfbLampPts.length; i += 3) { P.push(bfbLampPts[i], bfbLampPts[i + 1], bfbLampPts[i + 2]); C.push(0.15, 0.12, 0.08); }   // a lamp a panel a side: a seventh each, or the span is a sheet of light
     MIRL.P = P; MIRL.C = C;
   }
   function mirLightsFinish() {   // at the first night frame, once the skyline's points stand: the towers' windows join, and the quads are laid
@@ -50055,14 +50055,21 @@ float pinOccGate() {
     const m = new THREE.ShaderMaterial({
       uniforms: { uMirW: { value: TERRAIN.water + 0.5 }, uOpacity: { value: 0 }, uTime: waterU.uTime },   // the Schuylkill's sheet stands 0.5 m over the Delaware's: the streak lies on the higher
       vertexShader: ['#include <common>', '#include <logdepthbuf_pars_vertex>',
-        'attribute vec2 aCorner; attribute vec3 aCol; uniform float uMirW; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade;',
+        'attribute vec2 aCorner; attribute vec3 aCol; uniform float uMirW; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade, vCore;',
         'void main() {',
         '  vec3 mP = vec3(position.x, 2.0 * uMirW - position.y, position.z), cam = cameraPosition;',
         '  float t = (uMirW - cam.y) / min(mP.y - cam.y, -1e-3);',
         '  vec3 I = cam + (mP - cam) * clamp(t, 0.0, 1.0);',
         '  vec2 tw = cam.xz - I.xz; float dxz = max(length(tw), 1.0); tw /= dxz; vec2 sd = vec2(-tw.y, tw.x);',
         '  float h = fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453), dist = length(cam - I);',
-        '  float len = min(dxz * 0.3, 320.0) * (0.6 + 0.4 * h), halfW = max(dist * 0.0045, 0.06), a = mix(-0.06, 1.0, aCorner.y);',
+        '  float camH = max(cam.y - uMirW, 1.0);',
+        // the streak's length toward the eye: three tenths of the way at a grazing eye, held to about 30 px on the screen from
+        // above (its screen length is len * camH / dist^2), so a high eye sees short smears under the lights, not rays
+        '  float len = min(min(dxz * 0.3, 320.0), 0.05 * dist * dist / camH) * (0.6 + 0.4 * h);',
+        // its width: a core about 5 px across, inside a soft glow up to 1.2% of the distance (30 m at the most) that spills past
+        // a pier's edge when the image itself lies under the deck, as the mirror's blurred image does
+        '  float coreW = max(dist * 0.0045, 0.06), halfW = max(coreW, min(dist * 0.012, 30.0)), a = mix(-0.06, 1.0, aCorner.y);',
+        '  vCore = halfW / coreW;',
         '  vec3 W = vec3(I.x + tw.x * len * a + sd.x * halfW * aCorner.x, uMirW + 0.1, I.z + tw.y * len * a + sd.y * halfW * aCorner.x);',
         '  vCol = aCol; vC = vec2(aCorner.x, a); vSeed = h * 6.283; vFade = 1.0 - smoothstep(2500.0, 5000.0, dist);',
         '  gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);',
@@ -50070,12 +50077,13 @@ float pinOccGate() {
         '  #include <logdepthbuf_vertex>',
         '}'].join('\n'),
       fragmentShader: ['#include <common>', '#include <logdepthbuf_pars_fragment>',
-        'uniform float uOpacity, uTime; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade;',
+        'uniform float uOpacity, uTime; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade, vCore;',
         'void main() {',
         '  #include <logdepthbuf_fragment>',
-        '  float across = exp(-vC.x * vC.x * 3.0), along = vC.y < 0.0 ? smoothstep(-0.06, 0.0, vC.y) : pow(1.0 - vC.y, 1.7);',
+        '  float xc = vC.x * vCore, along = vC.y < 0.0 ? smoothstep(-0.06, 0.0, vC.y) : pow(1.0 - vC.y, 1.7);',
+        '  float across = exp(-xc * xc * 3.0) + 0.11 * exp(-vC.x * vC.x * 2.5) * (1.0 - smoothstep(1.0, 4.0, 1.0 / max(vCore - 0.999, 1e-3)));',
         '  float dash = 0.25 + 0.75 * smoothstep(-0.2, 0.7, sin(gl_FragCoord.y * 0.9 - uTime * 4.0 + vSeed));',
-        '  gl_FragColor = vec4(vCol, min(1.0, 1.7 * across * along * dash * uOpacity * vFade));',
+        '  gl_FragColor = vec4(vCol, min(1.0, 1.05 * across * along * dash * uOpacity * vFade));',
         '  #include <encodings_fragment>',
         '}'].join('\n'),
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -50109,7 +50117,7 @@ float pinOccGate() {
     if (show) poleMat.opacity = night;
     if (poleNearGlow) { poleNearGlow.visible = show; poleMatNear.opacity = night; }
     if (show && !MIRL.built && MIRL.P) mirLightsFinish();   // Round 208
-    if (MIRL.mesh) { MIRL.mesh.visible = show && camera.position.y > TERRAIN.water + 0.3; MIRL.mesh.material.uniforms.uOpacity.value = night * 0.9; }   // and the bridge walkway lamps' (Round 205)
+    if (MIRL.mesh) { MIRL.mesh.visible = show && camera.position.y > TERRAIN.water + 0.3; MIRL.mesh.material.uniforms.uOpacity.value = night * 0.8; }   // and the bridge walkway lamps' (Round 205)
     lampMapU.uLampOn.value = show ? night : 0;
     if (show) lampMapUpdate();
     lampNightFx(night, show);   // the realism round: the near meshes, their lenses and glare, the rebuilds' lamp box

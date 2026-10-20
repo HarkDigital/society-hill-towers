@@ -12357,3 +12357,14 @@ sprite cannot reach toward the eye), and the image on the Delaware's plane, whic
 0.5 m higher (the streaks lie on the higher). Rendered on the phone path at the Ben Franklin Bridge, Penn's Landing and
 Boathouse Row: the pier lamps and Kelly Drive's lamps streak down the water as on the desktop, more sparsely (no windows of
 the low buildings, no ships). `__dbg.mirLights()`.
+
+**Round 208 coda: the reflections from the air** (Mike, with a desktop and a phone shot from about 600 m: "the
+reflections do not show on mobile"). From high up a light's image lies right under it, which for a pier's lamps is under
+the pier's deck, so the thin streaks were hidden; and the Ben Franklin Bridge's streaks, each reaching three tenths of the
+way to the eye, read as white rays across the river. Each light's quad now carries a soft glow round its core, up to 1.2%
+of the distance across (30 m at the most), which spills past a pier's edge as the mirror's blurred image does, and its
+length toward the eye is held to about 30 px on the screen from above (0.05 times the distance squared over the eye's
+height); the bridge's walkway lamps weigh a seventh each (one a panel a side made the span a sheet of light), and the whole
+is 0.6 of the first cut's strength. Rendered from 520 m and 300 m over Old City and at the bridge from 20 m, desktop beside
+the phone path: the smears under the shore's and the piers' lamps stand on the phone's river much as on the desktop's,
+whiter, as all of a phone's lamps are.
