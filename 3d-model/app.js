@@ -21157,6 +21157,7 @@ if (uNjLamp > 0.001) {
     const nameM = moshuluNames(L, hbAt, ys, Ld, ax, az, px, pz);
     if (nameM) near.add(nameM);
     MOSHULU.near = near; MOSHULU.far = farM; MOSHULU.rig = rigM; MOSHULU.bulbs = bulbM; MOSHULU.bulbMat = bulbMat; MOSHULU.spars = sparM;
+    MOSHULU.bulbP = bp; MOSHULU.bulbC = bc;   // Round 208: kept past the upload for a phone's reflections (MIR_LATE)
     MOSHULU.c.copy(L(Ld / 2, 0, 20));
     for (const o of [near, farM, rigM, sparM, bulbM]) groupCity.add(o);
     const tri = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
@@ -38563,6 +38564,7 @@ float pinOccGate() {
       groupCity.add(shipStacks);
       shipWakeInit();
       shipLamps = vLampPoints(SHIP_CAP * 5);
+      if (!REFL.on && REAL) shipLamps.onEnd = mirShipLamps;   // Round 208: their reflections without the mirror
     }
     shipReady = true;
   }
@@ -40169,6 +40171,7 @@ float pinOccGate() {
         g.setDrawRange(0, L.n); pts.visible = L.n > 0;   // no lamps, no draw call's state
         mat.uniforms.uFocal.value = (renderer.domElement.height || 800) / (2 * Math.tan(camera.fov * Math.PI / 360));
         if (L.n) { const a = g.attributes; a.position.updateRange.offset = 0; a.position.updateRange.count = L.n * 3; a.position.needsUpdate = true; a.aCol.updateRange.offset = 0; a.aCol.updateRange.count = L.n * 4; a.aCol.needsUpdate = true; a.aDir.updateRange.offset = 0; a.aDir.updateRange.count = L.n * 2; a.aDir.needsUpdate = true; }
+        if (L.onEnd) L.onEnd(pos, col, L.n);   // Round 208: the ships' lamps' reflections on a phone (mirShipLamps)
         L.n = 0;
       } };
     return L;
@@ -43149,7 +43152,7 @@ float pinOccGate() {
   // whatever the distance. Lying on the water, the depth test keeps each to the water the eye sees (the land, the piers and
   // the hulls hide it), and it costs only the pixels it covers. It fades out along its length, breaks into dashes that run
   // with the water's clock, and is gone past 5 km (__dbg.mirLights())
-  const MIRL = { mesh: null, n: 0, P: null, C: null, built: false };
+  const MIRL = { mesh: null, n: 0, P: null, C: null, built: false, mat: null, ships: null, shipN: 0 };
   const mirNearWater = (x, z) => { const dDel = delawareX(z) - x; return (dDel > -500 && dDel < 150) || (schEdges ? schEdges(x, z)[0] < 80 : false); };
   function mirLightsBuild(pos, pcol, nAll) {   // the streetlamps step: the lamps' share, kept for mirLightsFinish
     const P = [], C = [];
@@ -43161,30 +43164,8 @@ float pinOccGate() {
     for (let i = 0; i + 2 < bfbLampPts.length; i += 3) { P.push(bfbLampPts[i], bfbLampPts[i + 1], bfbLampPts[i + 2]); C.push(0.15, 0.12, 0.08); }   // a lamp a panel a side: a seventh each, or the span is a sheet of light
     MIRL.P = P; MIRL.C = C;
   }
-  function mirLightsFinish() {   // at the first night frame, once the skyline's points stand: the towers' windows join, and the quads are laid
-    MIRL.built = true;
-    const P = MIRL.P || [], C = MIRL.C || [];
-    MIRL.P = MIRL.C = null;
-    const tg = towerGlow && towerGlow.geometry, tpa = tg && tg.attributes.position && tg.attributes.position.array, tca = tg && tg.attributes.color && tg.attributes.color.array;
-    if (tpa && tca) for (let i = 0; i + 2 < tpa.length; i += 3) if (mirNearWater(tpa[i], tpa[i + 2])) { P.push(tpa[i], tpa[i + 1], tpa[i + 2]); C.push(tca[i] * 0.7, tca[i + 1] * 0.7, tca[i + 2] * 0.7); }
-    const n = P.length / 3;
-    if (!n) return;
-    const pos = new Float32Array(n * 12), cor = new Float32Array(n * 8), col = new Float32Array(n * 12), idx = n * 4 > 65535 ? new Uint32Array(n * 6) : new Uint16Array(n * 6);
-    const CR = [-1, 0, 1, 0, 1, 1, -1, 1];
-    for (let i = 0; i < n; i++) {
-      for (let k = 0; k < 4; k++) {
-        pos.set([P[i * 3], P[i * 3 + 1], P[i * 3 + 2]], (i * 4 + k) * 3);
-        col.set([C[i * 3], C[i * 3 + 1], C[i * 3 + 2]], (i * 4 + k) * 3);
-        cor[(i * 4 + k) * 2] = CR[k * 2]; cor[(i * 4 + k) * 2 + 1] = CR[k * 2 + 1];
-      }
-      idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3], i * 6);
-    }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    g.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
-    g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
-    g.setIndex(new THREE.BufferAttribute(idx, 1));
-    freeOnUpload(g);
+  function mirMat() {   // the reflections' one material (the lamps' and the ships' meshes share it)
+    if (MIRL.mat) return MIRL.mat;
     const m = new THREE.ShaderMaterial({
       uniforms: { uMirW: { value: TERRAIN.water + 0.5 }, uOpacity: { value: 0 }, uTime: waterU.uTime },   // the Schuylkill's sheet stands 0.5 m over the Delaware's: the streak lies on the higher
       vertexShader: ['#include <common>', '#include <logdepthbuf_pars_vertex>',
@@ -43222,6 +43203,81 @@ float pinOccGate() {
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     });
     postRaw(m);
+    return (MIRL.mat = m);
+  }
+  // the quads' fixed corners and index for n lights, and their positions and colours written from a light list
+  function mirQuads(n) {
+    const pos = new Float32Array(n * 12), cor = new Float32Array(n * 8), col = new Float32Array(n * 12), idx = n * 4 > 65535 ? new Uint32Array(n * 6) : new Uint16Array(n * 6);
+    const CR = [-1, 0, 1, 0, 1, 1, -1, 1];
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < 4; k++) { cor[(i * 4 + k) * 2] = CR[k * 2]; cor[(i * 4 + k) * 2 + 1] = CR[k * 2 + 1]; }
+      idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3], i * 6);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
+    g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    return g;
+  }
+  function mirPut(g, i, x, y, z, r, gg, b) {
+    const p = g.attributes.position.array, c = g.attributes.aCol.array;
+    for (let k = 0; k < 4; k++) { const o = (i * 4 + k) * 3; p[o] = x; p[o + 1] = y; p[o + 2] = z; c[o] = r; c[o + 1] = gg; c[o + 2] = b; }
+  }
+  // the ships' lamps (Mike: "Reflect the ships' lights on mobile too"): the masthead, stern, side and deck lamps the ships'
+  // pass writes each frame (shipLamps, vLampPoints) are laid as reflections too, a dynamic mesh refilled from the same list
+  // as the lamps' end() uploads it; the lamps are the HDR light's own (white 5, the sides' red and green), here at 0.16 of it
+  function mirShipLamps(lp, lc, n) {
+    if (!MIRL.ships) {
+      const g = mirQuads(SHIP_CAP * 5);
+      for (const k of ['position', 'aCol']) g.attributes[k].setUsage(THREE.DynamicDrawUsage);
+      const mesh = new THREE.Mesh(g, mirMat());
+      mesh.frustumCulled = false; mesh.renderOrder = 12; mesh.visible = false; mesh.name = 'mir-ships';
+      groupCity.add(mesh);
+      MIRL.ships = mesh;
+    }
+    const g = MIRL.ships.geometry, m = Math.min(n, SHIP_CAP * 5);
+    for (let i = 0; i < m; i++) mirPut(g, i, lp[i * 3], lp[i * 3 + 1], lp[i * 3 + 2], lc[i * 4] * 0.16, lc[i * 4 + 1] * 0.16, lc[i * 4 + 2] * 0.16);
+    g.setDrawRange(0, m * 6);
+    if (m) { g.attributes.position.needsUpdate = true; g.attributes.aCol.needsUpdate = true; }
+    MIRL.shipN = m;
+  }
+  // the light sets built after the lamps' (the Moshulu's festoons with her near model, on the eye's approach; the Battleship
+  // New Jersey's lamps), each its own small mesh of reflections laid the first night frame it stands: the points' own
+  // positions through their mesh's matrix, at a share of their colour
+  const MIR_LATE = [
+    { k: 'moshulu', get: () => MOSHULU.bulbs, p: () => MOSHULU.bulbP, c: () => MOSHULU.bulbC, w: [0.035, 0.03, 0.021] },   // a bulb every few decimetres along her swags: their streaks merge, so a thirtieth each
+    { k: 'nj', get: () => NJ.lights, w: [0.13, 0.095, 0.065] },   // packed along her deck edge: a sixth each, warmed (the mirror's image of her floods reads amber)
+  ];
+  function mirLateStep() {
+    for (const L of MIR_LATE) {
+      if (L.mesh || L.none) continue;
+      const o = L.get();
+      if (!o) continue;
+      const A = o.geometry.attributes, pa = (L.p && L.p()) || (A.position && A.position.array), ca = (L.c && L.c()) || (A.color && A.color.array);
+      if (!pa || !ca) { L.none = true; continue; }   // freed after its upload: nothing to read
+      o.updateMatrixWorld(true);
+      const n = pa.length / 3, g = mirQuads(n), v = new THREE.Vector3();
+      for (let i = 0; i < n; i++) { v.set(pa[i * 3], pa[i * 3 + 1], pa[i * 3 + 2]).applyMatrix4(o.matrixWorld); mirPut(g, i, v.x, v.y, v.z, ca[i * 3] * L.w[0], ca[i * 3 + 1] * L.w[1], ca[i * 3 + 2] * L.w[2]); }
+      freeOnUpload(g);
+      const mesh = new THREE.Mesh(g, mirMat());
+      mesh.frustumCulled = false; mesh.renderOrder = 12; mesh.visible = false; mesh.name = 'mir-' + L.k;
+      groupCity.add(mesh);
+      L.mesh = mesh; L.n = n;
+    }
+  }
+  function mirLightsFinish() {   // at the first night frame, once the skyline's points stand: the towers' windows join, and the quads are laid
+    MIRL.built = true;
+    const P = MIRL.P || [], C = MIRL.C || [];
+    MIRL.P = MIRL.C = null;
+    const tg = towerGlow && towerGlow.geometry, tpa = tg && tg.attributes.position && tg.attributes.position.array, tca = tg && tg.attributes.color && tg.attributes.color.array;
+    if (tpa && tca) for (let i = 0; i + 2 < tpa.length; i += 3) if (mirNearWater(tpa[i], tpa[i + 2])) { P.push(tpa[i], tpa[i + 1], tpa[i + 2]); C.push(tca[i] * 0.7, tca[i + 1] * 0.7, tca[i + 2] * 0.7); }
+    const n = P.length / 3;
+    if (!n) return;
+    const g = mirQuads(n);
+    for (let i = 0; i < n; i++) mirPut(g, i, P[i * 3], P[i * 3 + 1], P[i * 3 + 2], C[i * 3], C[i * 3 + 1], C[i * 3 + 2]);
+    freeOnUpload(g);
+    const m = mirMat();
     const mesh = new THREE.Mesh(g, m);
     mesh.frustumCulled = false; mesh.renderOrder = 12; mesh.visible = false; mesh.name = 'mir-lights';
     groupCity.add(mesh);
@@ -43250,7 +43306,10 @@ float pinOccGate() {
     if (show) poleMat.opacity = night;
     if (poleNearGlow) { poleNearGlow.visible = show; poleMatNear.opacity = night; }
     if (show && !MIRL.built && MIRL.P) mirLightsFinish();   // Round 208
-    if (MIRL.mesh) { MIRL.mesh.visible = show && camera.position.y > TERRAIN.water + 0.3; MIRL.mesh.material.uniforms.uOpacity.value = night * 0.8; }   // and the bridge walkway lamps' (Round 205)
+    if (MIRL.mesh) { MIRL.mesh.visible = show && camera.position.y > TERRAIN.water + 0.3; MIRL.mesh.material.uniforms.uOpacity.value = night * 0.8; }
+    if (MIRL.built && night > 0.05) mirLateStep();
+    for (const L of MIR_LATE) if (L.mesh) L.mesh.visible = night > 0.01 && camera.position.y > TERRAIN.water + 0.3 && L.get().visible !== false;
+    if (MIRL.ships) { MIRL.ships.visible = night > 0.05 && camera.position.y > TERRAIN.water + 0.3 && MIRL.shipN > 0; if (MIRL.mat) MIRL.mat.uniforms.uOpacity.value = night * 0.8; }   // the ships' own lamps light by the ships' rule, not the streetlights' layer   // and the bridge walkway lamps' (Round 205)
     lampMapU.uLampOn.value = show ? night : 0;
     if (show) lampMapUpdate();
     lampNightFx(night, show);   // the realism round: the near meshes, their lenses and glare, the rebuilds' lamp box
@@ -48683,7 +48742,7 @@ float pinOccGate() {
       // Round 205: the trees and the poles whose trunk stands on a drawn street (its edge 0.3 m in), by tier, and how many
       // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
       // the cars standing inside a drawn bus now (their footprints overlapping, 0.2 m of slack), and the cars on a closed run
-      mirLights: () => ({ n: MIRL.n, built: MIRL.built, on: !!MIRL.mesh && MIRL.mesh.visible, opacity: MIRL.mesh ? +MIRL.mesh.material.uniforms.uOpacity.value.toFixed(2) : 0, refl: REFL.on }),   // Round 208
+      mirLights: () => ({ n: MIRL.n, ships: MIRL.shipN || 0, late: Object.fromEntries(MIR_LATE.map((L) => [L.k, L.n || 0])), built: MIRL.built, on: !!MIRL.mesh && MIRL.mesh.visible, opacity: MIRL.mesh ? +MIRL.mesh.material.uniforms.uOpacity.value.toFixed(2) : 0, refl: REFL.on }),   // Round 208
       busClips: () => { let clips = 0, near = 0; const kinds = {}; for (const v of BUS_OB.drawn) { const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), sp = SEPTA_KIND[v.kind]; for (const r of trafficRuns) for (const c of r.cars) { if (c.die) continue; const dx = c.x - v.dx, dz = c.z - v.dz; if (dx * dx + dz * dz > 400) continue; near++; const M = CAR_MODELS[c.kind], a = Math.abs(dx * hx + dz * hz), l = Math.abs(-dx * hz + dz * hx); if (a < sp.l / 2 + M.l / 2 - 0.2 && l < sp.w / 2 + M.w / 2 - 0.2) { clips++; const cs = Math.cos(c.yaw - v.yaw); kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] = (kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] || 0) + 1; } } } return { yield: BUS_YIELD, buses: BUS_OB.drawn.length, near, clips, kinds }; },
       closedCars: () => { let runs = 0, cars = 0; for (const r of trafficRuns) if (r.closed) { runs++; for (const c of r.cars) if (!c.die) cars++; } return { runs, cars, runsClosed: CLOSURES.runsClosed, cleared: CLOSURES.carsCleared || 0, dieClosed: CARC.dieClosed, recs: CLOSURES.recs.filter((q) => q.o >= 3).length, near: CLOSURES.recs.filter((q) => q.o >= 3).slice(0, 6).map((q) => { let bd = 1e9, bc = -1, bcl = false; for (const r of trafficRuns) { if (Math.hypot(r.mx - q.mx, r.mz - q.mz) > r.len + 60) continue; for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - q.mx, r.zs[j] - q.mz); if (d < bd) { bd = d; bc = r.cls; bcl = r.closed; } } } return { addr: q.addr, x: Math.round(q.mx), z: Math.round(q.mz), hw: q.hw, d: Math.round(bd), cls: bc, closed: bcl }; }) }; },
       busObst: () => ({ buses: BUS_OB.n, cells: BUS_OB.cells.size, held: BUS_OB.held, lanes: [...septaVeh.values()].filter((v) => v.snx != null && !v.off).slice(0, 8).map((v) => ({ id: v.id, lane: +(v.lane || 0).toFixed(2), d: +Math.hypot(v.dx - v.snx, v.dz - v.snz).toFixed(2) })) }),   // Round 207

@@ -12368,3 +12368,13 @@ height); the bridge's walkway lamps weigh a seventh each (one a panel a side mad
 is 0.6 of the first cut's strength. Rendered from 520 m and 300 m over Old City and at the bridge from 20 m, desktop beside
 the phone path: the smears under the shore's and the piers' lamps stand on the phone's river much as on the desktop's,
 whiter, as all of a phone's lamps are.
+
+**Round 208, second coda: the ships' lights** (Mike: "Reflect the ships' lights on mobile too"). Three sets, all through the
+reflections' one material (`mirMat`): the navigation lamps the ships' pass writes each frame (`shipLamps`, five a ship:
+masthead, stern, port, starboard, deck) go to a dynamic mesh refilled from the same list as `vLampPoints`' `end()` uploads it
+(`onEnd`, `mirShipLamps`, at 0.16 of the lamps' HDR light; 99 in the test views); and the light sets that stand only once
+their model is built (`MIR_LATE`, laid at the first night frame each is there): the Battleship New Jersey's 228 lamps along
+her deck edge, warmed and a seventh each (packed close, they read as one white bar), and the Moshulu's 226 festoon bulbs,
+kept past their upload for it (`MOSHULU.bulbP`, `bulbC`), a thirtieth each, whose streaks merge into the swags' amber line
+upside down on the water. Rendered on the phone path beside the desktop at the New Jersey from 20 m and at the Moshulu from
+12 m. `__dbg.mirLights()` reports `ships` and `late`.
