@@ -12330,3 +12330,30 @@ across it ramped from the deck into the trench), and the core ground grid's cell
 the wall's line (`PERF.coreWallCut`; they rose across the trench as a grass bank, in the mouths and along the open trench),
 the cut corners after the grid's so `groundMeshY` reads the grid as before. After: 5.0 m at the least (6.15 m at Dock
 Street, 5.03 m at Spruce), the lanes at -8.4 to -10.9.
+
+## Round 208 — tile in the tunnel, the river's lights on a phone (Oct 20)
+
+Mike: "Add tile to the tunnel walls." And: "On desktop I am seeing a cool looking light reflection off the river. I do not
+see that on mobile."
+
+**Tile.** The tunnel's material (`capTunnelMat`) draws cream glazed subway tile, 30 by 15 cm in running bond along I-95, with
+8 mm grey joints, on its walls (a face whose normal is level); each tile its own tone, the glaze at roughness 0.28 against
+the joints'. Each joint is filtered by its own screen footprint, taken from the coordinates before the bond's half-tile
+shift: taken after it, the footprint spiked at every row and the joints broke into a stepped moire (the first render). Past
+where a joint is under a pixel the wall takes its average. The tunnel's walls stand 10 cm inside the trench's own (at 2 cm
+the two fought in a dotted line). The ceiling stays dark concrete.
+
+**The river's lights.** Measured by rendering the Delaware on both paths: by day the sun's glint is the same; at night the
+desktop's lights streak down the water and a phone's do not. Those streaks are the planar mirror (`REFL`), which needs the
+desktop post pipeline and draws the city a second time. A phone (any device without the mirror) now draws the lights'
+reflections alone (`MIRL`, `mirLightsBuild` in the streetlamps step, `mirLightsFinish` at the first night frame): 10,280
+lights, the streetlamps within 150 m of the Delaware's bank line or 500 m out past it on the piers, or 80 m of the
+Schuylkill's edge, the Ben Franklin Bridge's walkway lamps and the towers' lit windows as near the water. Each is a thin quad
+lying on the water from where the line from the eye to the light's image under the river crosses it, reaching three tenths
+of the way to the eye, about 5 px across whatever the distance, fading along its length and broken into dashes that run with
+the water's clock; gone past 5 km. Lying on the water, the depth test keeps each to the water the eye sees, and it costs only
+its own pixels. Two cuts went first: point sprites mirrored under the plane (too faint at a phone's point sizes, and a square
+sprite cannot reach toward the eye), and the image on the Delaware's plane, which put the Schuylkill's under its own sheet,
+0.5 m higher (the streaks lie on the higher). Rendered on the phone path at the Ben Franklin Bridge, Penn's Landing and
+Boathouse Row: the pier lamps and Kelly Drive's lamps streak down the water as on the desktop, more sparsely (no windows of
+the low buildings, no ships). `__dbg.mirLights()`.

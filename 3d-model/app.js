@@ -10102,8 +10102,38 @@ vec2 wRing(vec2 rc, float tt) {
     // the dipped floor, and two rows of lamps along the ceiling, so I-95 runs into a lit tunnel instead of under the deck's
     // textured underside with the city and its lawns showing past it; the slab and whatever lies between it and the ceiling
     // are hidden from the lanes
+    // the tunnel's walls are glazed tile (Mike: "Add tile to the tunnel walls"): cream subway tile 30 by 15 cm in running
+    // bond, laid along I-95 (fl's own direction) with 6 mm joints of grey grout, each tile its own tone, the glaze glossier
+    // than the joints and every joint antialiased by its screen footprint; the ceiling (a face looking up or down) stays
+    // dark concrete
+    function capTunnelMat() {
+      const m = new THREE.MeshStandardMaterial({ color: 0x1d1c1a, roughness: 0.95, side: THREE.DoubleSide });
+      m.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vTunW; varying vec3 vTunN;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTunW = (modelMatrix * vec4(position, 1.0)).xyz; vTunN = normal;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vTunW; varying vec3 vTunN; float tunTile = 0.0;')
+          .replace('#include <color_fragment>', `#include <color_fragment>
+  if (abs(normalize(vTunN).y) < 0.5) {
+    vec2 tp = vec2(dot(vTunW.xz, vec2(${fl.dx.toFixed(4)}, ${fl.dz.toFixed(4)})) / 0.30, vTunW.y / 0.15);
+    vec2 fw = max(fwidth(tp), vec2(1e-4));   // the footprint before the bond's shift (the shift jumps at every row and spiked it)
+    float row = floor(tp.y); tp.x += 0.5 * mod(row, 2.0);
+    vec2 cell = floor(tp), dd = abs(fract(tp) - 0.5);   // 0.5 at a joint
+    vec2 jw = vec2(0.008 / 0.30, 0.008 / 0.15) * 0.5;    // half the joint's width in tile units
+    vec2 lj = smoothstep(0.5 - jw - fw, 0.5 - jw + fw, dd);   // each axis's joint, filtered by its own footprint
+    float joint = max(lj.x, lj.y);
+    joint = mix(joint, 0.12, smoothstep(0.12, 0.45, max(fw.x, fw.y)));   // past where a joint is under a pixel, the wall's average
+    float tone = 0.92 + 0.16 * fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+    vec3 tileC = vec3(0.30, 0.285, 0.25) * tone, groutC = vec3(0.10, 0.10, 0.095);
+    diffuseColor.rgb = mix(tileC, groutC, joint * 0.85);
+    tunTile = 1.0 - joint;
+  }`)
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.28, tunTile);');
+      };
+      m.customProgramCacheKey = () => 'cap-tunnel-tile';
+      return m;
+    }
     function capTunnel(c, NS) {
-      const o0 = TERRAIN.trenchW + 0.02, o1 = TERRAIN.trenchE - 0.02, pos = [], lamp = [];
+      const o0 = TERRAIN.trenchW + 0.1, o1 = TERRAIN.trenchE - 0.1, pos = [], lamp = [];   // 10 cm inside the trench's own walls (2 cm fought them in a dotted line)
       const top = (sv) => { const q = capPoint((o0 + o1) / 2, sv); return capTop(c, q[0], q[1]) - 0.28; };
       const quad = (A, B, C, D) => pos.push(...A, ...B, ...C, ...A, ...C, ...D);
       for (let j = 0; j < NS; j++) {
@@ -10122,7 +10152,7 @@ vec2 wRing(vec2 rc, float tt) {
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.computeVertexNormals();
-      const tm = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x1d1c1a, roughness: 0.95, side: THREE.DoubleSide }));
+      const tm = new THREE.Mesh(g, capTunnelMat());
       tm.receiveShadow = true; tm.castShadow = true; tm.name = 'cap-tunnel'; groupCity.add(tm); freeOnUpload(g);
       if (lamp.length) {
         const lg = mergeColored(lamp.map((b) => ({ geom: b, color: new THREE.Color(0xffe7c2) })));
@@ -41816,6 +41846,7 @@ float pinOccGate() {
       bfbLampGlow.frustumCulled = false; bfbLampGlow.renderOrder = 11; bfbLampGlow.visible = false;
       groupCity.add(bfbLampGlow);
     }
+    if (!REFL.on && REAL) mirLightsBuild(pos, pcol, nAll);   // Round 208: a phone's lights in the river
     if (POLE_MESH_CAP > 0) {
       // one instanced pole: tapered shaft + arm + head, 9 m reference height,
       // y-scaled per pole (uniform-in-plane, so the rotation gotcha never bites)
@@ -43108,6 +43139,86 @@ float pinOccGate() {
     R.glare.frustumCulled = false; R.glare.renderOrder = 11; R.glare.visible = false;
     groupCity.add(R.glare);
   }
+  // Round 208 (Mike: "On desktop I am seeing a cool looking light reflection off the river. I do not see that on mobile"):
+  // the river's lights at night are the desktop's planar mirror (REFL), a second drawing of the city that a phone, held back
+  // by geometry, cannot afford. A phone (and any device without the mirror) draws the lights' reflections alone, as streaks
+  // lying on the water: for each light (the streetlamps within 150 m of the Delaware's bank line or 500 m out past it on the
+  // piers, or 80 m of the Schuylkill's edge, the Ben Franklin Bridge's walkway lamps, and the towers' lit windows that stand
+  // as near the water) the point where the line from the eye to its image under the river's plane crosses the water, and
+  // from there a thin quad on the water reaching toward the eye, three tenths of the way to it, about 5 px across on the screen
+  // whatever the distance. Lying on the water, the depth test keeps each to the water the eye sees (the land, the piers and
+  // the hulls hide it), and it costs only the pixels it covers. It fades out along its length, breaks into dashes that run
+  // with the water's clock, and is gone past 5 km (__dbg.mirLights())
+  const MIRL = { mesh: null, n: 0, P: null, C: null, built: false };
+  const mirNearWater = (x, z) => { const dDel = delawareX(z) - x; return (dDel > -500 && dDel < 150) || (schEdges ? schEdges(x, z)[0] < 80 : false); };
+  function mirLightsBuild(pos, pcol, nAll) {   // the streetlamps step: the lamps' share, kept for mirLightsFinish
+    const P = [], C = [];
+    for (let i = 0; i < nAll; i++) {
+      const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+      if (y < -500 || !mirNearWater(x, z)) continue;
+      P.push(x, y, z); C.push(pcol[i * 3], pcol[i * 3 + 1], pcol[i * 3 + 2]);
+    }
+    for (let i = 0; i + 2 < bfbLampPts.length; i += 3) { P.push(bfbLampPts[i], bfbLampPts[i + 1], bfbLampPts[i + 2]); C.push(1.0, 0.8, 0.55); }
+    MIRL.P = P; MIRL.C = C;
+  }
+  function mirLightsFinish() {   // at the first night frame, once the skyline's points stand: the towers' windows join, and the quads are laid
+    MIRL.built = true;
+    const P = MIRL.P || [], C = MIRL.C || [];
+    MIRL.P = MIRL.C = null;
+    const tg = towerGlow && towerGlow.geometry, tpa = tg && tg.attributes.position && tg.attributes.position.array, tca = tg && tg.attributes.color && tg.attributes.color.array;
+    if (tpa && tca) for (let i = 0; i + 2 < tpa.length; i += 3) if (mirNearWater(tpa[i], tpa[i + 2])) { P.push(tpa[i], tpa[i + 1], tpa[i + 2]); C.push(tca[i] * 0.7, tca[i + 1] * 0.7, tca[i + 2] * 0.7); }
+    const n = P.length / 3;
+    if (!n) return;
+    const pos = new Float32Array(n * 12), cor = new Float32Array(n * 8), col = new Float32Array(n * 12), idx = n * 4 > 65535 ? new Uint32Array(n * 6) : new Uint16Array(n * 6);
+    const CR = [-1, 0, 1, 0, 1, 1, -1, 1];
+    for (let i = 0; i < n; i++) {
+      for (let k = 0; k < 4; k++) {
+        pos.set([P[i * 3], P[i * 3 + 1], P[i * 3 + 2]], (i * 4 + k) * 3);
+        col.set([C[i * 3], C[i * 3 + 1], C[i * 3 + 2]], (i * 4 + k) * 3);
+        cor[(i * 4 + k) * 2] = CR[k * 2]; cor[(i * 4 + k) * 2 + 1] = CR[k * 2 + 1];
+      }
+      idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4, i * 4 + 2, i * 4 + 3], i * 6);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('aCorner', new THREE.BufferAttribute(cor, 2));
+    g.setAttribute('aCol', new THREE.BufferAttribute(col, 3));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    freeOnUpload(g);
+    const m = new THREE.ShaderMaterial({
+      uniforms: { uMirW: { value: TERRAIN.water + 0.5 }, uOpacity: { value: 0 }, uTime: waterU.uTime },   // the Schuylkill's sheet stands 0.5 m over the Delaware's: the streak lies on the higher
+      vertexShader: ['#include <common>', '#include <logdepthbuf_pars_vertex>',
+        'attribute vec2 aCorner; attribute vec3 aCol; uniform float uMirW; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade;',
+        'void main() {',
+        '  vec3 mP = vec3(position.x, 2.0 * uMirW - position.y, position.z), cam = cameraPosition;',
+        '  float t = (uMirW - cam.y) / min(mP.y - cam.y, -1e-3);',
+        '  vec3 I = cam + (mP - cam) * clamp(t, 0.0, 1.0);',
+        '  vec2 tw = cam.xz - I.xz; float dxz = max(length(tw), 1.0); tw /= dxz; vec2 sd = vec2(-tw.y, tw.x);',
+        '  float h = fract(sin(dot(position.xz, vec2(12.9898, 78.233))) * 43758.5453), dist = length(cam - I);',
+        '  float len = min(dxz * 0.3, 320.0) * (0.6 + 0.4 * h), halfW = max(dist * 0.0045, 0.06), a = mix(-0.06, 1.0, aCorner.y);',
+        '  vec3 W = vec3(I.x + tw.x * len * a + sd.x * halfW * aCorner.x, uMirW + 0.1, I.z + tw.y * len * a + sd.y * halfW * aCorner.x);',
+        '  vCol = aCol; vC = vec2(aCorner.x, a); vSeed = h * 6.283; vFade = 1.0 - smoothstep(2500.0, 5000.0, dist);',
+        '  gl_Position = projectionMatrix * viewMatrix * vec4(W, 1.0);',
+        '  if (cam.y < uMirW + 0.3) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);',
+        '  #include <logdepthbuf_vertex>',
+        '}'].join('\n'),
+      fragmentShader: ['#include <common>', '#include <logdepthbuf_pars_fragment>',
+        'uniform float uOpacity, uTime; varying vec3 vCol; varying vec2 vC; varying float vSeed, vFade;',
+        'void main() {',
+        '  #include <logdepthbuf_fragment>',
+        '  float across = exp(-vC.x * vC.x * 3.0), along = vC.y < 0.0 ? smoothstep(-0.06, 0.0, vC.y) : pow(1.0 - vC.y, 1.7);',
+        '  float dash = 0.25 + 0.75 * smoothstep(-0.2, 0.7, sin(gl_FragCoord.y * 0.9 - uTime * 4.0 + vSeed));',
+        '  gl_FragColor = vec4(vCol, min(1.0, 1.7 * across * along * dash * uOpacity * vFade));',
+        '  #include <encodings_fragment>',
+        '}'].join('\n'),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    });
+    postRaw(m);
+    const mesh = new THREE.Mesh(g, m);
+    mesh.frustumCulled = false; mesh.renderOrder = 12; mesh.visible = false; mesh.name = 'mir-lights';
+    groupCity.add(mesh);
+    MIRL.mesh = mesh; MIRL.n = n;
+  }
   function syncLightsBtn() { syncLayerBtn(btnLights, LIGHTS.on); }
   function toggleLightsLayer() { LIGHTS.on = !LIGHTS.on; syncLightsBtn(); }
   if (btnLights) btnLights.addEventListener('click', toggleLightsLayer);
@@ -43129,7 +43240,9 @@ float pinOccGate() {
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
-    if (poleNearGlow) { poleNearGlow.visible = show; poleMatNear.opacity = night; }   // and the bridge walkway lamps' (Round 205)
+    if (poleNearGlow) { poleNearGlow.visible = show; poleMatNear.opacity = night; }
+    if (show && !MIRL.built && MIRL.P) mirLightsFinish();   // Round 208
+    if (MIRL.mesh) { MIRL.mesh.visible = show && camera.position.y > TERRAIN.water + 0.3; MIRL.mesh.material.uniforms.uOpacity.value = night * 0.9; }   // and the bridge walkway lamps' (Round 205)
     lampMapU.uLampOn.value = show ? night : 0;
     if (show) lampMapUpdate();
     lampNightFx(night, show);   // the realism round: the near meshes, their lenses and glare, the rebuilds' lamp box
@@ -48562,6 +48675,7 @@ float pinOccGate() {
       // Round 205: the trees and the poles whose trunk stands on a drawn street (its edge 0.3 m in), by tier, and how many
       // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
       // the cars standing inside a drawn bus now (their footprints overlapping, 0.2 m of slack), and the cars on a closed run
+      mirLights: () => ({ n: MIRL.n, built: MIRL.built, on: !!MIRL.mesh && MIRL.mesh.visible, opacity: MIRL.mesh ? +MIRL.mesh.material.uniforms.uOpacity.value.toFixed(2) : 0, refl: REFL.on }),   // Round 208
       busClips: () => { let clips = 0, near = 0; const kinds = {}; for (const v of BUS_OB.drawn) { const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), sp = SEPTA_KIND[v.kind]; for (const r of trafficRuns) for (const c of r.cars) { if (c.die) continue; const dx = c.x - v.dx, dz = c.z - v.dz; if (dx * dx + dz * dz > 400) continue; near++; const M = CAR_MODELS[c.kind], a = Math.abs(dx * hx + dz * hz), l = Math.abs(-dx * hz + dz * hx); if (a < sp.l / 2 + M.l / 2 - 0.2 && l < sp.w / 2 + M.w / 2 - 0.2) { clips++; const cs = Math.cos(c.yaw - v.yaw); kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] = (kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] || 0) + 1; } } } return { yield: BUS_YIELD, buses: BUS_OB.drawn.length, near, clips, kinds }; },
       closedCars: () => { let runs = 0, cars = 0; for (const r of trafficRuns) if (r.closed) { runs++; for (const c of r.cars) if (!c.die) cars++; } return { runs, cars, runsClosed: CLOSURES.runsClosed, cleared: CLOSURES.carsCleared || 0, dieClosed: CARC.dieClosed, recs: CLOSURES.recs.filter((q) => q.o >= 3).length, near: CLOSURES.recs.filter((q) => q.o >= 3).slice(0, 6).map((q) => { let bd = 1e9, bc = -1, bcl = false; for (const r of trafficRuns) { if (Math.hypot(r.mx - q.mx, r.mz - q.mz) > r.len + 60) continue; for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - q.mx, r.zs[j] - q.mz); if (d < bd) { bd = d; bc = r.cls; bcl = r.closed; } } } return { addr: q.addr, x: Math.round(q.mx), z: Math.round(q.mz), hw: q.hw, d: Math.round(bd), cls: bc, closed: bcl }; }) }; },
       busObst: () => ({ buses: BUS_OB.n, cells: BUS_OB.cells.size, held: BUS_OB.held, lanes: [...septaVeh.values()].filter((v) => v.snx != null && !v.off).slice(0, 8).map((v) => ({ id: v.id, lane: +(v.lane || 0).toFixed(2), d: +Math.hypot(v.dx - v.snx, v.dz - v.snz).toFixed(2) })) }),   // Round 207
