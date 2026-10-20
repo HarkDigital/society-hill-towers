@@ -11333,6 +11333,7 @@ vec2 wRing(vec2 rc, float tt) {
       if (spec0 && spec0.mode === 'custom') {
         registerPoly(b.poly); // keeps trees out of the footprint
         if (!spec0.open) {    // open structures (market sheds) stay walkable
+          { const [hx, hz] = polyCentroid(b.poly); hitNote(b.poly, siteY(hx, hz, 'ground') + (spec0.h || b.h || 0)); }   // and flyable
           for (let k = 0; k < b.poly.length; k++) {
             const p = b.poly[k], q = b.poly[(k + 1) % b.poly.length];
             addColSeg(p[0], p[1], q[0], q[1]);
@@ -11342,6 +11343,7 @@ vec2 wRing(vec2 rc, float tt) {
       }
       if (spec0 && spec0.h) b.h = spec0.h;
       if (b.h >= 6 && b.poly.length >= 3) { const [rx, rz] = polyCentroid(b.poly); roofNote(rx, rz, siteY(rx, rz, 'ground') + b.h, Math.abs(signedArea(b.poly))); }
+      if (b.h > 0) { const [rx, rz] = polyCentroid(b.poly); hitNote(b.poly, siteY(rx, rz, 'ground') + b.h); }   // the flight's walls (Round 214)
       if (b.h >= 45 && b.poly && b.poly.length >= 3 && !b.minH) {
         const [tgx, tgz] = polyCentroid(b.poly);
         tallGlow.push({ x: tgx, z: tgz, b: siteY(tgx, tgz, 'ground'), h: b.h, poly: b.poly });
@@ -16796,6 +16798,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     }
     for (const [U, V, t, a] of [[0, -60, 61.8, 900], [0, 55, 61.8, 900], [55, 0, 61.8, 900], [-55, 0, 61.8, 900], [58, -58, 48.8, 300], [-58, -58, 48.8, 300], [58, 58, 48.8, 300], [-58, 58, 48.8, 300], [0, -37.2, 167, 600]]) {
       const p = W(U, V); roofNote(p[0], p[1], Y0 + t, a);
+      hitSquare(p[0], p[1], Math.sqrt(a) / 2, Y0 + t);   // the flight's walls (Round 214); the wings come in through REBUILD_OCC
     }
     if (!isTouch && !TIER2) chLoadArt();
     CH.built = true;
@@ -19285,7 +19288,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     liftAt(m0, cx, cz);
     registerPoly(R);
     for (let j = 0; j < n0; j++) { const a2 = R[j], b2 = R[(j + 1) % n0]; addColSeg(a2[0], a2[1], b2[0], b2[1]); }
-    roofNote(cx, cz, y0 + h, Math.abs(signedArea(R)));
+    roofNote(cx, cz, y0 + h, Math.abs(signedArea(R))); hitNote(R, y0 + h);
     // ---- the room: the lining 2 cm inside the walls, the floor, the ceiling and the soffit over the opening, in vertex colours
     const pos = [], nor = [], cl = [];
     const quad = (P, N, c) => {   // P in [x, y, z], wound to look along N
@@ -23079,7 +23082,7 @@ if (uNjLamp > 0.001) {
       for (let k = 0; k < 4; k++) addColSeg(cor[k][0], cor[k][1], cor[(k + 1) % 4][0], cor[(k + 1) % 4][1]);
       registerPoly(cor);
       for (const p of cor) { x0 = Math.min(x0, p[0]); x1 = Math.max(x1, p[0]); z0 = Math.min(z0, p[1]); z1 = Math.max(z1, p[1]); }
-      roofNote(cx, cz, podium + D.H, D.L[0] * D.L[1]);
+      roofNote(cx, cz, podium + D.H, D.L[0] * D.L[1]); hitNote(cor, podium + D.H);
     });
     const fm = new THREE.Matrix4().makeTranslation(0, podium, 0), fB = shtFountain();
     nearL.push({ B: fB, m: fm, seeds: [0, 0, 0, 0], lobby: 0 }); farL.push({ B: fB, m: fm, seeds: [0, 0, 0, 0], lobby: 0 });
@@ -23351,6 +23354,7 @@ if (uNjLamp > 0.001) {
         [cx + lx * cos + lz * sin, cz - lx * sin + lz * cos]);
       for (let k = 0; k < 4; k++) addColSeg(cor[k][0], cor[k][1], cor[(k + 1) % 4][0], cor[(k + 1) % 4][1]);
       registerPoly(cor);
+      hitNote(cor, podium + H + TOWER.penthouseH);
     }
 
     const conMesh = new THREE.Mesh(
@@ -23480,6 +23484,154 @@ if (uNjLamp > 0.001) {
     let best = 0;
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= ROOF_GRID.nx || jj >= ROOF_GRID.nz) continue; best = Math.max(best, ROOF_GRID.a[jj * ROOF_GRID.nx + ii]); }
     return best > 0 ? best / 4 : -Infinity;
+  }
+  // ---- the flight's walls (Round 214, Mike: "Can we add building collision detection so people cannot just fly through
+  // buildings?"). Every building the loops raise is noted here as a column up to its roof: the HIT_CELL m cells whose
+  // centres fall inside its footprint (the centroid's cell for one smaller than a cell), in tiles of HIT_TILE cells made
+  // only where something stands, a Uint8 a cell (the roof in HIT_DY steps over HIT_Y0, rounded up, the tallest noted).
+  // REBUILD_OCC's rings with a top (City Hall's wings, the rebuilds' own ground) are swept in as they appear (hitSweep).
+  // hitFly keeps the eye HIT_R off every column it was not already over, in steps no longer than HIT_R so a fast eye
+  // cannot step through a row, and sets it down HIT_CLR over a roof it comes down on; ?collide=0 flies through as before;
+  // __dbg.collide()
+  const HIT_ON = !/[?&]collide=0\b/.test(location.search);
+  const HIT_CELL = 4, HIT_TILE = 64, HIT_Y0 = -10, HIT_DY = 1.6, HIT_R = 3, HIT_CLR = 2.5;
+  // A tile is written dense (HIT_TILE squared bytes) and packed once HIT_DENSE tiles are open (the least recently written
+  // first, reopened when a later loop writes into it again), so the build never holds the city dense (42 MB on Oct 20 for
+  // 6.4 M cells in 10,795 tiles; packed, 1.7 M runs). A packed tile is one Uint8Array: HIT_TILE + 1 little-endian Uint16
+  // run offsets, one a row, then three bytes a run (its first cell, its length, its value)
+  const HIT_DENSE = 256, HIT_HEAD = (HIT_TILE + 1) * 2;
+  const HIT = { on: HIT_ON, dense: new Map(), packed: new Map(), notes: 0, cells: 0, occN: 0, packs: 0, unpacks: 0, bytes: 0, pushes: 0, stops: 0, lands: 0, lifts: 0, key: -1, arr: null };
+  const hitKey = (ti, tj) => (ti + 4096) * 8192 + (tj + 4096);
+  function hitPack(key, a) {
+    let n = 0;
+    for (let j = 0; j < HIT_TILE; j++) for (let i = 0, prev = 0; i < HIT_TILE; i++) { const q = a[j * HIT_TILE + i]; if (q && q !== prev) n++; prev = q; }
+    const b = new Uint8Array(HIT_HEAD + 3 * n);
+    let r = 0;
+    for (let j = 0; j < HIT_TILE; j++) {
+      b[2 * j] = r & 255; b[2 * j + 1] = r >> 8;
+      for (let i = 0; i < HIT_TILE;) {
+        const q = a[j * HIT_TILE + i]; let e = i + 1;
+        if (q) { while (e < HIT_TILE && a[j * HIT_TILE + e] === q) e++; const o = HIT_HEAD + 3 * r++; b[o] = i; b[o + 1] = e - i; b[o + 2] = q; }
+        i = e;
+      }
+    }
+    b[2 * HIT_TILE] = r & 255; b[2 * HIT_TILE + 1] = r >> 8;
+    HIT.dense.delete(key); HIT.packed.set(key, b); HIT.bytes += b.length; HIT.packs++;
+    if (HIT.key === key) { HIT.key = -1; HIT.arr = null; }
+  }
+  function hitOpen(key) {   // the tile, dense and most recently written, its packed copy unpacked
+    let a = HIT.dense.get(key);
+    if (a) { HIT.dense.delete(key); HIT.dense.set(key, a); return a; }
+    a = new Uint8Array(HIT_TILE * HIT_TILE);
+    const b = HIT.packed.get(key);
+    if (b) {
+      for (let j = 0; j < HIT_TILE; j++) for (let r = b[2 * j] | (b[2 * j + 1] << 8), r1 = b[2 * j + 2] | (b[2 * j + 3] << 8); r < r1; r++) { const o = HIT_HEAD + 3 * r; a.fill(b[o + 2], j * HIT_TILE + b[o], j * HIT_TILE + b[o] + b[o + 1]); }
+      HIT.packed.delete(key); HIT.bytes -= b.length; HIT.unpacks++;
+    }
+    HIT.dense.set(key, a);
+    if (HIT.dense.size > HIT_DENSE) { const [k0, a0] = HIT.dense.entries().next().value; hitPack(k0, a0); }
+    return a;
+  }
+  function hitSet(i, j, q) {
+    const ti = Math.floor(i / HIT_TILE), tj = Math.floor(j / HIT_TILE), key = hitKey(ti, tj);
+    let a = HIT.key === key ? HIT.arr : null;
+    if (!a) { a = hitOpen(key); HIT.key = key; HIT.arr = a; }
+    const k = (j - tj * HIT_TILE) * HIT_TILE + (i - ti * HIT_TILE);
+    if (q > a[k]) { if (!a[k]) HIT.cells++; a[k] = q; }
+  }
+  function hitTop(i, j) {   // the cell's column (absolute y of its roof), -Infinity where nothing stands
+    const ti = Math.floor(i / HIT_TILE), tj = Math.floor(j / HIT_TILE), key = hitKey(ti, tj), li = i - ti * HIT_TILE, lj = j - tj * HIT_TILE;
+    let q = 0;
+    const a = HIT.dense.get(key);
+    if (a) q = a[lj * HIT_TILE + li];
+    else {
+      const b = HIT.packed.get(key);
+      if (b) for (let r = b[2 * lj] | (b[2 * lj + 1] << 8), r1 = b[2 * lj + 2] | (b[2 * lj + 3] << 8); r < r1; r++) {
+        const o = HIT_HEAD + 3 * r;
+        if (li < b[o]) break;
+        if (li < b[o] + b[o + 1]) { q = b[o + 2]; break; }
+      }
+    }
+    return q ? q * HIT_DY + HIT_Y0 : -Infinity;
+  }
+  const _hx = [];
+  function hitNote(poly, top) {
+    if (!HIT_ON || !poly || poly.length < 3 || !(top > HIT_Y0)) return;
+    const q = Math.min(255, Math.max(1, Math.ceil((top - HIT_Y0) / HIT_DY))), n = poly.length;
+    let z0 = Infinity, z1 = -Infinity;
+    for (const p of poly) { if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+    let hit = false;
+    for (let j = Math.ceil(z0 / HIT_CELL - 0.5), j1 = Math.floor(z1 / HIT_CELL - 0.5); j <= j1; j++) {   // a scanline through each row's centres
+      const zc = (j + 0.5) * HIT_CELL; _hx.length = 0;
+      for (let k = 0, m = n - 1; k < n; m = k++) {
+        const a = poly[m], b = poly[k];
+        if ((a[1] > zc) !== (b[1] > zc)) _hx.push(a[0] + (zc - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+      }
+      if (_hx.length > 2) _hx.sort((u, v) => u - v); else if (_hx.length === 2 && _hx[0] > _hx[1]) { const t = _hx[0]; _hx[0] = _hx[1]; _hx[1] = t; }
+      for (let k = 0; k + 1 < _hx.length; k += 2)
+        for (let i = Math.ceil(_hx[k] / HIT_CELL - 0.5), i1 = Math.floor(_hx[k + 1] / HIT_CELL - 0.5); i <= i1; i++) { hitSet(i, j, q); hit = true; }
+    }
+    if (!hit) { const c = polyCentroid(poly); hitSet(Math.floor(c[0] / HIT_CELL), Math.floor(c[1] / HIT_CELL), q); }
+    HIT.notes++;
+  }
+  function hitSquare(x, z, half, top) { hitNote([[x - half, z - half], [x + half, z - half], [x + half, z + half], [x - half, z + half]], top); }
+  function hitSweep() {   // the rings REBUILD_OCC has gained since the last sweep (City Hall, the rebuilds, the Liberty Bell's chamber)
+    for (; HIT.occN < REBUILD_OCC.length; HIT.occN++) { const o = REBUILD_OCC[HIT.occN]; if (o.top) hitNote(o.ring, o.top); }
+  }
+  // the tallest roof among the columns within r of (x, z) whose roof + HIT_CLR lies in (lo, hi]: -Infinity for none
+  function hitMax(x, z, r, lo, hi) {
+    let best = -Infinity;
+    const i0 = Math.floor((x - r) / HIT_CELL), i1 = Math.floor((x + r) / HIT_CELL), j0 = Math.floor((z - r) / HIT_CELL), j1 = Math.floor((z + r) / HIT_CELL);
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const t = hitTop(i, j);
+      if (t <= best || t + HIT_CLR <= lo || t + HIT_CLR > hi) continue;
+      const dx = x - clamp(x, i * HIT_CELL, (i + 1) * HIT_CELL), dz = z - clamp(z, j * HIT_CELL, (j + 1) * HIT_CELL);
+      if (dx * dx + dz * dz < r * r) best = t;
+    }
+    return best;
+  }
+  // one step of the eye from (px, py, pz) to p: out of the walls, onto the roofs; vel loses what drove it into either
+  function hitStep(p, px, py, pz, vel) {
+    const inTop = hitMax(px, pz, HIT_R * 0.5, py, Infinity);
+    if (inTop > -Infinity) {   // it began inside a column (a link, a jump, a building raised under it): up onto the roof
+      p.y = Math.max(p.y, inTop + HIT_CLR, hitMax(p.x, p.z, HIT_R, -Infinity, Infinity) + HIT_CLR);
+      if (vel.y < 0) vel.y = 0;
+      HIT.lifts++; return;
+    }
+    let sx = 0, sz = 0;
+    for (let it = 0; it < 3; it++) {   // the columns it was not over push it out, as the walk's walls do
+      let moved = false;
+      const i0 = Math.floor((p.x - HIT_R) / HIT_CELL), i1 = Math.floor((p.x + HIT_R) / HIT_CELL), j0 = Math.floor((p.z - HIT_R) / HIT_CELL), j1 = Math.floor((p.z + HIT_R) / HIT_CELL);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const t = hitTop(i, j);
+        if (t + HIT_CLR <= py) continue;
+        const dx = p.x - clamp(p.x, i * HIT_CELL, (i + 1) * HIT_CELL), dz = p.z - clamp(p.z, j * HIT_CELL, (j + 1) * HIT_CELL), d2 = dx * dx + dz * dz;
+        if (d2 >= HIT_R * HIT_R || d2 < 1e-8) continue;
+        const d = Math.sqrt(d2), k = (HIT_R - d) / d;
+        p.x += dx * k; p.z += dz * k; sx += dx * k; sz += dz * k; moved = true;
+      }
+      if (!moved) break;
+    }
+    if (hitMax(p.x, p.z, HIT_R * 0.9, py, Infinity) > -Infinity) {   // a gap narrower than the eye, or a column's corner it went into: it stays
+      p.x = px; p.z = pz; vel.x = vel.z = 0; HIT.stops++;
+    } else if (sx || sz) {
+      const L = Math.hypot(sx, sz), nx = sx / L, nz = sz / L, vn = vel.x * nx + vel.z * nz;
+      if (vn < 0) { vel.x -= vn * nx; vel.z -= vn * nz; }   // it slides along the wall
+      HIT.pushes++;
+    }
+    const roof = hitMax(p.x, p.z, HIT_R, -Infinity, py);   // what is left within reach lies under where it was: a floor
+    if (p.y < roof + HIT_CLR) { p.y = roof + HIT_CLR; if (vel.y < 0) vel.y = 0; HIT.lands++; }
+  }
+  const _hp = new V3();
+  function hitFly(pos, vel, dt) {   // pos += vel * dt, in steps no longer than HIT_R, each through hitStep
+    if (!HIT_ON) { pos.addScaledVector(vel, dt); return; }
+    if (HIT.occN < REBUILD_OCC.length) hitSweep();
+    const n = Math.min(64, Math.max(1, Math.ceil(Math.hypot(vel.x, vel.z) * dt / HIT_R)));
+    for (let s = 0; s < n; s++) {
+      _hp.copy(pos);
+      pos.addScaledVector(vel, dt / n);
+      if (HIT.cells) hitStep(pos, _hp.x, _hp.y, _hp.z, vel);
+    }
   }
   // the outer districts' wall colours, sampled (Round 57): a reservoir of the final colour of
   // every low building the outer districts loop raised, photographed (three parts its Mapillary
@@ -25670,6 +25822,7 @@ if (uNjLamp > 0.001) {
         if (rbId) {
           REBUILD_OCC.push({ id: rbId, ring: poly, bb: rbBox(poly) });
           if (h >= 6) roofNote(cx, cz, siteY(cx, cz, 'ground') + h, Math.abs(signedArea(poly)));   // the roof grid keeps its note: losClear and the placards read it (review)
+          hitNote(poly, siteY(cx, cz, 'ground') + h);   // and the flight its wall, whatever the rebuild occupies
         }
         continue;
       }
@@ -25717,6 +25870,7 @@ if (uNjLamp > 0.001) {
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
       if (h >= 6) roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
+      hitNote(poly, base + h);   // the flight's walls (Round 214)
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -25762,7 +25916,7 @@ if (uNjLamp > 0.001) {
       // Round 195 (CMR): the photographs' bars, the north to 190 m and the south kept at OSM's 142
       if (style === 24 && h > 135 && h < 150 && t === 10 && !(CMR_ON && spec && cz > spec.z)) {
         h = CMR_ON ? CTC_DIMS.nBar : 213.5;
-        roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
+        roofNote(cx, cz, base + h, Math.abs(signedArea(poly))); hitNote(poly, base + h);
         const tg = tallGlow[tallGlow.length - 1]; if (tg && tg.x === cx && tg.z === cz) tg.h = h;
       }
       let hTop = h;
@@ -25955,7 +26109,7 @@ if (uNjLamp > 0.001) {
       if (sp && sp.hex) col.set(parseInt(sp.hex.slice(1), 16)).multiplyScalar(0.66);
       else if (sys >= 0) glassBody(sys, 7, col); else col.set(0x8a97a2);
       appendBuilding(getGlassChunk(bx, bz), poly, g0 - 1, y1, col, isGlassStyle(st) ? st : 20, g0, null, sys >= 0 ? glassFh(sys) : undefined);
-      roofNote(bx, bz, y1, Math.abs(signedArea(poly)));
+      roofNote(bx, bz, y1, Math.abs(signedArea(poly))); hitNote(poly, y1);
       if (CITYENV.on) cityEnvNote(poly, g0, y1, col, 1, false);
     });   // Round 198: the massing the buildings round City Hall carry that their footprints miss
     // -------- crowns for the researched towers (towers.json): the body stopped short of
@@ -26371,7 +26525,7 @@ if (uNjLamp > 0.001) {
       const slot=themeSlotN++%4,baySlot=themeSlotN%4;   // the bays take the colour after the outline's (Round 145)
       for(const p of model.lights)themeParts.push({...p,slot});
       for(const p of model.bays)themeParts.push({...p,slot:baySlot});
-      roofNote(x,z,base+model.height,Math.abs(signedArea(spec.poly)));
+      roofNote(x,z,base+model.height,Math.abs(signedArea(spec.poly))); hitNote(spec.poly, base + model.height);
     }
     if (venueParts.length) {
       const g = mergeColored(venueParts); freeOnUpload(g);
@@ -29219,7 +29373,7 @@ if (uNjLamp > 0.001) {
       if (!m.nobox) {   // a cap alone ('nobox') stands on a record's own roof
         appendBuilding(getChunk(mx, mz), poly, m.y0 ? y0 : g0 - 1, y1, col, 3, g0);
         TOWN.massTris += 10;
-        roofNote(mx, mz, y1, m.w * m.d);
+        roofNote(mx, mz, y1, m.w * m.d); hitNote(poly, y1);
         if (!m.plain) townNote(poly, m.y0 ? null : g0, y0, y1, art, 9001 + k++, m.strip);
       }
       const cap = m.cap;
@@ -29575,6 +29729,7 @@ if (uNjLamp > 0.001) {
       const hsh = hash01(i * 5.31 + 0.7);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
       if (h >= 6) roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
+      hitNote(poly, base + h);   // the flight's walls (Round 214)
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -33971,7 +34126,7 @@ if (uNjLamp > 0.001) {
     } else {
       fly.vel.multiplyScalar(Math.exp(-dt * 5));
     }
-    fly.pos.addScaledVector(fly.vel, dt);
+    hitFly(fly.pos, fly.vel, dt);   // Round 214: through no building (the flight's walls)
     fly.pos.x = clamp(fly.pos.x, bounds.minX - 400, bounds.maxX + 600);
     fly.pos.z = clamp(fly.pos.z, bounds.minZ - 400, bounds.maxZ + 400);
     limitV(fly.pos);
@@ -36911,6 +37066,7 @@ float pinOccGate() {
     }
     concertStatus();
   }
+  const CONCERT_PIN_R = 1609.34;   // 1 mile (Round 214)
   function concertsRender() {
     concertsRefresh();
     for (const s of CONCERTS.shown) {
@@ -36918,9 +37074,12 @@ float pinOccGate() {
       _ccv.set(s.x, s.y, s.z);
       // Round 127 (Mike: no concert pin through a building): the placard, its tether and its ball are
       // shown or hidden together, by whether the pin's landing point on the roof is in clear view
-      const blocked = pinBlocked(s.x, s.top + 3, s.z);
-      if (s.line) s.line.visible = s.ball.visible = !blocked;
-      const far = camera.position.distanceTo(_ccv) > 14000 || blocked;
+      // Round 214 (Mike: "make it so concert pins only pop up within 1 mile of the user"): the placard, its tether and its ball
+      // show within CONCERT_PIN_R of the eye, the straight-line distance as the ships' pins; the score bubbles keep 14 km
+      const out = camera.position.distanceTo(_ccv) > CONCERT_PIN_R;
+      const blocked = !out && pinBlocked(s.x, s.top + 3, s.z);
+      if (s.line) s.line.visible = s.ball.visible = !out && !blocked;
+      const far = out || blocked;
       _ccv.project(camera);
       if (far || _ccv.z > 1 || _ccv.z < -1 || _ccv.x < -1.1 || _ccv.x > 1.1 || _ccv.y < -1.2 || _ccv.y > 1.2) { s.el.style.opacity = '0'; s.el.style.visibility = 'hidden'; continue; }
       s.el.style.opacity = '1'; s.el.style.visibility = '';
@@ -49576,7 +49735,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

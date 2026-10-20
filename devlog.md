@@ -12466,3 +12466,34 @@ Street and the gap to the split, the second branch its own chain from the split 
 vertices go from 34 to 0 (553 chains, 147.8 km); near Penn's Landing the Columbus Boulevard off-ramp and on-ramp, which had
 been one U-shaped `i95-ramp` chain, are two, each tapering to the street, and still meet the mainline at three junctions
 with no step. `tests/test_i95_elevation.py`: three core ramps, and no chain in `el` or `sk` turns back on itself.
+
+## Round 214 — the flight's walls, and the concert placards within a mile (Oct 20)
+
+Mike: "Can we add building collision detection so people cannot just fly through buildings?", then, mid-round, "make it so
+concert pins only pop up within 1 mile of the user".
+
+**The walls.** Only the core had collision (`colSegs`, the walk's), and fly moved freely. Now every building loop notes its
+footprint and roof into one sparse grid beside `ROOF_GRID` (`hitNote`): the core's records and its researched custom ones
+that are not open sheds, the outer districts, the far ring and the towns (the three `hitNote(poly, base + h)` beside the
+`roofNote`s), a rebuilt landmark's generic footprint, the Society Hill Towers both ways, the Liberty Bell's chamber, City
+Hall's tower and mansards (squares from its roof notes) and wings, the town masses, the boathouses, and every
+`REBUILD_OCC` ring that carries a top (swept in as they appear, `hitSweep`). A cell is 4 m, marked when its centre lies in
+the footprint (the centroid's cell for one smaller than a cell), holding the tallest roof over it in 1.6 m steps from
+-10 m, rounded up. Dense, the city came to 42 MB (6.4 M cells in 10,795 tiles of 64 by 64); so a tile is written dense and
+packed to runs once 256 are open, the least recently written first, reopened when a later loop writes into it: 7.1 MB at
+Ready (1.7 M runs), with no dense peak during the build (about 15,000 packs and 4,600 reopens across it). `applyFly` moves
+the eye through `hitFly`: steps no longer than `HIT_R` 3 m (a 30 fps phone at full stick covered 7 m a frame, enough to
+step through a row), each out of every column it was not already over (a circle push off the cell squares, three passes,
+the velocity into the wall dropped so it slides along it), back where it was if a gap is narrower than the eye, and set
+down `HIT_CLR` 2.5 m over a roof it comes down on. An eye that begins inside a column (a link, a jump, a building raised
+under it) is lifted onto that roof. Stadium bowls and ships are not walls. Measured on the real city: the Comcast
+Technology Center reads 342 m and the probe lands on it at 344.5; City Hall's tower 172; flying west at 170 m into the
+CTC stops at its wall in the live controls (120 frames, 169 contacts); the hidden pane's flights cost 5 ms for seven.
+`?collide=0` flies through as before; `__dbg.collide(x, z)` (the grid's size and counters, and a cell's roof),
+`__dbg.collideFly(x, y, z, vx, vy, vz, secs, fps)` (a flight through `hitFly` with no frames drawn);
+`tests/test_collide.py` (the raster, the packing round trip, walls, slides, landings, lifts, gaps, tunnelling, the sweep,
+the hatch).
+
+**The placards.** A concert placard, its tether and its ball show only within `CONCERT_PIN_R` 1,609.34 m of the eye, the
+straight-line distance the ships' pins use (Round 202), where it was 14 km; the building-occlusion test is not asked past
+it. The score bubbles keep 14 km. The Fillmore's placard showed at 1,432 and 1,581 m and was gone at 1,772.
