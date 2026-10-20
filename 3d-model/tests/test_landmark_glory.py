@@ -382,7 +382,7 @@ class Def(unittest.TestCase):
         self.assertGreater(near.get('5:1', 0), 0)
         self.assertGreater(far.get('5:2', 0), 0)
         self.assertLessEqual(near.get('5:0', 0), 64)
-        self.assertEqual(far.get('5:2', 0), 32)   # four runs, two faces of two triangles
+        self.assertEqual(far.get('5:2', 0), 16)   # two runs (Round 209: the front whole and the west end; the east end is the flight's), two faces of two triangles
         self.assertGreater(near.get('1:7', 0), 0)  # the old sign box's rust cap
 
 
