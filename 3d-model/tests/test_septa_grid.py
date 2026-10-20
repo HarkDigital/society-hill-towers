@@ -51,11 +51,12 @@ for (let k = 0; k < 4000; k++) {   // a street grid with long diagonals and shor
   add(x, z, x + Math.cos(a) * L, z + Math.sin(a) * L);
 }
 let bad = 0, hits = 0;
-const check = (n) => { for (let q = 0; q < n; q++) { const x = (rnd() - 0.5) * 9400, z = (rnd() - 0.5) * 9400, d = 5 + rnd() * 40, A = oldSnap(x, z, d), B = septaSnapRoad(x, z, d); if (A) hits++; if (JSON.stringify(A) !== JSON.stringify(B)) bad++; } };
+// Round 207: the page's answer carries the street's half width and class after the four the old one gave
+const check = (n) => { for (let q = 0; q < n; q++) { const x = (rnd() - 0.5) * 9400, z = (rnd() - 0.5) * 9400, d = 5 + rnd() * 40, A = oldSnap(x, z, d), B = septaSnapRoad(x, z, d); if (A) hits++; if (JSON.stringify(A) !== JSON.stringify(B && B.slice(0, 4))) bad++; } };
 check(6000);
 add(12000, 12000, 12050, 12040);   // a write after the freeze, outside the old extent: the next read refreezes
 check(1000);
-const far = JSON.stringify(septaSnapRoad(12020, 12020, 30)) === JSON.stringify(oldSnap(12020, 12020, 30));
+const far = JSON.stringify(septaSnapRoad(12020, 12020, 30).slice(0, 4)) === JSON.stringify(oldSnap(12020, 12020, 30));
 console.log(JSON.stringify({ bad, hits, far, freezes: SRG.freezes, segs: SRG.n }));'''
         r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)

@@ -12277,3 +12277,40 @@ both; they stay at the survey's point. Phone emulation: the same, its half fores
 unchanged (26 to 27 s headless). Renders at four street spots (Center City, the Parkway, the towers' plaza, South Philly
 at night) show the trunks and poles back on the sidewalks. `tests/test_street_push.py` runs the page's own `streetPush` on a
 synthetic grid. `?streetpush=0` keeps the surveyed points.
+
+## Round 207 — I-95 under the plaza, cars and buses, cars and closed blocks (Oct 20)
+
+Mike, with a screenshot from I-95 at `#p=205.5,20.9,-30.1,-2.611,-0.525`: "the elevated section is an overpass over I95.
+Cars should have clearance to drive under the park that is elevated." And: "I see a lot of cars clipping through the septa
+busses. That shouldn't happen. Cars are also driving through closed roads which also shouldn't happen."
+
+**The deck over I-95** (Foglietta Plaza, Spruce Street, the Vietnam Veterans Memorial; `CAPS`). Each end carried a
+`portalFace` from under the trench floor to the deck top: both mouths were walls, and the lanes drove into them. Measured
+(`__dbg.perf().capPortals`): the slab stood 5.56 m over the lanes at Dock Street and 3.78 m at Spruce, since the deck follows
+Front Street's ground, which falls 1.8 m to the south, and the lanes kept the trench's one floor. Now each face is the deck's
+own fascia over an open mouth, `capFascia` deep (1 m where there is room for 4.2 m under it, never under 0.45 m), and I-95
+dips under the deck (`trenchDip`: just enough for 4.9 m to the structure's underside, eased over 90 m along Front Street).
+The first cut dipped 2.7 m at Spruce and put the river in the trench: the water is one plane at `TERRAIN.water`, so the floor
+stops 0.25 m over it (`TRENCH_DIP_MAX`, 0.75 m). The floor (now a grid on the dip), the core ground under it, the walls, the
+lanes, their cars and their names take the dip through one function, `trenchLaneY` (three copies of the old blend before).
+The slab is concrete underneath (its tan top never showed) and the deck shades the lanes under it. After: 4.96 m clear at
+Dock Street and 4.10 m at Spruce, every vehicle in the typical traffic under 2.5 m tall. Left as it was: the grass bank
+inside the trench along the west wall (the 12.5 m core ground grid straddling the wall), which shows along the open trench
+too and now shows under the deck.
+
+**Buses.** A bus snapped to its street's centreline and straddled both directions' lanes, and the typical traffic knew
+only the cars on its own run. Now `SRG` carries each segment's class beside its half width and `septaSnapRoad` returns both;
+a bus keeps the right-hand lane of its way at the traffic's own offset for the class (`CAR_OFFW`), short of the kerb. Every
+drawn bus is an obstacle (`BUS_OB`, 50 m cells rebuilt each frame): a car within reach of one tests three points along its
+length against its own line and stops 2.5 m short, a car just ahead of a bus in its lane holds the bus's forward glide, and
+a bus never backs up (a fix behind where it is drawn reversed it into the car behind; one 60 m behind is taken).
+`__dbg.busClips()` counts the cars standing inside a drawn bus: over Center City at 5 pm, 50 samples over 20 s with about
+27 buses in view, 113 to 332 with `?busyield=0` (the old behaviour) against 8 now (they vary with the live feed run to run).
+
+**Closed blocks.** A run was closed only when its midpoint lay within 25 m of the block's, only from secondary streets down
+and under 250 m; the cars already on it kept driving through the drums, and a retiring car that came into view was revived.
+Now every run of any class lying along the drummed stretch closes (`closureTraffic`: samples from the first barricade to the
+last, a segment within the half width and 2 m, 6 m at the least, and running with it), the cars on it fade out where they
+are and stay fading (`closedOut`). On the live feed (1,338 full closures): 1,137 runs closed against the old rule's 687, 66
+cars cleared at load, and 0 cars on a closed run over the next 8 s (17 before the revival fix). `__dbg.closedCars()`.
+A run is a chunk up to 400 m, so a short closure on a long run empties the whole run, as before.

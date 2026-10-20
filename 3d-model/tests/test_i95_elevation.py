@@ -100,7 +100,7 @@ const parts=[],rememberStreetArray=()=>{{}};
 {ribbon}
 // The surrounding earth can be higher than a road emerging from the core cut.
 const inCore=()=>true,inCapSite=()=>false,groundMeshLandY=()=>100,siteY=()=>100;
-const bankFloor=()=>-1000,frontOff=()=>0,bridgeDeckLift=()=>null,sunkCutNear=()=>null;
+const bankFloor=()=>-1000,frontOff=()=>0,bridgeDeckLift=()=>null,sunkCutNear=()=>null,trenchLaneY=(x,z,y)=>y;
 const LAYER={{road:.24}},TERRAIN={{trenchW:10,trenchE:72}};
 function trafficHeight(x0,z0,dx,dz){{
  const pts=[[x0-dx,z0-dz],[x0,z0],[x0+dx,z0+dz]],j=1,cls=0;

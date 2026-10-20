@@ -7929,7 +7929,8 @@ RB.add({
   // ?real=0 the Cities: Skylines palette it replaces. On the post pipeline it adds ambient occlusion from the city's own
   // depth (AO) and a filmic grade in the composite; on every device a quieter lawn and a city's warm bounce by night
   const REAL = !/[?&]real=0\b/.test(location.search);
-  const STREET_PUSH = !/[?&]streetpush=0\b/.test(location.search);   // Round 205: the trees and poles on a drawn street go to its kerb (streetPush)
+  const STREET_PUSH = !/[?&]streetpush=0\b/.test(location.search);
+  const BUS_YIELD = !/[?&]busyield=0\b/.test(location.search);   // Round 207: the buses keep their lane and the cars stop behind them (?busyield=0: neither)   // Round 205: the trees and poles on a drawn street go to its kerb (streetPush)
   // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
   // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
   const GLORY_ON = REAL && !/[?&]glory=0\b/.test(location.search);
@@ -15825,6 +15826,54 @@ vec2 wRing(vec2 rc, float tt) {
     { s0: 11, s1: 222, kind: 'deck', dy: 0 },  // Foglietta Plaza, Spruce Street, the Vietnam Veterans Memorial
   ];
   function capAt(x, z) { const s = (x - fl.px) * fl.dx + (z - fl.pz) * fl.dz; return CAPS.find((c) => s > c.s0 && s < c.s1); }
+  // Round 207 (Mike, from I-95 under the plaza: "Cars should have clearance to drive under the park that is elevated"): the
+  // deck follows Front Street's ground, which falls 1.8 m to the south, while the lanes kept the trench's one floor, so the
+  // slab stood 5.6 m over them at Dock Street and 3.8 m at Spruce. Under a deck I-95 now dips just enough that its lanes
+  // have TRENCH_CLEAR to the underside of the deck's structure (CAP_STRUCT under the slab's top, the portals' fascia), easing
+  // in and out over TRENCH_RAMP metres along Front Street; the floor, the ground under it, the walls, the lanes, their cars
+  // and their names all take it (trenchDip, trenchLaneY). The river is one plane at TERRAIN.water everywhere, so the floor
+  // never goes within 0.25 m of it (TRENCH_DIP_MAX, about 0.7 m: the first cut's 2.7 m at Spruce put water in the trench),
+  // and a portal's fascia is as deep as CAP_STRUCT only where the clearance allows (capFascia: never under 0.45 m)
+  const TRENCH_CLEAR = 4.9, TRENCH_RAMP = 90, CAP_STRUCT = 1.0, CAP_STRUCT_MIN = 0.45, TRENCH_FIT = 4.2;
+  const TRENCH_DIP_MAX = Math.max(0, TERRAIN.trenchFloor - (TERRAIN.water + 0.25));
+  const capFascia = (top, lanes) => clamp(top - lanes - TRENCH_FIT, CAP_STRUCT_MIN, CAP_STRUCT);   // a mouth's fascia depth: TRENCH_FIT clear under it where there is room
+  let TRENCH_DIP = null;   // [s0, step, values]: the dip along Front Street, worked out at the first read
+  function trenchDip(x, z) {
+    if (!TRENCH_DIP) {
+      const step = 5, lanes = TERRAIN.trenchFloor + 0.55, need = [];
+      for (const c of CAPS) {
+        if (c.kind !== 'deck') continue;
+        for (let sv = c.s0; sv <= c.s1 + 0.01; sv += step) {
+          const m = capPoint((TERRAIN.trenchW + TERRAIN.trenchE) / 2, Math.min(sv, c.s1));
+          const soffit = frontDem(m[1]) + c.dy - 0.3 - CAP_STRUCT;
+          need.push([Math.min(sv, c.s1), Math.max(0, lanes + TRENCH_CLEAR - soffit)]);
+        }
+      }
+      if (!need.length) { TRENCH_DIP = [0, step, new Float32Array(1)]; return 0; }
+      const a = Math.min(...need.map((q) => q[0])) - TRENCH_RAMP, b = Math.max(...need.map((q) => q[0])) + TRENCH_RAMP;
+      const v = new Float32Array(Math.ceil((b - a) / step) + 1);
+      for (let k = 0; k < v.length; k++) {
+        const sv = a + k * step;
+        for (const [sq, nq] of need) { const u = clamp(1 - Math.abs(sv - sq) / TRENCH_RAMP, 0, 1); v[k] = Math.max(v[k], Math.min(nq, TRENCH_DIP_MAX) * u * u * (3 - 2 * u)); }
+      }
+      // the dilation eases each sample's own need out over the ramp; under the deck the need itself holds (u is 1 at its sample)
+      TRENCH_DIP = [a, step, v];
+    }
+    const [a, step, v] = TRENCH_DIP, f = ((x - fl.px) * fl.dx + (z - fl.pz) * fl.dz - a) / step;
+    if (f <= 0 || f >= v.length - 1) return 0;
+    const k = Math.floor(f), t = f - k;
+    return v[k] + (v[k + 1] - v[k]) * t;
+  }
+  // I-95's lanes in the core's trench: down from the street's own height (base) to the floor over 14 m from each wall and
+  // 60 m from the core's ends (the road loop's, the street names' and the cars' one rule since Round 207)
+  function trenchLaneY(x, z, base) {
+    const o = frontOff(x, z);
+    if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE) return base;
+    const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
+    const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
+    const t = clamp(Math.min(eo, ez), 0, 1);
+    return lerp(base, TERRAIN.trenchFloor + 0.55 - trenchDip(x, z), t * t * (3 - 2 * t));
+  }
   // Penn's Landing CAP: a construction-stage model, not the future finished park.
   // Local s follows Front Street; o measures east toward the river. The working
   // limits follow Chestnut/Walnut, including the demolished Chestnut crossing.
@@ -16035,7 +16084,7 @@ vec2 wRing(vec2 rc, float tt) {
     const o = frontOff(x, z);
     const cap = capAt(x, z);
     if (o < TERRAIN.trenchW) return cityY(x, z) + plazaLift(x, z);
-    if (o < TERRAIN.trenchE) return (cap && cap.kind === 'deck') ? frontDem(z) + cap.dy : (mode === 'road' ? frontDem(z) : TERRAIN.trenchFloor);
+    if (o < TERRAIN.trenchE) return (cap && cap.kind === 'deck') ? frontDem(z) + cap.dy : (mode === 'road' ? frontDem(z) : TERRAIN.trenchFloor - trenchDip(x, z));
     return shelfY(x, z);
   }
   function walkY(x, z) { return Math.max(siteY(x, z, 'ground'), siteY(x, z, 'road')); }
@@ -16547,7 +16596,7 @@ vec2 wRing(vec2 rc, float tt) {
         // east of the trench the shelf mesh takes over; past the shoreline this
         // field must dive below the water plane or it reads as a slab on the river
         // (the -4 margin keeps interpolated cell faces from surfacing east of the bulkhead)
-        const y = frontOff(x, z) < TERRAIN.trenchW ? cityY(x, z) - 0.05 : ((inWater(x, z) > -4 || inRiver(x, z)) ? TERRAIN.bed - 0.05 : TERRAIN.trenchFloor - 0.05);
+        const y = frontOff(x, z) < TERRAIN.trenchW ? cityY(x, z) - 0.05 : ((inWater(x, z) > -4 || inRiver(x, z)) ? TERRAIN.bed - 0.05 : TERRAIN.trenchFloor - 0.05 - trenchDip(x, z));
         pos.push(x, y, z);
       }
       const idx = [];
@@ -16622,8 +16671,18 @@ vec2 wRing(vec2 rc, float tt) {
       }
     }
     // trench floor
-    const trench = new THREE.Mesh(flat([frontPt(TERRAIN.trenchW, Z0), frontPt(TERRAIN.trenchE, Z0), frontPt(TERRAIN.trenchE, Z1), frontPt(TERRAIN.trenchW, Z1)], TERRAIN.trenchFloor),
-      new THREE.MeshStandardMaterial({ color: 0x4b4843, roughness: 0.95 }));
+    // (Round 207: a grid on the dip under the deck, 5 m rows, 4 columns; one flat quad before)
+    const trenchG = (() => {
+      const NO = 4, rows = [], pos = [], idx = [];
+      for (let z = Z0; z < Z1; z += 5) rows.push(z);
+      rows.push(Z1);
+      for (const z of rows) for (let i = 0; i <= NO; i++) { const q = frontPt(TERRAIN.trenchW + (TERRAIN.trenchE - TERRAIN.trenchW) * i / NO, z); pos.push(q[0], TERRAIN.trenchFloor - trenchDip(q[0], q[1]), q[1]); }
+      for (let j = 0; j + 1 < rows.length; j++) for (let i = 0; i < NO; i++) { const a = j * (NO + 1) + i, b = a + 1, c = a + NO + 1, d = c + 1; idx.push(a, c, b, b, c, d); }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setIndex(idx); g.computeVertexNormals();
+      return g;
+    })();
+    const trench = new THREE.Mesh(trenchG, new THREE.MeshStandardMaterial({ color: 0x4b4843, roughness: 0.95 }));
     trench.receiveShadow = true; groupCity.add(trench);
     // waterfront shelf: heightfield between the trench's east wall and the shoreline, 5 m rows
     {
@@ -16666,9 +16725,9 @@ vec2 wRing(vec2 rc, float tt) {
     // Beyond the core, mapped overpasses supply their own edge barriers.
     for (let z = Z0; z < Z1; z += 25) {
       const a = frontPt(TERRAIN.trenchW, z), b = frontPt(TERRAIN.trenchW, Math.min(z + 25, Z1));
-      vstrip(a[0], a[1], b[0], b[1], TERRAIN.trenchFloor - 0.3, frontDem(z + 12) + 1.2, '#9a978f');
+      vstrip(a[0], a[1], b[0], b[1], TERRAIN.trenchFloor - 0.3 - Math.max(trenchDip(a[0], a[1]), trenchDip(b[0], b[1])), frontDem(z + 12) + 1.2, '#9a978f');
       const c = frontPt(TERRAIN.trenchE, z), d = frontPt(TERRAIN.trenchE, Math.min(z + 25, Z1));
-      vstrip(c[0], c[1], d[0], d[1], TERRAIN.trenchFloor - 0.3, shelfY(d[0] + 3, z + 12) + 0.3, '#9a978f');
+      vstrip(c[0], c[1], d[0], d[1], TERRAIN.trenchFloor - 0.3 - Math.max(trenchDip(c[0], c[1]), trenchDip(d[0], d[1])), shelfY(d[0] + 3, z + 12) + 0.3, '#9a978f');
     }
     // Round 195: where a berth opens through the bulkhead (the Moshulu's, slips' fifth entry) its run inside the slip is
     // left out, and the slip's own ends stop at the shore
@@ -16796,11 +16855,12 @@ vec2 wRing(vec2 rc, float tt) {
     const band = (o0, o1, z0, z1) => [frontPt(o0, z0), frontPt(o1, z0), frontPt(o1, z1), frontPt(o0, z1)];
     // cap decks over the trench: slab + edge fascia + a header beam over each
     // portal face, so I-95 visibly dives UNDER the plazas instead of sliding
-    // beneath a floating carpet
-    const portalFace = (sv, topY, dyDrop) => {   // sv: the along-Front coordinate of the deck's end
-      const a = capPoint(TERRAIN.trenchW, sv), b = capPoint(TERRAIN.trenchE, sv);
-      const arr = new Float32Array([a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], TERRAIN.trenchFloor - 0.4, b[1], b[0], topY, b[1],
-                                    a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], topY, b[1], a[0], topY, a[1]]);
+    // beneath a floating carpet. Round 207: the face is the deck's own edge, CAP_STRUCT deep, over an open mouth (it ran
+    // from under the trench floor to the deck and closed both portals: the lanes drove into a wall)
+    const portalFace = (sv, topY, depth) => {   // sv: the along-Front coordinate of the deck's end; depth the fascia's (capFascia)
+      const a = capPoint(TERRAIN.trenchW, sv), b = capPoint(TERRAIN.trenchE, sv), y0 = topY - depth;
+      const arr = new Float32Array([a[0], y0, a[1], b[0], y0, b[1], b[0], topY, b[1],
+                                    a[0], y0, a[1], b[0], topY, b[1], a[0], topY, a[1]]);
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
       g.computeVertexNormals();
@@ -16808,9 +16868,9 @@ vec2 wRing(vec2 rc, float tt) {
       // header beam across the opening
       let hx = b[0] - a[0], hz = b[1] - a[1];
       const hl = Math.hypot(hx, hz) || 1;
-      const hg = new THREE.BoxGeometry(hl + 0.8, 1.25, 0.9);
+      const hg = new THREE.BoxGeometry(hl + 0.8, depth - 0.1, 0.9);   // its foot flush with the fascia's
       hg.rotateY(Math.atan2(-hz, hx));
-      hg.translate((a[0] + b[0]) / 2, topY - dyDrop, (a[1] + b[1]) / 2);
+      hg.translate((a[0] + b[0]) / 2, topY - (depth + 0.1) / 2 - 0.05, (a[1] + b[1]) / 2);
       parts.push({ geom: hg, color: new THREE.Color(0x6e6b64), style: 3 });
     };
     for (const c of CAPS) {
@@ -16832,7 +16892,7 @@ vec2 wRing(vec2 rc, float tt) {
       const dg = new THREE.BufferGeometry();
       dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(dpos), 3));
       dg.setIndex(didx); dg.computeVertexNormals();
-      parts.push({ geom: dg, color: new THREE.Color(c.dy < 0 ? 0x8f8a80 : 0x9a6a52), style: 3 });
+      parts.push({ geom: dg, color: new THREE.Color(0x77736b), style: 3 });   // only its underside shows (its top is under the drawn ground): concrete (Round 207; brick tan before)
       // the deck's river edge: a concrete fascia from the shelf up to the deck, where the deck stands over it
       for (let j = 0; j < NS; j++) {
         const sa = c.s0 + (c.s1 - c.s0) * j / NS, sb = c.s0 + (c.s1 - c.s0) * (j + 1) / NS;
@@ -16846,7 +16906,10 @@ vec2 wRing(vec2 rc, float tt) {
       }
       for (const se of [c.s0, c.s1]) {
         const mid = capPoint((TERRAIN.trenchW + TERRAIN.trenchE) / 2, se);
-        portalFace(se, frontDem(mid[1]) + c.dy - 0.28, 0.55);
+        // __dbg.perf().capPortals: each mouth's deck, the underside of its fascia, the lanes and the clear height between
+        const top = frontDem(mid[1]) + c.dy - 0.28, lanes = trenchLaneY(mid[0], mid[1], siteY(mid[0], mid[1], 'road')), depth = capFascia(top, lanes);
+        portalFace(se, top, depth);
+        (PERF.capPortals || (PERF.capPortals = [])).push({ s: se, x: +mid[0].toFixed(1), z: +mid[1].toFixed(1), deck: +top.toFixed(2), soffit: +(top - depth).toFixed(2), lanes: +lanes.toFixed(2), clear: +(top - depth - lanes).toFixed(2), dip: +trenchDip(mid[0], mid[1]).toFixed(2), water: +TERRAIN.water.toFixed(2) });
       }
     }
     // No finished lawn or solid portal face across the construction-stage cap.
@@ -16875,9 +16938,10 @@ vec2 wRing(vec2 rc, float tt) {
         });
       }
     }
-    // DoubleSide: the cap decks must read from BELOW too (driving the trench)
+    // DoubleSide: the cap decks must read from BELOW too (driving the trench); and they shade the lanes under them (Round 207:
+    // with the mouths open the sun lit I-95 under the plaza as if it stood in the open)
     const m = new THREE.Mesh(mergeColored(parts), surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
-    m.receiveShadow = true;
+    m.receiveShadow = true; m.castShadow = true;
     groupCity.add(m);
     freeOnUpload(m.geometry);
   });
@@ -16923,19 +16987,9 @@ vec2 wRing(vec2 rc, float tt) {
     // I-95 itself runs DOWN in the trench (cross streets bridge over it); without
     // this its lanes float at city level and the dark trench floor shows between
     // them as glitchy patches from above
-    const motY = (x, z) => {
-      // band edges must match siteY's trench band exactly, and blend down over a ramp
-      // length (a binary band left 7 m vertex spikes where densified points straddled it);
-      // beyond the trench mesh's z-extent the lanes climb back to grade
-      const o = frontOff(x, z);
-      const base = siteY(x, z, 'road');
-      if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE) return base;
-      const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
-      const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
-      const t = clamp(Math.min(eo, ez), 0, 1);
-      const ts = t * t * (3 - 2 * t);
-      return lerp(base, TERRAIN.trenchFloor + 0.55, ts);
-    };
+    // band edges must match siteY's trench band exactly, and blend down over a ramp length (a binary band left 7 m vertex
+    // spikes where densified points straddled it); beyond the trench mesh's z-extent the lanes climb back to grade
+    const motY = (x, z) => trenchLaneY(x, z, siteY(x, z, 'road'));
     // (Round 130's join pass is gone: its two joins paved across Bainbridge Green and through Lawrence Court's
     // turning circle, and Pine Street at 2nd was never split in the first place; review, Sep 22)
     const walkJobs = [], footJobs = [], carSegs = [], carGrid = new Map();
@@ -16985,7 +17039,7 @@ vec2 wRing(vec2 rc, float tt) {
         const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
         for (let i = 0; i < run.length - 1; i++) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
-          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
+          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2, mot ? 0 : /trunk/.test(r.t) ? 1 : /primary/.test(r.t) ? 2 : /secondary/.test(r.t) ? 3 : /tertiary/.test(r.t) ? 4 : 5); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
         }
         for (const g of gs) (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)).multiplyScalar(foot || setts ? 1 : streetAge(cr + 3)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
@@ -32251,7 +32305,7 @@ if (uNjLamp > 0.001) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
-      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, t);
       for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, laneClsOf(t, w));   // for the far ring's seam (Round 88), and the paving season's strips (wideStreetAt)
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       wideRoadRecs.push({pts,w,t,i});
@@ -35471,7 +35525,7 @@ if (uNjLamp > 0.001) {
       const pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (keepAt && !buildingsOnly && !keepAt(pts[pts.length >> 1][0], pts[pts.length >> 1][1])) continue;
-      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, t);
       roadRecs.push({ pts: densify(pts, 30), w, t, i });
     }
     // how many runs end at each half-metre node key: a run's own end gets a mitre disc only
@@ -41405,11 +41459,11 @@ if (uNjLamp > 0.001) {
   // in the same order), about 7 MB. A write after the freeze (none happens today) unfreezes it for the next read.
   const SEPTA_RG_CELL = 36;
   // Round 205: each segment's drawn half width beside it (SRG.hw, decimetres), for streetPush
-  const SRG = { seg: new Float64Array(4 * 65536), hw: new Uint8Array(65536), n: 0, off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, freezes: 0 };
-  function septaRoadAdd(ax, az, bx, bz, hw) {
+  const SRG = { seg: new Float64Array(4 * 65536), hw: new Uint8Array(65536), cls: new Uint8Array(65536), n: 0, off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, freezes: 0 };
+  function septaRoadAdd(ax, az, bx, bz, hw, cls) {   // cls: the street's class, 0 motorway to 5 residential (Round 207: a bus keeps its lane by it)
     if (SRG.n * 4 + 4 > SRG.seg.length) { const nb = new Float64Array(SRG.seg.length * 2); nb.set(SRG.seg); SRG.seg = nb; }
-    if (SRG.n >= SRG.hw.length) { const nb = new Uint8Array(SRG.hw.length * 2); nb.set(SRG.hw); SRG.hw = nb; }
-    SRG.seg.set([ax, az, bx, bz], SRG.n * 4); SRG.hw[SRG.n] = Math.min(255, Math.round((hw || 0) * 10)); SRG.n++;
+    if (SRG.n >= SRG.hw.length) { const nb = new Uint8Array(SRG.hw.length * 2); nb.set(SRG.hw); SRG.hw = nb; const nc = new Uint8Array(SRG.cls.length * 2); nc.set(SRG.cls); SRG.cls = nc; }
+    SRG.seg.set([ax, az, bx, bz], SRG.n * 4); SRG.hw[SRG.n] = Math.min(255, Math.round((hw || 0) * 10)); SRG.cls[SRG.n] = Math.max(0, Math.min(5, cls == null ? 5 : cls)); SRG.n++;
     SRG.off = null;
   }
   // Round 205 (Mike: "streetlights in the middle of streets, or trees that appear to be growing out of the street"): the
@@ -41468,7 +41522,7 @@ if (uNjLamp > 0.001) {
     for (let c = 0; c < w * h; c++) off[c + 1] += off[c];
     const ids = new Uint32Array(off[w * h]), fill = off.slice(0, w * h);
     each((c, k) => { ids[fill[c]++] = k; });
-    SRG.seg = S.slice(0, n * 4); SRG.hw = SRG.hw.slice(0, n);   // the slack goes
+    SRG.seg = S.slice(0, n * 4); SRG.hw = SRG.hw.slice(0, n); SRG.cls = SRG.cls.slice(0, n);   // the slack goes
     Object.assign(SRG, { off, ids, gx0, gz0, w, h, freezes: SRG.freezes + 1 });
   }
   // the cell's first and one-past-last index into SRG.ids, or an empty range off the grid
@@ -41481,23 +41535,23 @@ if (uNjLamp > 0.001) {
   }
   function septaSnapRoad(x, z, maxD) {
     const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
-    let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false;
+    let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false, bk = 0;
     for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
       const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids;
       for (let q = q0; q < q1; q++) {
-        const i = ids[q] * 4;
+        const k = ids[q], i = k * 4;
         const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az;
         const L2 = dx * dx + dz * dz || 1e-9;
         let tt = ((x - ax) * dx + (z - az) * dz) / L2;
         tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
         const ex = ax + dx * tt - x, ez = az + dz * tt - z;
         const d2 = ex * ex + ez * ez;
-        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; }
+        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; bk = k; }
       }
     }
     if (!found) return null;
     const L3 = Math.hypot(bdx, bdz) || 1;
-    return [bx2, bz2, bdx / L3, bdz / L3];   // point + street axis, for position AND heading alignment
+    return [bx2, bz2, bdx / L3, bdz / L3, SRG.hw[bk] / 10, SRG.cls[bk]];   // point + street axis, for position AND heading alignment; its half width and class
   }
   function septaMerge(parts) {
     let total = 0;
@@ -41858,10 +41912,12 @@ float pinOccGate() {
     if (!septaReady) return;
     if (!SEPTA.on) {
       if (septaSolid.count || septaBadge.count) { septaSolid.count = 0; septaBadge.count = 0; }
+      busObstClear();
       return;
     }
     let si = 0, bi = 0;
     const cap = 2.6 * dt;
+    busObstClear();
     _sqB.copy(camera.quaternion);                      // badges billboard the camera
     septaVeh.forEach((v) => {
       const k = v.t0 ? Math.min(1, (now - v.t0) / (SEPTA_POLL + 1500)) : 1;
@@ -41875,15 +41931,25 @@ float pinOccGate() {
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
           const sn = septaSnapRoad(v.x, v.z, 20);
-          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.off = !insideLimit(v.x, v.z); }
+          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.lane = Math.min(CAR_OFFW[sn[5]], Math.max(0, sn[4] - SEPTA_KIND[v.kind].w / 2 - 0.1)); v.off = !insideLimit(v.x, v.z); }
           else { v.snx = null; v.off = !insideLimit(v.x, v.z) || !septaSnapRoad(v.x, v.z, 140); }   // beyond the flight limit, or no drawn street within 140 m: off the map
         }
-        if (v.snx != null) { wx = v.snx; wz = v.snz; }
+        // Round 207 (Mike: "a lot of cars clipping through the septa busses"): on the centreline a bus straddled both
+        // directions' lanes; it keeps the right-hand lane of its way, at the typical traffic's own offset for the street's
+        // class (CAR_OFFW), short of the kerb
+        if (v.snx != null) { const ln = BUS_YIELD ? v.lane || 0 : 0; wx = v.snx + Math.sin(v.yaw) * ln; wz = v.snz + Math.cos(v.yaw) * ln; }
       }
       if (v.dx === undefined) { v.dx = wx; v.dz = wz; }
       const kS = 1 - Math.exp(-dt * 7);
-      v.dx += (wx - v.dx) * kS;
-      v.dz += (wz - v.dz) * kS;
+      let sx = (wx - v.dx) * kS, sz = (wz - v.dz) * kS;
+      if (BUS_YIELD) {   // Round 207: a bus never backs up (a fix behind where it is drawn reversed it into the car behind;
+        // one 60 m behind is a correction and is taken), and a car just ahead in its lane (carBusGap) holds it: no step
+        // forward, the sideways one kept
+        const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), f = sx * hx + sz * hz, back = (wx - v.dx) * hx + (wz - v.dz) * hz;
+        if ((f < 0 && back > -60) || (f > 0 && now - (v.holdT || 0) < 200)) { sx -= hx * f; sz -= hz * f; }
+      }
+      v.dx += sx;
+      v.dz += sz;
       // heading: align to the snapped street's axis (signed to match the API/
       // displacement heading) so GPS heading noise never parks a bus diagonally
       // across its street; unsnapped vehicles keep the raw heading
@@ -41901,6 +41967,8 @@ float pinOccGate() {
       if (v.off) return;   // a suburban tail of a route has nothing to stand on here
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // a route search shows that route alone (the pick arrays fill below, so they stay in step)
       if (!nearCam(v.dx, v.gy === undefined ? camera.position.y : v.gy, v.dz)) return;   // the half-mile rule (Round 82): it rides on unseen, the pick arrays stay in step
+      if (BUS_YIELD) busObstAdd(v.dx, v.dz, v.yaw, SEPTA_KIND[v.kind].l * 0.5);   // Round 207: the typical traffic stops behind it
+      BUS_OB.drawn.push(v);
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
         v.gy = Math.max(siteY(v.dx, v.dz, 'road'), bankFloor(v.dx, v.dz));   // the bank floor with the roads (Round 85)
@@ -42141,8 +42209,7 @@ float pinOccGate() {
       // road loop's motY), where it used to float at street level across Dock Street, and under the
       // Foglietta and Vietnam memorial deck it is not painted at all
       const coreCut=(x,z)=>{if(!inCore(x,z))return null;const o=frontOff(x,z);if(o<=TERRAIN.trenchW||o>=TERRAIN.trenchE)return null;
-        const eo=Math.min(o-TERRAIN.trenchW,TERRAIN.trenchE-o)/14,ez=Math.min(z-(CORE_EXT.z0+4),(CORE_EXT.z1-4)-z)/60,t=clamp(Math.min(eo,ez),0,1),ts=t*t*(3-2*t);
-        return lerp(siteY(x,z,'road'),TERRAIN.trenchFloor+0.55,ts);};
+        return trenchLaneY(x,z,siteY(x,z,'road'));};
       if(inCutName&&coreCut(f.x,f.z)!==null&&capAt(f.x,f.z)){stats.buried++;continue;}
       const th=STREET_TEXT_HEIGHT[L2[i+4]],hw=th*r[2]/FS/2,hh=th*RH/FS/2;
       // Round 184 coda: whether the label's street is a deck is decided once, along its length (five of nine points within
@@ -47648,14 +47715,7 @@ float pinOccGate() {
         if (y === null) y = siteY(x, z, 'road');
         y = Math.max(y, bankFloor(x, z));   // the bank roads' floor (Round 85)
         if (cls === 0 && core) {
-          // I-95 rides DOWN in the trench (the road step's motY blend, replicated)
-          const o = frontOff(x, z);
-          if (o > TERRAIN.trenchW && o < TERRAIN.trenchE) {
-            const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
-            const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
-            const t = clamp(Math.min(eo, ez), 0, 1);
-            y = lerp(y, TERRAIN.trenchFloor + 0.55, t * t * (3 - 2 * t));
-          }
+          y = trenchLaneY(x, z, y);   // I-95 rides DOWN in the trench (the road step's motY)
         }
         let lift = core ? LAYER.road + 0.04 : LAYER.road + (6 - Math.min(cls, 6)) * 0.055 + 0.05;
         const bY = bridgeDeckLift(x, z, ux, uz);   // the custom spans (BFB, WWB) carry traffic on their real decks (a way crossing under keeps its own height)
@@ -47713,6 +47773,7 @@ float pinOccGate() {
     trafficPrepareGraph(trafficRuns);
     trafficCreateFleet();
     trafficReady = true;
+    if (CLOSE_TRAFFIC && CLOSURES.recs.length) closureTraffic();   // a closures file that landed first (Round 207)
   });
   function trafficFrac() {
     const dow = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay();
@@ -47743,7 +47804,7 @@ float pinOccGate() {
     out.x=lerp(r.xs[lo],r.xs[hi],t)-hz*off;out.y=lerp(r.ys[lo],r.ys[hi],t);out.z=lerp(r.zs[lo],r.zs[hi],t)+hx*off;
     out.yaw=Math.atan2(-hz,hx);out.seg=lo;return out;
   }
-  const CARC={born:0,bornSeen:0,dieRetire:0,dieEnd:0,dieSeen:0,ageSum:0,ageN:0,ageMin:1e9,transfers:0,blockedBirths:0};
+  const CARC={born:0,bornSeen:0,dieRetire:0,dieEnd:0,dieClosed:0,dieSeen:0,ageSum:0,ageN:0,ageMin:1e9,transfers:0,blockedBirths:0};
   function carDeath(car,now,why,r) {
     if(car.die)return;
     car.die=now;CARC[why]++;
@@ -47912,15 +47973,54 @@ float pinOccGate() {
     }
     trafficBusy.length=k;
   }
+  // Round 207: the drawn SEPTA buses as obstacles to the typical traffic. updateTransit lists every bus it draws (all of them
+  // within the half mile) in 50 m cells each frame; a car within reach of one looks along its own way: a bus ahead of it in
+  // its lane (its centre within the two half widths and 0.3 m of the car's line, and in front of the car by more than their
+  // half lengths' overlap) is a leader like any other, the car stopping 2.5 m short of its tail. A bus already overlapping
+  // the car is left alone, so a car never freezes inside one (__dbg.busObst())
+  const BUS_OB = { cells: new Map(), list: [], n: 0, held: 0, drawn: [] };
+  function busObstClear() { BUS_OB.drawn.length = 0; if (BUS_OB.n) { BUS_OB.cells.clear(); BUS_OB.n = 0; } }
+  function busObstAdd(x, z, yaw, hl) {
+    const L = BUS_OB.list, o = BUS_OB.n * 4;
+    L[o] = x; L[o + 1] = z; L[o + 2] = yaw; L[o + 3] = hl;
+    const k = Math.floor(x / 50) * 100003 + Math.floor(z / 50);
+    let a = BUS_OB.cells.get(k); if (!a) BUS_OB.cells.set(k, a = []); a.push(BUS_OB.n++);
+  }
+  // the bus is three points along its length (its middle and 0.35 of its length either way), so one crossing the car's path
+  // at a junction stops it too. And the other way round: a car just ahead of a bus in the bus's lane holds the bus (holdT),
+  // whose glide toward its next fix then takes no step forward (updateTransit) until the car has moved on: a fix can lie
+  // ahead of a queue, and the bus drove into the car at its tail
+  function carBusGap(car, now) {
+    const cx = Math.floor(car.x / 50), cz = Math.floor(car.z / 50), hx = Math.cos(car.yaw), hz = -Math.sin(car.yaw), M = CAR_MODELS[car.kind], L = BUS_OB.list;
+    let gap = Infinity;
+    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gz = cz - 1; gz <= cz + 1; gz++) {
+      const a = BUS_OB.cells.get(gx * 100003 + gz);
+      if (a) for (const b of a) {
+        const o = b * 4, bx = L[o], bz = L[o + 1], bhx = Math.cos(L[o + 2]), bhz = -Math.sin(L[o + 2]), hl = L[o + 3];
+        for (let k = -1; k <= 1; k++) {
+          const px = bx + bhx * hl * 0.7 * k, pz = bz + bhz * hl * 0.7 * k, dx = px - car.x, dz = pz - car.z;
+          const along = dx * hx + dz * hz, lat = -dx * hz + dz * hx, par = Math.abs(bhx * hx + bhz * hz) > 0.7, reach = (par ? hl * (1 + 0.7 * k * Math.sign(bhx * hx + bhz * hz)) : 1.3) + M.l * 0.5;   // the bus's near end, or its side
+          if (along <= reach * 0.8 || along > reach + 40 || Math.abs(lat) > 1.3 + M.w * 0.5 + 0.3) continue;
+          gap = Math.min(gap, Math.max(0, along - reach - 2.5));
+        }
+        const ex = car.x - bx, ez = car.z - bz, ahead = ex * bhx + ez * bhz, side = -ex * bhz + ez * bhx;   // the car seen from the bus
+        if (ahead > 0 && ahead < hl + M.l * 0.5 + 3 && Math.abs(side) < 1.3 + M.w * 0.5 + 0.2) { const v = BUS_OB.drawn[b]; if (v) v.holdT = now; }
+      }
+    }
+    return gap;
+  }
   function trafficAdvance(now,dt) {
     trafficLeaders();trafficFrame++;
+    const busR2 = BUS_OB.n ? (NEAR_R + 60) ** 2 : 0, cpx = camera.position.x, cpz = camera.position.z;
+    BUS_OB.held = 0;
     for(const r of trafficRuns)for(let i=r.cars.length-1;i>=0;i--) {
       const car=r.cars[i];if(car.fr===trafficFrame)continue;car.fr=trafficFrame;
       const visible=carSpotRank(car.x,car.y,car.z)===0;
-      if(visible&&car.die)car.die=0; // Turning back toward retiring cars preserves them.
+      if(visible&&car.die&&!car.closedOut)car.die=0; // Turning back toward retiring cars preserves them (not one leaving a closed block: Round 207).
       if(car.die&&now-car.die>=CAR_FADE_MS){r.cars.splice(i,1);trafficCars--;continue;}
       let gap=Infinity;
       if(car.leader&&car.leader.run===r)gap=Math.max(0,(car.leader.s-car.s)*car.dir-(CAR_MODELS[car.kind].l+CAR_MODELS[car.leader.kind].l)*.5-2.5);
+      if(busR2&&(car.x-cpx)**2+(car.z-cpz)**2<busR2){const bg=carBusGap(car,now);if(bg<gap){gap=bg;if(bg<20)BUS_OB.held++;}}
       const cruise=TRAFFIC_SPEED[r.cls]/3.6*car.jit,desired=Math.min(cruise,gap/1.4);
       if(REAL)car.brk=(car.brk||0)+(((desired<car.v-0.4||car.v<1.0)?1:0)-(car.brk||0))*Math.min(1,dt*8);   // the tail lamps: braking or standing in a queue
       car.v+=clamp(desired-car.v,-5*dt,1.8*dt);
@@ -50216,6 +50316,7 @@ float pinOccGate() {
       const rec = { id: String(r.id || ''), o: clamp(r.o | 0, 1, 3), addr: String(r.addr || ''), permits: Array.isArray(r.permits) ? r.permits.slice(0, 4) : [], mx: ln.mx, mz: ln.mz, my: closureY(ln.mx, ln.mz) };
       const hw = roadHalfW(ln.mx, ln.mz);
       const trim = ln.L > 24 ? 7 : ln.L * 0.2, s0 = trim, s1 = ln.L - trim;
+      if (rec.o >= 3) { rec.ln = ln; rec.s0 = s0; rec.s1 = s1; rec.hw = hw; }   // closureTraffic closes the runs along the drums (Round 207)
       const side = hash01(ln.mx * 0.31 + ln.mz * 0.17) < 0.5 ? 1 : -1;
       if (rec.o >= 3) {
         for (const s of [s0, s1]) {   // a barricade row across the road at each end
@@ -50256,23 +50357,50 @@ float pinOccGate() {
     if (CLOSE_TRAFFIC && trafficReady) closureTraffic();
     closureReconAt = 0;
   }
-  function closureTraffic() {   // typical traffic: a fully closed block wants no cars (the run whose midpoint lies within 25 m of the block's)
+  // typical traffic leaves a fully closed block. Round 207 (Mike: "Cars are also driving through closed roads"): a run was
+  // closed only when its midpoint lay within 25 m of the block's, and only from secondary streets down and under 250 m, so a
+  // longer run or one cut elsewhere along the block stayed open, and the cars already on a run kept driving through the
+  // drums. Now every run of any class that lies along the drummed stretch is closed: a sample every few metres from the first
+  // barricade to the last, and a run closed where one of its segments passes within the street's half width and 2 m (6 m at
+  // the least) of a sample, running with it (|cos| over 0.8, so the cross streets at its ends stay open). A run is a chunk up
+  // to 400 m, so a short closure on a long run empties the whole run. The cars on a run as it closes fade out where they are
+  function closureTraffic() {
     for (const r of trafficRuns) r.closed = false;
     if (!closureRunCells) {
       closureRunCells = new Map();
       trafficRuns.forEach((r, i) => { const k = Math.floor(r.mx / 200) + ':' + Math.floor(r.mz / 200); let a = closureRunCells.get(k); if (!a) { a = []; closureRunCells.set(k, a); } a.push(i); });
     }
-    let n = 0;
+    const along = (r, x, z, ux, uz, tol) => {
+      const xs = r.xs, zs = r.zs, t2 = tol * tol;
+      for (let j = 0; j + 1 < xs.length; j++) {
+        const dx = xs[j + 1] - xs[j], dz = zs[j + 1] - zs[j], L2 = dx * dx + dz * dz;
+        if (L2 < 1e-6) continue;
+        const t = clamp(((x - xs[j]) * dx + (z - zs[j]) * dz) / L2, 0, 1), ex = xs[j] + dx * t - x, ez = zs[j] + dz * t - z;
+        if (ex * ex + ez * ez < t2 && Math.abs(dx * ux + dz * uz) > 0.8 * Math.sqrt(L2)) return true;
+      }
+      return false;
+    };
+    let n = 0, gone = 0;
     for (const rec of CLOSURES.recs) {
-      if (rec.o < 3) continue;
-      const gx = Math.floor(rec.mx / 200), gz = Math.floor(rec.mz / 200);
-      for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
-        const a = closureRunCells.get(cx2 + ':' + cz2);
-        if (!a) continue;
-        for (const i of a) { const r = trafficRuns[i]; if (!r.closed && r.cls >= 3 && r.len <= 250 && Math.hypot(r.mx - rec.mx, r.mz - rec.mz) < 25) { r.closed = true; n++; } }
+      if (rec.o < 3 || !rec.ln) continue;
+      const tol = Math.max(6, (rec.hw || 4.5) + 2), len = rec.s1 - rec.s0, step = Math.max(4, Math.min(10, len / 6));
+      for (let sv = rec.s0; sv <= rec.s1 + 0.01; sv += step) {
+        const [x, z, ux, uz] = closureAlong(rec.ln, Math.min(sv, rec.s1));
+        const gx = Math.floor(x / 200), gz = Math.floor(z / 200);
+        for (let cx2 = gx - 2; cx2 <= gx + 2; cx2++) for (let cz2 = gz - 2; cz2 <= gz + 2; cz2++) {
+          const a = closureRunCells.get(cx2 + ':' + cz2);
+          if (!a) continue;
+          for (const i of a) {
+            const r = trafficRuns[i];
+            if (r.closed || Math.hypot(r.mx - x, r.mz - z) > r.len + tol) continue;   // every point of a run lies within its length of its middle vertex
+            if (along(r, x, z, ux, uz, tol)) { r.closed = true; n++; }
+          }
+        }
       }
     }
-    CLOSURES.runsClosed = n;
+    const now = performance.now();
+    for (const r of trafficRuns) if (r.closed) for (const c of r.cars) if (!c.die || !c.closedOut) { if (!c.die) { carDeath(c, now, 'dieClosed', r); gone++; } c.closedOut = true; }
+    CLOSURES.runsClosed = n; CLOSURES.carsCleared = (CLOSURES.carsCleared || 0) + gone;
   }
   function closuresReconcile() {
     const inv = closureInv, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = NEAR_R;
@@ -55185,6 +55313,10 @@ float pinOccGate() {
       // level). Anything past the sheet's own z range is skipped, since no water is drawn there.
       // Round 205: the trees and the poles whose trunk stands on a drawn street (its edge 0.3 m in), by tier, and how many
       // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
+      // the cars standing inside a drawn bus now (their footprints overlapping, 0.2 m of slack), and the cars on a closed run
+      busClips: () => { let clips = 0, near = 0; const kinds = {}; for (const v of BUS_OB.drawn) { const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), sp = SEPTA_KIND[v.kind]; for (const r of trafficRuns) for (const c of r.cars) { if (c.die) continue; const dx = c.x - v.dx, dz = c.z - v.dz; if (dx * dx + dz * dz > 400) continue; near++; const M = CAR_MODELS[c.kind], a = Math.abs(dx * hx + dz * hz), l = Math.abs(-dx * hz + dz * hx); if (a < sp.l / 2 + M.l / 2 - 0.2 && l < sp.w / 2 + M.w / 2 - 0.2) { clips++; const cs = Math.cos(c.yaw - v.yaw); kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] = (kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] || 0) + 1; } } } return { yield: BUS_YIELD, buses: BUS_OB.drawn.length, near, clips, kinds }; },
+      closedCars: () => { let runs = 0, cars = 0; for (const r of trafficRuns) if (r.closed) { runs++; for (const c of r.cars) if (!c.die) cars++; } return { runs, cars, runsClosed: CLOSURES.runsClosed, cleared: CLOSURES.carsCleared || 0, dieClosed: CARC.dieClosed, recs: CLOSURES.recs.filter((q) => q.o >= 3).length, near: CLOSURES.recs.filter((q) => q.o >= 3).slice(0, 6).map((q) => { let bd = 1e9, bc = -1, bcl = false; for (const r of trafficRuns) { if (Math.hypot(r.mx - q.mx, r.mz - q.mz) > r.len + 60) continue; for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - q.mx, r.zs[j] - q.mz); if (d < bd) { bd = d; bc = r.cls; bcl = r.closed; } } } return { addr: q.addr, x: Math.round(q.mx), z: Math.round(q.mz), hw: q.hw, d: Math.round(bd), cls: bc, closed: bcl }; }) }; },
+      busObst: () => ({ buses: BUS_OB.n, cells: BUS_OB.cells.size, held: BUS_OB.held, lanes: [...septaVeh.values()].filter((v) => v.snx != null && !v.off).slice(0, 8).map((v) => ({ id: v.id, lane: +(v.lane || 0).toFixed(2), d: +Math.hypot(v.dx - v.snx, v.dz - v.snz).toFixed(2) })) }),   // Round 207
       streetCheck: (clear) => {
         const P = poleInv, c = clear == null ? 0.3 : +clear, tier = (x, z) => (inCore(x, z) ? 'core' : x > WIDEB.x0 && x < WIDEB.x1 && z > WIDEB.z0 && z < WIDEB.z1 ? 'wide' : 'far');
         const count = (n, X, Z, skip) => { const o = { core: [0, 0], wide: [0, 0], far: [0, 0], at: [] }; for (let i = 0; i < n; i++) { if (skip && skip(i)) continue; const t = o[tier(X[i], Z[i])]; t[1]++; const q = streetInside(X[i], Z[i], c); if (q) { t[0]++; if (o.at.length < 40 && (i % 7) === 0) o.at.push([Math.round(X[i]), Math.round(Z[i]), +q[4].toFixed(1), +q[5].toFixed(1)]); } } return o; };   // at: a sample [x, z, the street's half width, the distance from its centreline]

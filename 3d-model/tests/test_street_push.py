@@ -20,8 +20,8 @@ class StreetPush(unittest.TestCase):
 
     def test_the_index_carries_every_tiers_half_width(self):
         s = self.src
-        self.assertIn('septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);', s)   # the core
-        self.assertEqual(s.count('septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);'), 2)   # wide, far ring
+        self.assertIn('septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2, mot ? 0 :', s)   # the core (and its class, Round 207)
+        self.assertEqual(s.count('septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, t);'), 2)   # wide, far ring
         self.assertEqual(s.count('septaRoadAdd('), 4)   # the three passes and the definition
         self.assertIn('SRG.hw = SRG.hw.slice(0, n);', s)
 
