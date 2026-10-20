@@ -25,7 +25,7 @@ const fl={px:0,pz:0,dx:0,dz:1};function capAt(x,z){const s=(x-fl.px)*fl.dx+(z-fl
 const CORE_EXT={x0:-100,x1:100,z0:-100,z1:100};
 let sample=(x,z)=>.4*z+20;
 const siteY=(x,z)=>sample(x,z),schEdges=null,TERRAIN={water:-1000,trenchW:0,trenchE:100};
-const frontOff=x=>x,frontDem=()=>20;
+const frontOff=x=>x,frontDem=()=>20,capTop=(c)=>20+c.dy;   // Round 207: the deck's top is Front Street's (capTop); this grid's Front Street is the flat 20
 HELPERS
 DENSIFY
 function triangles(g){const p=g.attributes.position,idx=g.index,out=[];for(let k=0;k<(idx?idx.count:p.count);k+=3)out.push([0,1,2].map(j=>{const i=idx?idx.getX(k+j):k+j;return[p.getX(i),p.getZ(i),p.getY(i)];}));return out;}

@@ -12314,3 +12314,19 @@ last, a segment within the half width and 2 m, 6 m at the least, and running wit
 are and stay fading (`closedOut`). On the live feed (1,338 full closures): 1,137 runs closed against the old rule's 687, 66
 cars cleared at load, and 0 cars on a closed run over the next 8 s (17 before the revival fix). `__dbg.closedCars()`.
 A run is a chunk up to 400 m, so a short closure on a long run empties the whole run, as before.
+
+**Round 207 coda: a tunnel under the deck** (Mike, from the lanes at Spruce: "It does not look like a tunnel. The height
+of the tunnel should remain. If lowering the road doesn't work, raise the height of the tunnel"). Measured along the deck
+every 10 m (`__dbg.PERF.capTunnel.prof`: s, ceiling, lanes, clear, dip, Front Street, the shelf, the old deck line): the
+deck followed the DEM 110 m inland (`frontDem`), which falls into the Dock Creek valley, so it sagged 1.9 m under Front
+Street at the memorial, and mid-span the slab had stood about half a metre over I-95's lanes before Round 207 (2.7 m after
+the first coda). The deck's top is now Front Street's own ground at the trench's west edge (`capTop`), flush with the
+street, and I-95 dips for 5.0 m from the lanes to the ceiling the whole length (`TRENCH_CLEAR`, eased over 150 m, under 2%,
+4.6 m at the deepest), the river's sheet and the river bed's far plane both cut over the dipped trench (`trenchDipHole`;
+the first coda had capped the dip at the water, 4.1 m at Spruce under a thinned fascia). Under the deck a tunnel
+(`capTunnel`): a dark ceiling at the fascia's foot, walls from it to the floor, and 69 lamps in three rows. Two things that
+showed in the open mouths are gone: a green crossing an end of the deck is laid in pieces either side of the line (one drape
+across it ramped from the deck into the trench), and the core ground grid's cells across the trench's west wall are cut on
+the wall's line (`PERF.coreWallCut`; they rose across the trench as a grass bank, in the mouths and along the open trench),
+the cut corners after the grid's so `groundMeshY` reads the grid as before. After: 5.0 m at the least (6.15 m at Dock
+Street, 5.03 m at Spruce), the lanes at -8.4 to -10.9.

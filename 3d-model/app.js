@@ -3862,7 +3862,7 @@
         const x=(a[0]+b[0]+c[0])/3,z=(a[1]+b[1]+c[1])/3,y=(a[2]+b[2]+c[2])/3;
         const cap=capAt(x,z);
         if(cap && frontOff(x,z)>TERRAIN.trenchW && frontOff(x,z)<TERRAIN.trenchE
-          && y<frontDem(z)+cap.dy-0.2)return;
+          && y<capTop(cap,x,z)-0.2)return;
         surface=trsAdd(poly);   // Round 158: nine words, not an object and a closure
         TERRAIN_PATCH_STATS.surfaces++;
       }
@@ -8959,17 +8959,37 @@ vec2 wRing(vec2 rc, float tt) {
     { s0: 11, s1: 222, kind: 'deck', dy: 0 },  // Foglietta Plaza, Spruce Street, the Vietnam Veterans Memorial
   ];
   function capAt(x, z) { const s = (x - fl.px) * fl.dx + (z - fl.pz) * fl.dz; return CAPS.find((c) => s > c.s0 && s < c.s1); }
+  // the deck's top at (x, z): Front Street's own ground at the trench's west edge, square across from the point (Round 207
+  // coda). It followed the DEM 110 m inland (frontDem), which falls into the Dock Creek valley: the deck sagged 1.9 m under
+  // Front Street at the memorial and its slab stood half a metre over I-95's lanes mid-span
+  function capTop(c, x, z) {
+    const sv = (x - fl.px) * fl.dx + (z - fl.pz) * fl.dz, w = capPoint(TERRAIN.trenchW - 1.5, sv);
+    return cityY(w[0], w[1]) + plazaLift(w[0], w[1]) + c.dy;
+  }
   // Round 207 (Mike, from I-95 under the plaza: "Cars should have clearance to drive under the park that is elevated"): the
   // deck follows Front Street's ground, which falls 1.8 m to the south, while the lanes kept the trench's one floor, so the
   // slab stood 5.6 m over them at Dock Street and 3.8 m at Spruce. Under a deck I-95 now dips just enough that its lanes
   // have TRENCH_CLEAR to the underside of the deck's structure (CAP_STRUCT under the slab's top, the portals' fascia), easing
   // in and out over TRENCH_RAMP metres along Front Street; the floor, the ground under it, the walls, the lanes, their cars
-  // and their names all take it (trenchDip, trenchLaneY). The river is one plane at TERRAIN.water everywhere, so the floor
-  // never goes within 0.25 m of it (TRENCH_DIP_MAX, about 0.7 m: the first cut's 2.7 m at Spruce put water in the trench),
-  // and a portal's fascia is as deep as CAP_STRUCT only where the clearance allows (capFascia: never under 0.45 m)
-  const TRENCH_CLEAR = 4.9, TRENCH_RAMP = 90, CAP_STRUCT = 1.0, CAP_STRUCT_MIN = 0.45, TRENCH_FIT = 4.2;
-  const TRENCH_DIP_MAX = Math.max(0, TERRAIN.trenchFloor - (TERRAIN.water + 0.25));
+  // and their names all take it (trenchDip, trenchLaneY). The river is one sheet at TERRAIN.water over the whole city, and a
+  // floor dipped under it filled the trench with water (the first cut), so the sheet has a hole over the dipped trench
+  // (trenchDipHole), and so has the river bed's far plane under it. Round 207 coda (Mike, from the
+  // lanes at Spruce: "It does not look like a tunnel. The height of the tunnel should remain"): the first coda had capped the
+  // dip at the water, 4.1 m at Spruce under a fascia thinned to fit; now the clearance holds the length of the deck
+  const TRENCH_CLEAR = 5.0, TRENCH_RAMP = 150, CAP_STRUCT = 1.0, CAP_STRUCT_MIN = 0.45, TRENCH_FIT = TRENCH_CLEAR;
+  const TRENCH_DIP_MAX = 6;   // metres; the river bed's far plane has the same hole as the water (it stood at -10.3, the deck's middle needs the lanes at -10.9)
   const capFascia = (top, lanes) => clamp(top - lanes - TRENCH_FIT, CAP_STRUCT_MIN, CAP_STRUCT);   // a mouth's fascia depth: TRENCH_FIT clear under it where there is room
+  // the dipped trench's outline (walls to walls, the dip's whole length along Front Street), cut out of the river's sheet
+  function trenchDipHole() {
+    trenchDip(0, 0);
+    const [a, step, v] = TRENCH_DIP;
+    let k0 = 0, k1 = v.length - 1;
+    while (k0 < k1 && v[k0] <= 0) k0++;
+    while (k1 > k0 && v[k1] <= 0) k1--;
+    if (k1 <= k0) return null;
+    const s0 = a + (k0 - 1) * step, s1 = a + (k1 + 1) * step, o0 = TERRAIN.trenchW + 0.05, o1 = TERRAIN.trenchE - 0.05;
+    return [capPoint(o0, s0), capPoint(o1, s0), capPoint(o1, s1), capPoint(o0, s1)];
+  }
   let TRENCH_DIP = null;   // [s0, step, values]: the dip along Front Street, worked out at the first read
   function trenchDip(x, z) {
     if (!TRENCH_DIP) {
@@ -8978,7 +8998,7 @@ vec2 wRing(vec2 rc, float tt) {
         if (c.kind !== 'deck') continue;
         for (let sv = c.s0; sv <= c.s1 + 0.01; sv += step) {
           const m = capPoint((TERRAIN.trenchW + TERRAIN.trenchE) / 2, Math.min(sv, c.s1));
-          const soffit = frontDem(m[1]) + c.dy - 0.3 - CAP_STRUCT;
+          const soffit = capTop(c, m[0], m[1]) - 0.28 - CAP_STRUCT;
           need.push([Math.min(sv, c.s1), Math.max(0, lanes + TRENCH_CLEAR - soffit)]);
         }
       }
@@ -9217,7 +9237,7 @@ vec2 wRing(vec2 rc, float tt) {
     const o = frontOff(x, z);
     const cap = capAt(x, z);
     if (o < TERRAIN.trenchW) return cityY(x, z) + plazaLift(x, z);
-    if (o < TERRAIN.trenchE) return (cap && cap.kind === 'deck') ? frontDem(z) + cap.dy : (mode === 'road' ? frontDem(z) : TERRAIN.trenchFloor - trenchDip(x, z));
+    if (o < TERRAIN.trenchE) return (cap && cap.kind === 'deck') ? capTop(cap, x, z) : (mode === 'road' ? frontDem(z) : TERRAIN.trenchFloor - trenchDip(x, z));
     return shelfY(x, z);
   }
   function walkY(x, z) { return Math.max(siteY(x, z, 'ground'), siteY(x, z, 'road')); }
@@ -9733,10 +9753,35 @@ vec2 wRing(vec2 rc, float tt) {
         pos.push(x, y, z);
       }
       const idx = [];
+      // Round 207 coda: a cell across the trench's west wall had its city corners on Front Street and its trench corners on
+      // the floor, so it rose across the trench as a grass bank (the wedge in the tunnel's mouth, and along the open trench).
+      // Such a triangle is cut on the wall's line: its city part stays at its city corners' height out to the wall, its
+      // trench part lies on the floor. The new corners go after the grid's, so the registered grid (groundMeshY) is unchanged
+      const TW = TERRAIN.trenchW, oAt = (k) => frontOff(pos[k * 3], pos[k * 3 + 2]);
+      const cut = (a, b) => {   // the wall's crossing on edge a-b: [the city side's corner, the trench side's]
+        const oa = oAt(a), ob = oAt(b), t = (TW - oa) / (ob - oa), x = pos[a * 3] + (pos[b * 3] - pos[a * 3]) * t, z = pos[a * 3 + 2] + (pos[b * 3 + 2] - pos[a * 3 + 2]) * t;
+        const yc = oa < TW ? pos[a * 3 + 1] : pos[b * 3 + 1], yt = oa < TW ? pos[b * 3 + 1] : pos[a * 3 + 1], k = pos.length / 3;
+        pos.push(x, yc, z, x, yt, z);
+        return [k, k + 1];
+      };
+      let wallCut = 0;
+      const tri = (a, b, c) => {
+        const v = [a, b, c], w = v.map((k) => oAt(k) < TW);
+        if (w[0] === w[1] && w[1] === w[2]) { idx.push(a, b, c); return; }
+        const city = [], trench = [];
+        for (let e = 0; e < 3; e++) {
+          const p = v[e], q = v[(e + 1) % 3];
+          (w[e] ? city : trench).push(p);
+          if (w[e] !== w[(e + 1) % 3]) { const [kc, kt] = cut(p, q); city.push(kc); trench.push(kt); }
+        }
+        for (const poly of [city, trench]) for (let e = 1; e + 1 < poly.length; e++) idx.push(poly[0], poly[e], poly[e + 1]);
+        wallCut++;
+      };
       for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
         const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
-        idx.push(a, c, b, b, c, d);
+        tri(a, c, b); tri(b, c, d);
       }
+      PERF.coreWallCut = wallCut;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
       g.setIndex(idx);
@@ -9745,7 +9790,9 @@ vec2 wRing(vec2 rc, float tt) {
       const city = new THREE.Mesh(g, groundMat);
       city.receiveShadow = true; groupCity.add(city); rayTargets.push(city);
       // river bed under everything; the water plane sits above it
-      const far = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.bed), new THREE.MeshStandardMaterial({ color: 0x4a4f48, roughness: 1 }));
+      const bedHole = trenchDipHole();   // Round 207 coda: the dipped I-95 trench goes under the bed's plane
+      const bedG = new THREE.ShapeGeometry(shapeFromPoly([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], bedHole ? [bedHole] : null)); bedG.rotateX(-Math.PI / 2); bedG.translate(0, TERRAIN.bed, 0);
+      const far = new THREE.Mesh(bedG, new THREE.MeshStandardMaterial({ color: 0x4a4f48, roughness: 1 }));
       groupCity.add(far);
     }
     // outer districts: 25 m heightfields around the core, water where the DEM sits at river level
@@ -9897,7 +9944,11 @@ vec2 wRing(vec2 rc, float tt) {
     // stood as green ground under the ships). Not the flight bounds: those run 200 m past the
     // ground on every side, and a sheet that size lay over the apron as a band along the world's
     // edge (the strip along the south edge, then the east, Round 55 codas)
-    const water = new THREE.Mesh(flat([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], TERRAIN.water), waterMat);
+    const dipHole = trenchDipHole();   // Round 207: no river over the dipped I-95 trench
+    const sheetG = new THREE.ShapeGeometry(shapeFromPoly([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], dipHole ? [dipHole] : null));
+    sheetG.rotateX(-Math.PI / 2); sheetG.translate(0, TERRAIN.water, 0);
+    const water = new THREE.Mesh(sheetG, waterMat);
+    PERF.waterHole = dipHole && dipHole.map((q) => q.map((v) => Math.round(v)));
     water.receiveShadow = true;
     water.userData.occFlat = true;   // Round 168: a flat sheet under every pin (see occFlatTiles)
     groupCity.add(water);
@@ -10016,7 +10067,7 @@ vec2 wRing(vec2 rc, float tt) {
       const NS = Math.max(1, Math.ceil((c.s1 - c.s0) / 5)), NO = 4, dpos = [], didx = [];
       for (let j = 0; j <= NS; j++) for (let i = 0; i <= NO; i++) {
         const q = capPoint(o0 + (o1 - o0) * i / NO, c.s0 + (c.s1 - c.s0) * j / NS);
-        dpos.push(q[0], frontDem(q[1]) + c.dy - 0.3, q[1]);
+        dpos.push(q[0], capTop(c, q[0], q[1]) - 0.3, q[1]);
       }
       for (let j = 0; j < NS; j++) for (let i = 0; i < NO; i++) {
         const a = j * (NO + 1) + i, b = a + 1, cc = a + NO + 1, dd = cc + 1;
@@ -10030,7 +10081,7 @@ vec2 wRing(vec2 rc, float tt) {
       for (let j = 0; j < NS; j++) {
         const sa = c.s0 + (c.s1 - c.s0) * j / NS, sb = c.s0 + (c.s1 - c.s0) * (j + 1) / NS;
         const A = capPoint(o1, sa), B = capPoint(o1, sb);
-        const ta = frontDem(A[1]) + c.dy, tb = frontDem(B[1]) + c.dy, ba = shelfY(A[0] + 3, A[1]) - 0.3, bb = shelfY(B[0] + 3, B[1]) - 0.3;
+        const ta = capTop(c, A[0], A[1]), tb = capTop(c, B[0], B[1]), ba = shelfY(A[0] + 3, A[1]) - 0.3, bb = shelfY(B[0] + 3, B[1]) - 0.3;
         if (ta <= ba + 0.2 && tb <= bb + 0.2) continue;
         const fg = new THREE.BufferGeometry();
         fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([A[0], ba, A[1], B[0], bb, B[1], B[0], tb, B[1], A[0], ba, A[1], B[0], tb, B[1], A[0], ta, A[1]]), 3));
@@ -10040,10 +10091,47 @@ vec2 wRing(vec2 rc, float tt) {
       for (const se of [c.s0, c.s1]) {
         const mid = capPoint((TERRAIN.trenchW + TERRAIN.trenchE) / 2, se);
         // __dbg.perf().capPortals: each mouth's deck, the underside of its fascia, the lanes and the clear height between
-        const top = frontDem(mid[1]) + c.dy - 0.28, lanes = trenchLaneY(mid[0], mid[1], siteY(mid[0], mid[1], 'road')), depth = capFascia(top, lanes);
+        const top = capTop(c, mid[0], mid[1]) - 0.28, lanes = trenchLaneY(mid[0], mid[1], siteY(mid[0], mid[1], 'road')), depth = capFascia(top, lanes);
         portalFace(se, top, depth);
         (PERF.capPortals || (PERF.capPortals = [])).push({ s: se, x: +mid[0].toFixed(1), z: +mid[1].toFixed(1), deck: +top.toFixed(2), soffit: +(top - depth).toFixed(2), lanes: +lanes.toFixed(2), clear: +(top - depth - lanes).toFixed(2), dip: +trenchDip(mid[0], mid[1]).toFixed(2), water: +TERRAIN.water.toFixed(2) });
       }
+      capTunnel(c, NS);
+
+    }
+    // the tunnel under a deck (Round 207 coda): a dark concrete ceiling at the fascia's foot, walls down both sides from it to
+    // the dipped floor, and two rows of lamps along the ceiling, so I-95 runs into a lit tunnel instead of under the deck's
+    // textured underside with the city and its lawns showing past it; the slab and whatever lies between it and the ceiling
+    // are hidden from the lanes
+    function capTunnel(c, NS) {
+      const o0 = TERRAIN.trenchW + 0.02, o1 = TERRAIN.trenchE - 0.02, pos = [], lamp = [];
+      const top = (sv) => { const q = capPoint((o0 + o1) / 2, sv); return capTop(c, q[0], q[1]) - 0.28; };
+      const quad = (A, B, C, D) => pos.push(...A, ...B, ...C, ...A, ...C, ...D);
+      for (let j = 0; j < NS; j++) {
+        const sa = c.s0 + (c.s1 - c.s0) * j / NS, sb = c.s0 + (c.s1 - c.s0) * (j + 1) / NS, ya = top(sa) - CAP_STRUCT, yb = top(sb) - CAP_STRUCT;
+        const A0 = capPoint(o0, sa), A1 = capPoint(o1, sa), B0 = capPoint(o0, sb), B1 = capPoint(o1, sb);
+        quad([A0[0], ya, A0[1]], [B0[0], yb, B0[1]], [B1[0], yb, B1[1]], [A1[0], ya, A1[1]]);   // the ceiling, facing down
+        for (const [P, Q] of [[A0, B0], [A1, B1]]) {   // the walls, from the floor up to it
+          const fa = TERRAIN.trenchFloor - 0.3 - trenchDip(P[0], P[1]), fb = TERRAIN.trenchFloor - 0.3 - trenchDip(Q[0], Q[1]);
+          quad([P[0], fa, P[1]], [Q[0], fb, Q[1]], [Q[0], yb, Q[1]], [P[0], ya, P[1]]);
+        }
+      }
+      for (let sv = c.s0 + 6; sv < c.s1 - 4; sv += 9) for (const o of [26, 41, 56]) {   // a lamp every 9 m, three rows over the lanes
+        const q = capPoint(o, sv), y = top(sv) - CAP_STRUCT - 0.08;
+        const b = new THREE.BoxGeometry(0.35, 0.12, 1.6).rotateY(Math.atan2(fl.dx, fl.dz)).translate(q[0], y, q[1]);
+        lamp.push(b);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.computeVertexNormals();
+      const tm = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: 0x1d1c1a, roughness: 0.95, side: THREE.DoubleSide }));
+      tm.receiveShadow = true; tm.castShadow = true; tm.name = 'cap-tunnel'; groupCity.add(tm); freeOnUpload(g);
+      if (lamp.length) {
+        const lg = mergeColored(lamp.map((b) => ({ geom: b, color: new THREE.Color(0xffe7c2) })));
+        const lm = new THREE.Mesh(lg, new THREE.MeshBasicMaterial({ vertexColors: true }));
+        lm.name = 'cap-tunnel-lamps'; groupCity.add(lm); freeOnUpload(lg);
+      }
+      const prof = [];   // every 10 m: s, the ceiling, the lanes under its middle, the clear height between, the dip
+      for (let sv = c.s0; sv <= c.s1 + 0.01; sv += 10) { const q = capPoint((o0 + o1) / 2, sv), cy = top(sv) - CAP_STRUCT, ly = trenchLaneY(q[0], q[1], siteY(q[0], q[1], 'road')); const w = capPoint(TERRAIN.trenchW - 1.5, sv), e = capPoint(TERRAIN.trenchE + 1.5, sv); prof.push([Math.round(sv), +cy.toFixed(2), +ly.toFixed(2), +(cy - ly).toFixed(2), +trenchDip(q[0], q[1]).toFixed(2), +siteY(w[0], w[1], 'ground').toFixed(2), +siteY(e[0], e[1], 'ground').toFixed(2), +frontDem(q[1]).toFixed(2)]); }
+      PERF.capTunnel = { ceilingAt: [+(top(c.s0) - CAP_STRUCT).toFixed(2), +(top(c.s1) - CAP_STRUCT).toFixed(2)], lamps: lamp.length, prof, minClear: Math.min(...prof.map((q) => q[3])) };
     }
     // No finished lawn or solid portal face across the construction-stage cap.
     const capWork=capConstructionGeometry();
@@ -10263,14 +10351,41 @@ vec2 wRing(vec2 rc, float tt) {
 
   step('Planting parks and piers', () => {
     const parkParts = [], pierParts = [];
+    // Round 207 coda: a green crossing an end of the I-95 deck is laid in pieces either side of it, 5 cm short of the line on
+    // each side, so the piece on the deck keeps the deck's height to its edge and the piece past it the trench's (one drape
+    // across the line ramped from the deck down into the trench, a lawn hanging in the tunnel's mouth)
+    const capCut = (poly) => {
+      let pieces = [poly];
+      for (const c of CAPS) for (const se of [c.s0, c.s1]) {
+        const next = [];
+        for (const pc of pieces) {
+          let lo = Infinity, hi = -Infinity, oMin = Infinity, oMax = -Infinity;
+          for (const q of pc) { const sv = capAlong(q[0], q[1]), o = frontOff(q[0], q[1]); lo = Math.min(lo, sv); hi = Math.max(hi, sv); oMin = Math.min(oMin, o); oMax = Math.max(oMax, o); }
+          if (lo >= se || hi <= se || oMax < TERRAIN.trenchW - 2 || oMin > TERRAIN.trenchE + 2) { next.push(pc); continue; }
+          for (const [sign, edge] of [[-1, se - 0.05], [1, se + 0.05]]) {   // Sutherland-Hodgman against s <= edge, then s >= edge
+            const inside = (q) => sign * (capAlong(q[0], q[1]) - edge) >= 0, out = [];
+            for (let i = 0; i < pc.length; i++) {
+              const P = pc[i], Q = pc[(i + 1) % pc.length], pi = inside(P), qi = inside(Q);
+              if (pi) out.push(P);
+              if (pi !== qi) { const sp = capAlong(P[0], P[1]) - edge, sq = capAlong(Q[0], Q[1]) - edge, t = sp / (sp - sq); out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]); }
+            }
+            if (out.length > 2 && Math.abs(signedArea(out)) > 0.5) next.push(out);
+          }
+        }
+        pieces = next;
+      }
+      return pieces;
+    };
     for (const a of D.areas || []) {
       if (a.poly.length < 3) continue;
       if (a.kind === 'park') {
         const shade = lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(a.poly[0][0]));
         const c = new THREE.Color(COLORS.park).multiplyScalar(shade);
-        const pa = Math.abs(signedArea(a.poly));
         GRASS_POLYS.push(a.poly);
-        parkParts.push({ geom: pa > 700 ? drapedPoly(a.poly, LAYER.park, 10) : flatPoly(a.poly, null, LAYER.park), color: c });
+        for (const pp of capCut(a.poly)) {
+          const pa = Math.abs(signedArea(pp));
+          parkParts.push({ geom: pa > 700 ? drapedPoly(pp, LAYER.park, 10) : flatPoly(pp, null, LAYER.park), color: c });
+        }
       } else if (a.kind === 'pier') {
         if (pierWet(a.poly)) { pierDeck(a.poly); continue; }   // realism, water: a deck on piles (pierDeck)
         const [pcx, pcz] = polyCentroid(a.poly);
