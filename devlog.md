@@ -12227,3 +12227,26 @@ refused step down from the top had fired the one floor probe, 1.6 to 0.72 in a f
 view reports the render ratio once the page sets it, so a Graphics change after Enter took the current rung as the device's
 top. `DEV_DPR` reads it once at boot. The controller's logic tests keep the four-rung ladder through a prelude (`LADDER4`);
 the phone's own: two rungs, no floor jump, 2.33 changes a minute on the swinging pixel-bound device (2.67 before).
+
+## Round 205 — a phone's lamp posts (Oct 20)
+
+Mike, from the phone: "On mobile, I am not seeing the lamp posts at night. The street lights are just floating orbs."
+
+A phone had never drawn a pole: `POLE_MESH_CAP` was 0 on touch since the first streetlights, Round 158 dropped the pole
+inventory there to save its 5.8 MB, and the realism round left night#5 (lanterns, lenses, glare and aimed arms on phones)
+undone. So every lamp on a phone was the glow alone, at the top of a shaft that was not there.
+
+Now a phone meshes its 500 nearest poles within 300 m (`POLE_MESH_CAP`, `POLE_MESH_R`; tier 2 still none), as the computer
+does its 1,600 within 1 km: cobra heads, Franklin lanterns, wood poles, the lit lenses and glass, and the glare. The reconcile
+runs every 900 ms or 60 m of travel (`POLE_RECON_MOVE`; 220 m on a computer). A phone aims no arm at the build
+(`POLE_AIM_BUILD`: 200,000 street snaps it cannot afford there); `poleReconcile` aims each arm when its pole is first meshed,
+so the phone's far glow stays at the shaft top. The meshed poles' glow is drawn at their heads from the glare's own buffer
+(`poleNearGlow`, the glow's own look on a second material), and the far glow hides exactly the poles the reconcile meshed
+(`uPoleHide`: its camera and the squared radius between the last pole kept and the first left), so no lamp is drawn twice
+or not at all. The bridge walkway lamps ride the near material, which hides nothing. The inventory's 400 m cells are typed
+arrays now on every device; a phone keeps no glint colours (`wxLampCol`, a computer's).
+
+Headless, phone emulation (740x360, touch), 21:30: 442 poles meshed over Spruce Street (247 cobra heads, 186 lanterns,
+9 wood); in South Philly 500 (214, 104, 182), the 22 heads within 60 m of (-1200, 2400) identical in position and family to
+the computer's; +88,000 triangles (3.51 M to 3.60 M) and +7 draw calls. The wet air's halo (`wxHaloMesh`) still rides the far
+glow's buffer, so in rain a meshed pole's halo sits at its shaft top, 1.5 m off its head.

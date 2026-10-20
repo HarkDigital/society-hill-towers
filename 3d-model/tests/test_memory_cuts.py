@@ -386,13 +386,16 @@ class FreedArrays(unittest.TestCase):
         self.assertEqual(s.count('poleGlow.geometry'), 1)
         self.assertIn('const p = new THREE.Points(poleGlow.geometry, m);', cut(s, '  function wxHaloMesh() {', '\n  }\n'))
 
-    def test_a_phone_builds_no_pole_inventory(self):
+    def test_a_tier_2_phone_builds_no_pole_inventory(self):
+        # Round 205: a phone's other tiers mesh their nearest poles and keep the inventory, its cells as typed arrays
+        self.assertIn('const POLE_MESH_CAP = isTouch ? (TIER2 ? 0 : 500) : 1600;', self.src)
         lamps = cut(self.src, "  step('Lighting the streetlamps'", "  step('Fitting out the rooftops'")
+        self.assertIn('if (cells) for (const [k, a] of cells) cells.set(k, Int32Array.from(a));', lamps)
         self.assertIn('const keepInv = POLE_MESH_CAP > 0;', lamps)
         self.assertIn('const cells = keepInv ? new Map() : null;', lamps)
         self.assertIn('poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll } : null;', lamps)
         self.assertIn('const FAM = keepInv && REAL ? new Uint8Array(nAll) : null, PC = keepInv && REAL ? new Uint8Array(nAll * 3) : null;', lamps)
-        # the only reader is poleReconcile, which runs only for the desktop's pole meshes
+        # the only reader is poleReconcile, which runs only for the pole meshes
         uses = [m.start() for m in re.finditer(r'poleInv\.', self.src)]
         body = cut(self.src, '  function poleReconcile(', '  function syncLightsBtn(')
         start = self.src.index('  function poleReconcile(')

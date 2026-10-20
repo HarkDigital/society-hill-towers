@@ -158,9 +158,10 @@ class WetAir(unittest.TestCase):
         self.assertIn('const halo = lampMapU.uLampOn.value * Math.max(hr, hf, hs);', f)   # the lamps' own switch
 
     def test_the_glints_know_each_lamps_colour(self):
-        # beside the computer's own inventory (keepInv): a phone keeps neither (test_memory_cuts' FreedArrays)
+        # beside the computer's own inventory (keepInv): a phone draws no glints and keeps no colours for them (Round 205:
+        # it keeps the inventory for its poles)
         lamps = cut(self.s, "  step('Lighting the streetlamps'", "  step('Fitting out the rooftops'")
-        self.assertIn('if (keepInv && REAL) wxLampCol(pcol);', lamps)
+        self.assertIn('if (keepInv && REAL && !isTouch) wxLampCol(pcol);', lamps)
         f = cut(self.s, '  function wxGlintStep(now, dt) {', '\n  }\n')
         self.assertIn('pinOccAnswer(inv.X[i], inv.GY[i] + inv.HM[i], inv.Z[i]) === 0', f)   # a building in front: no glint
         self.assertIn('wxSurfU.uWet.value > 0.02', f)

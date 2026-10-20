@@ -23,13 +23,13 @@ class GlowDepth(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.src = (ROOT / 'app.js').read_text(encoding='utf-8')
-        a = cls.src.index('    poleMat.onBeforeCompile = (shader) => {')
-        cls.hook = cls.src[a:cls.src.index('    postRaw(poleMat);', a)]
+        a = cls.src.index('      m.onBeforeCompile = (shader) => {')
+        cls.hook = cls.src[a:cls.src.index('      postRaw(m);', a)]
 
     def node(self, body):
         if not shutil.which('node'):
             raise unittest.SkipTest('Node.js unavailable')
-        script = "const THREE = require('./three.min.js');\nconst poleMat = {};\n" + self.hook + r'''
+        script = "const THREE = require('./three.min.js');\nconst m = {}, poleHideU = { value: null };\nlet hide = false;\n" + self.hook + r'''
 // a small preprocessor: #define, #undef, #ifdef, #ifndef, #if defined(A) && defined(B), #else, #endif, and #include of
 // three's chunks; returns the live lines
 function live(src, defs) {
@@ -60,7 +60,7 @@ function live(src, defs) {
     def test_the_hook_on_threes_points_shaders(self):
         out = self.node(r'''
 const L = THREE.ShaderLib.points, sh = { vertexShader: L.vertexShader, fragmentShader: L.fragmentShader, uniforms: {} };
-poleMat.onBeforeCompile(sh);
+m.onBeforeCompile(sh);
 const defs = ['USE_LOGDEPTHBUF', 'USE_LOGDEPTHBUF_EXT', 'USE_COLOR'];   // what r149 defines on WebGL 2 with logarithmicDepthBuffer
 const v = live(sh.vertexShader, defs), f = live(sh.fragmentShader, defs);
 const v0 = live(L.vertexShader, defs), f0 = live(L.fragmentShader, defs);
@@ -87,6 +87,24 @@ console.log(JSON.stringify({
         self.assertFalse(out['fDepth'])              # no fragment writes its depth
         self.assertTrue(out['f0Depth'])              # (as three's own points shader did)
         self.assertTrue(out['v0Frag'])
+
+    def test_the_phones_far_glow_hides_the_meshed_poles(self):
+        # Round 205: the far glow's variant (a phone's) sends a lamp inside the reconcile's circle off the screen, after the
+        # projection and before the size and the depth; the other variant carries none of it
+        out = self.node(r'''
+const L = THREE.ShaderLib.points, mk = () => ({ vertexShader: L.vertexShader, fragmentShader: L.fragmentShader, uniforms: {} });
+const a = mk(); m.onBeforeCompile(a);
+hide = true; const b = mk(); m.onBeforeCompile(b);
+const v = live(b.vertexShader, ['USE_LOGDEPTHBUF', 'USE_COLOR']);
+console.log(JSON.stringify({
+  plain: a.vertexShader.includes('uPoleHide') || 'uPoleHide' in a.uniforms,
+  uni: b.uniforms.uPoleHide === poleHideU, decl: /uniform vec4 uPoleHide;/.test(v),
+  order: v.indexOf('uPoleHide.xy') > v.indexOf('gl_Position = projectionMatrix * mvPosition;') && v.indexOf('uPoleHide.xy') < v.indexOf('gl_PointSize = size * clamp'),
+}));''')
+        self.assertFalse(out['plain'])
+        self.assertTrue(out['uni'])
+        self.assertTrue(out['decl'])
+        self.assertTrue(out['order'])
 
     def test_the_two_depths_agree_over_the_camera_range(self):
         out = self.node(r'''

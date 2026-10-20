@@ -362,7 +362,7 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   pipeline), tall labels.
   Far ring: `CITY_B64` into 2,400 m chunks, 100 m ground strips, far roads, district labels.
   **All three load on phones** (Round 7 removed the old touch skip); touch instead keeps DPR
-  ≤ 1.25, 2048 shadow maps, half the wide forest, no pole meshes and no deck shadows.
+  ≤ 1.25, 2048 shadow maps, half the wide forest, 500 pole meshes within 300 m (Round 205; tier 2 none) and no deck shadows.
   `freeOnUpload()` nulls the chunk arrays after GPU upload (they are never raycast), and the
   big `let` blobs are nulled after decode (Round 28's memory diet).
 - **Facade shader:** `cityMat.onBeforeCompile` draws windows, lintels, shutters, doors in world

@@ -7696,6 +7696,7 @@ RB.add({
     DPR.cur = r;
     renderer.setPixelRatio(r);   // re-applies the drawing-buffer size
     if (poleMat) poleMat.size = r;     // the point sprites are sized in physical px
+    if (poleMatNear) poleMatNear.size = r;
     if (towerMat) towerMat.size = r;
     if (floodMat) floodMat.size = r;
     if (bfbNodesMat) bfbNodesMat.size = r;
@@ -47972,12 +47973,19 @@ float pinOccGate() {
   // carries one additive glow point — PSIP's LED conversions burn warm white,
   // the sodium remainder amber — sized with a screen-pixel floor so the whole
   // city glitters from altitude the way it does from a real approach path.
-  // Near the camera the lamps also get instanced pole meshes (desktop only).
+  // Near the camera the lamps also get instanced pole meshes: a computer's 1,600 nearest within 1 km, a phone's 500 within
+  // 300 m (Round 205, Mike from the phone: "the street lights are just floating orbs"; since Round 158 a phone had drawn
+  // the glow alone, with no pole under it). A phone aims each arm only when its pole is first meshed (poleReconcile), so its
+  // far glow stays at the shaft's top and the meshed poles' glow is drawn at their heads from the glare's own buffer
+  // (poleNearGlow), the far glow hiding exactly the poles the reconcile meshed (uPoleHide); tier 2 meshes none
   const LIGHTS = { on: true, ready: false };
   const btnLights = document.getElementById('btnLights');
-  const POLE_MESH_CAP = isTouch ? 0 : 1600;
-  const POLE_MESH_R = 1000;
-  let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null;
+  const POLE_MESH_CAP = isTouch ? (TIER2 ? 0 : 500) : 1600;
+  const POLE_MESH_R = isTouch ? 300 : 1000;
+  const POLE_RECON_MOVE = isTouch ? 60 : 220;   // the reconcile's distance trigger, against a phone's 300 m circle
+  const POLE_AIM_BUILD = !isTouch;              // every arm aimed at the build (a computer's): its glow and pools at the head
+  const poleHideU = { value: new THREE.Vector4(0, 0, -1, 0) };   // the far glow's hidden circle: x, z, r^2 (negative: none)
+  let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null, poleMatNear = null, poleNearGlow = null;
   let towerGlow = null, towerMat = null;
   let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
   let WWB_LAMP_N = 0;                      // the Walt Whitman's lamp posts (Round 88; __dbg.roads)
@@ -48020,7 +48028,7 @@ float pinOccGate() {
   // height by the pole's own), a post-top lantern's glass centred 4.1 m up on its reference post
   const POLE_HEAD = { arm: 1.5, y: 8.81, lantern: 4.1 };
   const lanternSy = (hm) => clamp(hm / POLE_HEAD.lantern, 0.85, 1.5);
-  // the realism round's near meshes (a computer's, REAL): the lanterns and the wood poles beside the cobra heads, the lit
+  // the realism round's near meshes (REAL; a phone's too since Round 205): the lanterns and the wood poles beside the cobra heads, the lit
   // lenses and glass, and the glare round each near luminaire (uGlare: x the pixels a metre at one metre, y its size)
   const POLE_REAL = { lantern: null, wood: null, lens: null, glass: null, glare: null, glareGeo: null, lensOn: { value: 0 }, glareU: { value: new THREE.Vector2(500, 0.8) }, n: [0, 0, 0] };
   // a pole's arm reaches over the street (night#5: they pointed anywhere, into lawns and walls): toward the nearest point
@@ -48200,8 +48208,9 @@ float pinOccGate() {
     PIER_RINGS.length = 0;   // Round 153: every paved flat's outline was held for the pier lamps alone; let it go
     const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 5, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
     // Round 158: the inventory (ROT and the 400 m cells, with X, Z, GY and HM kept past the step) feeds only poleReconcile,
-    // which runs only for the desktop's near pole meshes; a phone (POLE_MESH_CAP 0) keeps X, Z, GY and HM for this step
-    // alone and builds neither ROT nor the cells (about 5.8 MB it held for good)
+    // which runs only for the near pole meshes; tier 2 (POLE_MESH_CAP 0) keeps X, Z, GY and HM for this step alone and
+    // builds neither ROT nor the cells (about 5.8 MB). Round 205: a phone's other tiers keep it (their poles), the cells as
+    // typed arrays
     const keepInv = POLE_MESH_CAP > 0;
     const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = keepInv ? new Float32Array(nAll).fill(NaN) : null;
     // the realism round (night#5): the family each pole is drawn as (pole_families.json from bake_pole_families.py, 2 bits a
@@ -48224,9 +48233,10 @@ float pinOccGate() {
     // they were, and no time spent aiming the arms at the build)
     const headAt = (i, fam) => {
       if (!ROT || !REAL) return;
-      if (Number.isNaN(ROT[i])) { const t0 = performance.now(); ROT[i] = poleArmRot(X[i], Z[i], i); tArm += performance.now() - t0; if (poleArmRot.hit) armRoad++; }
       FAM[i] = fam;
       for (let c = 0; c < 3; c++) PC[i * 3 + c] = Math.round(clamp(pcol[i * 3 + c] / 2, 0, 1) * 255);
+      if (!POLE_AIM_BUILD) return;   // a phone: the arm when the pole is first meshed, the glow at the shaft's top (Round 205)
+      if (Number.isNaN(ROT[i])) { const t0 = performance.now(); ROT[i] = poleArmRot(X[i], Z[i], i); tArm += performance.now() - t0; if (poleArmRot.hit) armRoad++; }
       if (fam === 1) { pos[i * 3 + 1] = GY[i] + POLE_HEAD.lantern * lanternSy(HM[i]); return; }
       const r = ROT[i];
       pos[i * 3] = X[i] + Math.cos(r) * POLE_HEAD.arm; pos[i * 3 + 1] = GY[i] + POLE_HEAD.y * HM[i] / 9; pos[i * 3 + 2] = Z[i] - Math.sin(r) * POLE_HEAD.arm;
@@ -48272,30 +48282,44 @@ float pinOccGate() {
     const pg = new THREE.BufferGeometry();
     pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     pg.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
-    poleMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
-    poleMat.onBeforeCompile = (shader) => {
-      // perspective size with a floor: a lamp never falls under ~2 physical px,
-      // so the far city reads as a carpet of lights (same trick as headlights)
-      shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
-        'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
-      // (the wet air's halo is a point of its own on these buffers, the weather's wxHaloMesh: the glow keeps one look)
-      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
-        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
-      // Round 168 (the phones' GPU): the glow's log depth goes in from the vertex, not written by each fragment. A point's
-      // varyings are one value over the whole sprite, so the fragment path's gl_FragDepth, log2(1 + w) * FC / 2 from the
-      // vertex's own w, is the very depth the vertex path hands the rasterizer (z = (log2(1 + w) * FC - 1) * w): the same
-      // number, to a float's rounding. But a shader that writes gl_FragDepth sends every fragment through itself before
-      // the depth test, the lamps behind the buildings with the rest; without it the GPU rejects those first. The standard
-      // depth still clips a point nearer than the near plane or past the far one, as it did. Measured on an M2 at 1.25 at
-      // night, alternating blocks: 0.2 to 0.8 ms a frame by the fastest frame, 0.3 to 1.2 by the five fastest, at the entry
-      // view, over Center City, on Spruce Street and 150 m up (the whole glow costs about 2); captured both ways, at most 6
-      // isolated pixels of 416,250 differ. A cut of the points into frustum-culled tiles was tried first and saved 0.02 ms
-      // (a lamp off the screen costs next to nothing; the cost is the fragments) for 52 to 113 more draw calls: not kept
-      shader.vertexShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.vertexShader.replace('#include <logdepthbuf_vertex>',
-        'float stdZ = gl_Position.z;\n#include <logdepthbuf_vertex>\nif (stdZ < -gl_Position.w || stdZ > gl_Position.w) gl_Position.z = stdZ;');
-      shader.fragmentShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.fragmentShader;
+    // Round 205: two of these on a phone, the far glow's with the hidden circle (uPoleHide) and the near glow's and the
+    // bridge walkway lamps' without; a computer's one has none
+    const glowMat = (hide) => {
+      const m = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
+      m.onBeforeCompile = (shader) => {
+        if (hide) {   // a lamp the reconcile meshed is drawn at its head by the near glow: the far one sends it off the screen
+          shader.uniforms.uPoleHide = poleHideU;
+          shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform vec4 uPoleHide;')
+            .replace('#include <project_vertex>', '#include <project_vertex>\nvec2 phd = position.xz - uPoleHide.xy; if (dot(phd, phd) < uPoleHide.z) { gl_Position = vec4(0.0, 0.0, -2.0, 1.0); return; }');
+        }
+        // perspective size with a floor: a lamp never falls under ~2 physical px,
+        // so the far city reads as a carpet of lights (same trick as headlights)
+        shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
+          'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
+        // (the wet air's halo is a point of its own on these buffers, the weather's wxHaloMesh: the glow keeps one look)
+        shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+          '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
+        // Round 168 (the phones' GPU): the glow's log depth goes in from the vertex, not written by each fragment. A point's
+        // varyings are one value over the whole sprite, so the fragment path's gl_FragDepth, log2(1 + w) * FC / 2 from the
+        // vertex's own w, is the very depth the vertex path hands the rasterizer (z = (log2(1 + w) * FC - 1) * w): the same
+        // number, to a float's rounding. But a shader that writes gl_FragDepth sends every fragment through itself before
+        // the depth test, the lamps behind the buildings with the rest; without it the GPU rejects those first. The standard
+        // depth still clips a point nearer than the near plane or past the far one, as it did. Measured on an M2 at 1.25 at
+        // night, alternating blocks: 0.2 to 0.8 ms a frame by the fastest frame, 0.3 to 1.2 by the five fastest, at the entry
+        // view, over Center City, on Spruce Street and 150 m up (the whole glow costs about 2); captured both ways, at most 6
+        // isolated pixels of 416,250 differ. A cut of the points into frustum-culled tiles was tried first and saved 0.02 ms
+        // (a lamp off the screen costs next to nothing; the cost is the fragments) for 52 to 113 more draw calls: not kept
+        shader.vertexShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.vertexShader.replace('#include <logdepthbuf_vertex>',
+          'float stdZ = gl_Position.z;\n#include <logdepthbuf_vertex>\nif (stdZ < -gl_Position.w || stdZ > gl_Position.w) gl_Position.z = stdZ;');
+        shader.fragmentShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.fragmentShader;
+      };
+      m.customProgramCacheKey = () => 'pole-glow' + (hide ? '-hide' : '');
+      postRaw(m);
+      return m;
     };
-    postRaw(poleMat);
+    const NEAR_GLOW = POLE_MESH_CAP > 0 && REAL && !POLE_AIM_BUILD;
+    poleMat = glowMat(NEAR_GLOW);
+    poleMatNear = NEAR_GLOW ? glowMat(false) : poleMat;
     {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
       const nGl = GLORY.lamps.length;   // Round 191: Glory's two lanterns
       const nBr = BR.lampSrc.length / 4;   // Round 195: the remodelled bridges' own lamps
@@ -48384,7 +48408,7 @@ float pinOccGate() {
       const bc = new Float32Array(bfbLampPts.length);
       for (let i = 0; i < bc.length; i += 3) { bc[i] = 1.0; bc[i + 1] = 0.8; bc[i + 2] = 0.55; }
       bg.setAttribute('color', new THREE.BufferAttribute(bc, 3));
-      bfbLampGlow = new THREE.Points(bg, poleMat);
+      bfbLampGlow = new THREE.Points(bg, poleMatNear);
       bfbLampGlow.frustumCulled = false; bfbLampGlow.renderOrder = 11; bfbLampGlow.visible = false;
       groupCity.add(bfbLampGlow);
     }
@@ -48433,9 +48457,15 @@ float pinOccGate() {
       poleMesh.frustumCulled = false;
       groupCity.add(poleMesh);
       if (REAL) polesRealBuild(maxPtOf());
+      if (NEAR_GLOW) {   // Round 205: the meshed poles' glow at their heads, on the glare's buffer (its positions and colours)
+        poleNearGlow = new THREE.Points(POLE_REAL.glareGeo, poleMatNear);
+        poleNearGlow.frustumCulled = false; poleNearGlow.renderOrder = 11; poleNearGlow.visible = false;
+        groupCity.add(poleNearGlow);
+      }
     }
+    if (cells) for (const [k, a] of cells) cells.set(k, Int32Array.from(a));
     poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll } : null;
-    if (keepInv && REAL) wxLampCol(pcol);   // the wet streets' glints read each lamp's own colour (wxGlintStep, a computer's)
+    if (keepInv && REAL && !isTouch) wxLampCol(pcol);   // the wet streets' glints read each lamp's own colour (wxGlintStep, a computer's)
     PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     if (FAM) { const fc = [0, 0, 0, 0]; for (let i = 0; i < nAll; i++) fc[FAM[i]]++; PERF.lampsReal = { armMs: Math.round(tArm), armRoad, families: fc }; }   // __dbg.PERF.lampsReal
     const el = document.getElementById('lightsCount');
@@ -49569,6 +49599,11 @@ float pinOccGate() {
       R.n = [nc, nl, nw];
     }
     if (gp) { R.glareGeo.setDrawRange(0, nUse); R.glareGeo.attributes.position.needsUpdate = true; R.glareGeo.attributes.color.needsUpdate = true; }
+    if (poleNearGlow) {   // the far glow hides what was meshed: the whole circle, or out to between the last pole kept and the first left
+      const hu = poleHideU.value;
+      hu.set(cx, cz, nUse < cand.length ? (cand[nUse - 1][0] + cand[nUse][0]) / 2 : POLE_MESH_R * POLE_MESH_R, 0);
+      if (!nUse) hu.z = -1;
+    }
   }
   const _ptc = new THREE.Color();
   function poleTint(m, k, i) { const P = poleInv.PC; m.setColorAt(k, _ptc.setRGB(P[i * 3] / 127.5, P[i * 3 + 1] / 127.5, P[i * 3 + 2] / 127.5)); }
@@ -49576,7 +49611,7 @@ float pinOccGate() {
   // the realism round's near meshes (night#5): the Franklin lanterns and post tops (FLP, C13, PTF, PTC, CCP in the survey:
   // an eight-sided post on a base, a four-sided glass lantern under a pyramid cap), the wood utility poles with a bracket arm and
   // a small head (most of the rowhouse streets), a lit lens under every head and lit glass in every lantern (dim frosted
-  // glass by day), and a soft glare round each near luminaire. A computer's alone (POLE_MESH_CAP)
+  // glass by day), and a soft glare round each near luminaire. Every device but a tier 2 phone (POLE_MESH_CAP)
   function lampMerge(list) {
     const parts = list.map(([g, hex]) => [g.index ? g.toNonIndexed() : g, new THREE.Color(hex)]);
     let total = 0;
@@ -49689,13 +49724,14 @@ float pinOccGate() {
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
+    if (poleNearGlow) { poleNearGlow.visible = show; poleMatNear.opacity = night; }   // and the bridge walkway lamps' (Round 205)
     lampMapU.uLampOn.value = show ? night : 0;
     if (show) lampMapUpdate();
     lampNightFx(night, show);   // the realism round: the near meshes, their lenses and glare, the rebuilds' lamp box
     if (bfbLampGlow) bfbLampGlow.visible = show;
     if (poleMesh) {
       poleMesh.visible = LIGHTS.on;
-      if (LIGHTS.on && (now >= poleReconAt || camera.position.distanceToSquared(poleLastCam) > 220 * 220)) {
+      if (LIGHTS.on && (now >= poleReconAt || camera.position.distanceToSquared(poleLastCam) > POLE_RECON_MOVE * POLE_RECON_MOVE)) {
         poleReconAt = now + 900;
         poleLastCam.copy(camera.position);
         poleReconcile();
