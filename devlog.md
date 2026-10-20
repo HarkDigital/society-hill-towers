@@ -12378,3 +12378,14 @@ her deck edge, warmed and a seventh each (packed close, they read as one white b
 kept past their upload for it (`MOSHULU.bulbP`, `bulbC`), a thirtieth each, whose streaks merge into the swags' amber line
 upside down on the water. Rendered on the phone path beside the desktop at the New Jersey from 20 m and at the Moshulu from
 12 m. `__dbg.mirLights()` reports `ships` and `late`.
+
+## Round 209 — Glory's steps on the east edge (Oct 20)
+
+Mike: "The steps to glory are currently leaning people up to the south and down to the north. The actual steps are on the
+east edge of the patio. People going up would be heading west and down to the east." The flight stood out from the entrance
+bay toward the street, its treads across v (rebuilds/glory.js: u east along the front, v south into the lot). It now stands
+off the patio's east end: two treads at two thirds and one third of the patio's height, 0.3 m each, running east along the
+walk from the patio's edge (`SU`, `ST`), the patio's depth wide less 5 and 10 cm (`SV`), with its rails down both sides; the
+patio's railing runs whole along its front and its west end, its east end the flight's opening; the far level carries the
+treads too. The door's point (the card, the tap) stays at the entrance bay. Rendered at night from Chestnut Street and from
+the east, and by day from the north-east.

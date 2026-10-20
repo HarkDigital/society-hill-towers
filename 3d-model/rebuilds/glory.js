@@ -356,11 +356,15 @@
       shell(near);
       for (const sv of [DEPTH + 10.5, DEPTH + 13.5]) near.box(1.6, 2.8, sv, sv + 2.4, REAR_TOP, REAR_TOP + 0.35, 'iron', 'd', GS('iron'));
 
-      // ---- the stoop: the raised cafe across the front, its three steps down from the entrance bay, all concrete
+      // ---- the stoop: the raised cafe across the front and its three steps, all concrete. Round 209 (Mike: "The actual
+      // steps are on the east edge of the patio. People going up would be heading west and down to the east"): the flight
+      // stands off the patio's east end, its treads running east along the walk in front of 128's west bay (it stood out
+      // from the entrance bay toward the street, climbing south); the entrance bay keeps the door (stair, for the door's point)
       const PT = LO.doorFoot, PV = -1.7;
       const stair = LO.bays[1];
+      const SV = [PV + 0.05, -0.1], SU = FW - 0.04, ST = 0.3;   // the flight's width across the walk (v) and its foot's run east (u)
       near.box(0.05, FW - 0.04, PV, 0, -1.5, PT, 'concrete', 'b', GS('concrete'));
-      for (let k = 1; k <= 2; k++) near.box(stair[0] - 0.05, stair[1] + 0.05, PV - 0.3 * k, PV - 0.3 * (k - 1), -1.5, PT * (3 - k) / 3, 'concrete', 'b', GS('concrete'));
+      for (let k = 1; k <= 2; k++) near.box(SU + ST * (k - 1), SU + ST * k, SV[0], SV[1], -1.5, PT * (3 - k) / 3, 'concrete', 'b', GS('concrete'));
 
       // ---- the iron: the stoop's railing (posts, rails, pickets and the cast band), the stairs' own rails, the Juliet
       // balconet in the east bay, the blade sign's bracket, the old box's strut frame, the lanterns' arms and cages, the menu
@@ -409,9 +413,11 @@
         return n;
       }
       const RV = PV + 0.03, RH = 1.0;
-      const RUNS = [[[0.08, RV], [stair[0] - 0.05, RV]], [[stair[1] + 0.05, RV], [FW - 0.08, RV]], [[0.08, RV], [0.08, -0.05]], [[FW - 0.08, RV], [FW - 0.08, -0.05]]];
+      // the patio's railing along its front and its west end (the east end is the flight's opening), and the flight's own
+      // rails down both its sides, from the patio's edge to the walk at its foot
+      const RUNS = [[[0.08, RV], [FW - 0.08, RV]], [[0.08, RV], [0.08, -0.05]]];
       const runN = RUNS.map((r) => railing(r, [PT, PT], [PT + RH, PT + RH], true));
-      for (const su of [stair[0] - 0.02, stair[1] + 0.02]) railing([[su, RV], [su, PV - 0.62]], [PT, 0.02], [PT + RH, 0.9], false);
+      for (const sv of [SV[0] + 0.02, SV[1] - 0.02]) railing([[SU - 0.04, sv], [SU + ST * 2 + 0.02, sv]], [PT, 0.02], [PT + RH, 0.9], false);
       {
         // the Juliet balconet in the east bay (refs, the Bright MLS view): a flat front with a slight belly, 0.12 m at its
         // middle, a dense band of scrolls between a bottom and a top rail, a post at either end and short returns to the wall
@@ -583,6 +589,7 @@
       far.box(0, FW, -0.35, 0, LO.cornice[0] + 0.15, LO.cornice[1] - 0.05, 'granite', 'bwe', GS('granite'));
       far.box(0, FW, -0.25, 0, TOP - 0.62, TOP, 'brick', 'bwe', GS('brick'));
       far.box(0.05, FW - 0.04, PV, 0, -0.3, PT, 'concrete', 'bd', GS('concrete'));
+      for (let k = 1; k <= 2; k++) far.box(SU + ST * (k - 1), SU + ST * k, SV[0], SV[1], -0.3, PT * (3 - k) / 3, 'concrete', 'bd', GS('concrete'));
       // and its railings as the cast lace's whole-railing kind (pickets, rails and the band, cut in the shader; Round 191's
       // second review: the near level's railings and cafe went to a plain slab at the switch)
       RUNS.forEach((r, i) => lace(far, r[0], r[1], PT, PT + RH, 0, runN[i], 2));
