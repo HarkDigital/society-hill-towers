@@ -12497,3 +12497,26 @@ the hatch).
 **The placards.** A concert placard, its tether and its ball show only within `CONCERT_PIN_R` 1,609.34 m of the eye, the
 straight-line distance the ships' pins use (Round 202), where it was 14 km; the building-occlusion test is not asked past
 it. The score bubbles keep 14 km. The Fillmore's placard showed at 1,432 and 1,581 m and was gone at 1,772.
+
+## Round 213 — the Fishtown El stations, and the El in light blue (Oct 20)
+
+Mike, with a street photograph of Girard Station from Girard Avenue: "Can we add the stations for the elevated train tracks
+in Fishtown? There should be coverings that are lit from underneath and the structure holding up the tracks should be
+light blue." Girard and Berks are a new rebuild, `rebuilds/elst.js`, one design at both crossings (OSM's Girard Avenue meets
+the El's centreline at (725.3, -2590.2), Berks Street at (955.8, -3671.2), both on straight runs). The app hands the
+rebuilds `elAt`: the El's own smoothed profile (the rail bed 9.1 m over Girard Avenue, 8.3 m over Berks Street), the track's
+direction and the bed's slope (0.4 and 1.3 per cent), and the station is built level at the crossing and sheared to it.
+Side platforms 110 m long at the cars' floor outboard of the tracks (3.35 to 6.65 m from the centreline: the cars are
+2.84 m wide on tracks 3.7 m apart) with the tactile strip; over their ends roofs on light blue columns with two LED strips
+under each, lit with the lamps' photocell, the soffits and the platforms washed by them; a silver windscreen with a glass
+band lit after dark; the station house over the cross street as in the photograph (navy panels over a silver band, silver
+tiled corner towers, two windows of four lights, the SEPTA mark and the station's name drawn by the page on one tower a
+side), a light blue lattice truss across the street under it kept 5 m over the street, and columns at its corners. OSM's
+'Berks SEPTA MFL Station' footprint was a 16 m box round the deck that the wide loop drew as an office block with the El
+running through it: the rebuild skips it. The Frankford leg's steel (the deck, the bents, the cross girders, the parapet
+rails) is the light blue its reconstruction was painted, stored for the legacy pipeline as the kit stores a photo colour;
+the West Market leg keeps its dark steel; on a computer the photographed riveted girder still lies on it (its green-cast
+test passes the blue). `?elblue=0` keeps the old dark steel. 12 materials, about 6,100 triangles for both stations.
+`tests/test_el_stations.py`; `tests/test_rebuilds.py` counts the new def (one skipped record, a reach of 1.2 km).
+Rendered by day and at night from Girard Avenue, from Front Street under the El and over Berks Street, and on the phone
+path. Rounds after this one could give York-Dauphin, Huntingdon and the stations north the same design.

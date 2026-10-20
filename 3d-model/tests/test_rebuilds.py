@@ -20,11 +20,11 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 RB_DIR = ROOT / 'rebuilds'
-IDS = ['dl', 'esp', 'gc', 'glory', 'rtm', 'shot', 't30', 'ww']
+IDS = ['dl', 'elst', 'esp', 'gc', 'glory', 'rtm', 'shot', 't30', 'ww']
 # the generic packed records each skip removes (the Sep 25 study's final run, inscene.log.json)
-SKIPPED = {'t30': 2, 'ww': 10, 'esp': 11, 'dl': 1, 'gc': 1, 'rtm': 4, 'shot': 0, 'glory': 0}   # Glory's core footprint is held back by REALISM_NEAR
+SKIPPED = {'t30': 2, 'ww': 10, 'esp': 11, 'dl': 1, 'gc': 1, 'rtm': 4, 'shot': 0, 'glory': 0, 'elst': 1}   # Glory's core footprint is held back by REALISM_NEAR; the El stations skip OSM's Berks box (Round 213)
 BUDGET = {'shot': 12000, 'glory': 6000}   # a big building stays under 40k triangles, a small one under 12k; Glory's near level 6k (Round 191)
-REACH = {'ww': 450}                     # metres from the centre; the Water Works carries the Fairmount Dam's crest across the river
+REACH = {'ww': 450, 'elst': 1200}      # metres from the centre; the Water Works carries the Fairmount Dam's crest across the river; Berks stands 1.1 km up the El from Girard
 
 
 def centroid(pts):                      # app.js polyCentroid: the area-weighted centroid the wide loop tests

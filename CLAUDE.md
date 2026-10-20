@@ -309,7 +309,8 @@ Comcast towers (`?comcast=0`, `__dbg.comcast()`), Battleship New Jersey (`?nj=0`
 Round 137 kept), the buildings round City Hall in their own facades (`?townart=0`; `towers.json` corrections apply under
 REAL only), the Irish Famine Memorial and its tricolour, A Man Full of Trouble (`?tavern=0`), Independence Hall (Round 210, `?indhall=0`, `__dbg.indhall()`: on the tavern's
 material, `tvMat`), the Liberty Bell in its glass chamber at the Liberty Bell Center's south end (Round 211, `?bell=0`,
-`__dbg.lbell()`: the footprint split before the core loop, `lbellSplit`), City Hall and Glory (Round
+`__dbg.lbell()`: the footprint split before the core loop, `lbellSplit`), the Fishtown El stations, Girard and Berks (Round 213, `rebuilds/elst.js` on the El's
+own profile through `api.elAt`; the Frankford leg's steel light blue, `?elblue=0` the old dark), City Hall and Glory (Round
 191). `?real=0` keeps every old model. Round 203: a Round 198 cornice runs only where open air stands outside its wall at its head (`townNear`, `townOpen`), its corners decided by one walk round the outside, its coping 3 cm over the head: never lay a ledge or cap in a roof's plane. Every round's art manifest is listed in build.py's art file list, and the tests read
 that list by membership, never by position.
 
