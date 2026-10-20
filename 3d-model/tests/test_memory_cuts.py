@@ -351,7 +351,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
         self.assertIn('const td = new THREE.Texture(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);', cut(s, '  function brLoadArt() {', '  // a buffer'))   # Round 195: the bridges' art
         self.assertIn('const t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, '  function brLatticeCanvas() {', '  // the program:'))   # and their lattice canvas
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 51)   # the definition and its uses (every round's, counted; Round 210: Independence Hall's atlas)
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 52)   # the definition and its uses (every round's, counted; Round 210: Independence Hall's atlas; Round 211: the Liberty Bell's canvas)
         self.assertIn('const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);', cut(s, '  function indhallMake(ob) {', '  // ---- the USS New Jersey'))
 
     def test_venue_screens_share_textures(self):

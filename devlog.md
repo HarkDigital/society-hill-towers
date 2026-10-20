@@ -12429,3 +12429,24 @@ key, the soot band `uTvSoot` and the gutter reach `uTvGut` uniforms; the tavern'
 - Congress Hall and Old City Hall, either side, are still the old boxes.
 Rendered by day from Chestnut Street, Independence Square, the air and the steeple, at night from the square, and on the
 phone path; the old massing beside it from the square.
+
+## Round 211 — the Liberty Bell through the window (Oct 20)
+
+Mike, with a screenshot of the Liberty Bell Center's south end at dusk: "Can we have the liberty bell show through the window
+like in real life". The bell hangs in a glass-walled chamber at the building's south end, seen at any hour through the
+showcase glass on Chestnut Street with Independence Hall behind it. The generic extrusion painted its windows on a solid
+wall, so the footprint is split before the core loop (`lbellSplit`): a cut across the long axis 11.8 m in from the south
+wall's farthest corner (between the east notch's corner at 11.2 m and the west bulge at 12.3 m, so it crosses the outline
+exactly twice) leaves the north part, 34 points, to the extrusion with everything that dresses it, and the five-sided south
+end to `lbellBuild` in 'Restoring the landmarks': the shell through that step's `aw` in the generic's own colour and facade
+style (`fabricStyle` as the loop deals it: brick and painted windows above), a glass wall nearly the south face's width from
+0.45 to 5.6 m in a dark metal frame (its ends cover the short brick returns, whose painted windows showed as slivers in the
+first render), a granite sill, the room's lining, floor, ceiling and soffit glowing a little by day and more after dark
+(`lbU.uLb`), and the bell 3.6 m in: a lathe at its real size (12 ft round the lip, 7 ft 6 in round the crown, 3 ft lip to
+crown), bronze with a canvas the page draws (the patina, the rings, the two lines of the inscription, Pass and Stow, Philada,
+MDCCLIII, the drilled crack and its hairline), the dark mouth, the elm yoke with its iron straps, two dark uprights. The
+crack faces into the hall as it hangs (the classic view from inside, Independence Hall through the glass), turned 20 degrees
+toward the east. If the build throws, the extrusion is closed over the chamber's ground as before the split. 2,158
+triangles. `?bell=0` and `?real=0` keep the whole extrusion; `__dbg.lbell()`; `tests/test_liberty_bell.py` runs the split on
+scene.json under JavaScriptCore. Rendered by day, at dusk and at night from Chestnut Street and close to the glass, and on
+the phone path.
