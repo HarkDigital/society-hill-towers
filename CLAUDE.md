@@ -307,7 +307,8 @@ Comcast towers (`?comcast=0`, `__dbg.comcast()`), Battleship New Jersey (`?nj=0`
 (`?moshulu=0`; her hull is navy with a red boot-top, as she is today), the Delaware bridges (`?bridges=0`,
 `__dbg.bridges()`), the Society Hill Towers (`?sht=0`: one tower modelled, placed three times; the five themed windows of
 Round 137 kept), the buildings round City Hall in their own facades (`?townart=0`; `towers.json` corrections apply under
-REAL only), the Irish Famine Memorial and its tricolour, A Man Full of Trouble (`?tavern=0`), City Hall and Glory (Round
+REAL only), the Irish Famine Memorial and its tricolour, A Man Full of Trouble (`?tavern=0`), Independence Hall (Round 210, `?indhall=0`, `__dbg.indhall()`: on the tavern's
+material, `tvMat`), City Hall and Glory (Round
 191). `?real=0` keeps every old model. Round 203: a Round 198 cornice runs only where open air stands outside its wall at its head (`townNear`, `townOpen`), its corners decided by one walk round the outside, its coping 3 cm over the head: never lay a ledge or cap in a roof's plane. Every round's art manifest is listed in build.py's art file list, and the tests read
 that list by membership, never by position.
 

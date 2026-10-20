@@ -123,7 +123,8 @@ class Page(unittest.TestCase):
         self.assertNotIn('gl_FragDepth', s)   # reversed-Z float depth (Round 192): no program of ours writes depth
         self.assertIn("g.setAttribute('aTv', new THREE.BufferAttribute(new Uint8Array(tvs), 4, true));", s)
         self.assertNotRegex(s, r"BufferAttribute\(new (Uint8|Int8)Array\([^)]*\), [13]\b")   # never a 1- or 3-byte stream
-        self.assertIn("mat.customProgramCacheKey = () => 'tavern' + (gl2 ? '' : '|gl1');", s)
+        self.assertIn("mat.customProgramCacheKey = () => key + (gl2 ? '' : '|gl1');", s)   # Round 210: tvMat, the tavern's and the hall's
+        self.assertIn("return tvMat(gl2, tavernU, TV_SW.length, TV_EL.length, 'tavern');", s)
         self.assertIn('freeShadingOnUpload(geo);', s)
         self.assertIn('groupCity.add(m); rayTargets.push(m);', s)
         self.assertIn('artImage(artSrc(A.img, A.imgHalf))', s)

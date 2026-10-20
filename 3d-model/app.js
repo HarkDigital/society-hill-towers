@@ -18397,7 +18397,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // courses, hyphen arcades, two-story end wings, and the staged steeple.
       const b = get('Independence Hall');
       const obIH = b ? orientedBox(b.poly) : null;
-      if (obIH) {
+      if (obIH && IH_ON) indhallMake(obIH);   // Round 210: textured, in a mesh of its own (indhallMake); ?real=0 and ?indhall=0 keep this one
+      else if (obIH) {
         const m0 = mark();
         const a = obbAxis(obIH);
         const ry = ryAlign(a.ax, a.az);
@@ -18730,6 +18731,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   const tavernU = {
     uTvArt: { value: 0 }, uTvY0: { value: 0 }, uTvE: { value: new THREE.Vector2(1, 0) }, uTvAtW: { value: 2048 },
     uTvEv: { value: new THREE.Vector2(2.96, 5.92) },   // the feet of the pent's cove and of the cornice's bed moulding over the walls (tavernBuild)
+    uTvSoot: { value: new THREE.Vector2(10.0, 11.6) },   // where the chimneys' soot darkens the brick, metres over the foot (Round 210: a uniform, as the hall's heads stand higher)
+    uTvGut: { value: new THREE.Vector2(24, 6) },   // how far a sample may reach into a swatch's and an element's gutter, texels (Round 210: the hall's elements have 32)
     uTvSw: { value: TV_SW.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvSwM: { value: TV_SW.map(() => new THREE.Vector2(1, 1)) },
     uTvSwC: { value: TV_SW.map(() => new THREE.Vector3(0.2, 0.2, 0.2)) },   // a swatch's linear mean: before the atlas, and past its gutter
     uTvEl: { value: TV_EL.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvElC: { value: TV_EL.map(() => new THREE.Vector3(0.6, 0.58, 0.5)) },
@@ -18741,9 +18744,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // the flats with no swatch, linear: the glass's own dark, a flue's soot, the lead of a cap, the iron
     uTvFlat: { value: [new THREE.Vector3(0.012, 0.014, 0.016), new THREE.Vector3(0.012, 0.010, 0.009), new THREE.Vector3(0.09, 0.095, 0.10), new THREE.Vector3(0.015, 0.015, 0.015)] },
   };
-  const TAVERN_GLSL = [
-    'uniform float uTvArt, uTvY0, uTvAtW, uNight; uniform vec2 uTvE, uTvEv; uniform vec3 uTvSun;',
-    'uniform vec4 uTvSw[4]; uniform vec2 uTvSwM[4]; uniform vec3 uTvSwC[4]; uniform vec4 uTvEl[6]; uniform vec3 uTvElC[6];',
+  // Round 210: the material is A Man Full of Trouble's and Independence Hall's (tvMat), sized by its swatches (nS) and its
+  // elements (nE); the first three elements are the glazed ones in both
+  const tvGlsl = (nS, nE) => [
+    'uniform float uTvArt, uTvY0, uTvAtW, uNight; uniform vec2 uTvE, uTvEv, uTvSoot, uTvGut; uniform vec3 uTvSun;',
+    `uniform vec4 uTvSw[${nS}]; uniform vec2 uTvSwM[${nS}]; uniform vec3 uTvSwC[${nS}]; uniform vec4 uTvEl[${nE}]; uniform vec3 uTvElC[${nE}];`,
     'uniform vec2 uTvElM[3]; uniform vec4 uTvGA[3], uTvGB[3], uTvGG[3], uTvGW[3]; uniform vec3 uTvFlat[4];',
     'varying vec4 vTv;',
     // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass; its wall gate reads vWNorm
@@ -18765,27 +18770,28 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     '  if (cov > 0.0) { pid = k; puv = clamp(f / p, 0.0, 1.0); }',
     '  return cov; }',
   ].join('\n');
-  function tavernMat(gl2) {
+  function tavernMat(gl2) { return tvMat(gl2, tavernU, TV_SW.length, TV_EL.length, 'tavern'); }
+  function tvMat(gl2, U, nS, nE, key) {
     const blank = document.createElement('canvas'); blank.width = blank.height = 1;
     const c2 = blank.getContext('2d'); c2.fillStyle = '#8a7a66'; c2.fillRect(0, 0, 1, 1);
     const map = new THREE.Texture(blank); map.encoding = THREE.sRGBEncoding; map.anisotropy = anisoOf(8); map.needsUpdate = true;
     const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 1, metalness: 0 });
     mat.extensions = { derivatives: true };
     mat.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, tavernU);
+      Object.assign(sh.uniforms, U);
       sh.uniforms.uNight = nightUniform; sh.uniforms.uTvSun = sunWUniform;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aTv; varying vec4 vTv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTv = aTv * 255.0;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + TAVERN_GLSL + '\n' + WINDOW_INTERIOR_GLSL)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + tvGlsl(nS, nE) + '\n' + WINDOW_INTERIOR_GLSL)
         .replace('#include <map_fragment>', [
           'float tvMd = floor(vTv.x + 0.5), tvId = floor(vTv.y + 0.5); bool tvIsEl = tvMd < 0.5;',
           'tvWN = inverseTransformDirection(normalize(vNormal), viewMatrix); tvWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
           // the swatch (its rect in the atlas, its size in metres, its mean) and the element (its rect, its mean; a glazed one's
           // glass), picked by the face's own number in loops a WebGL 1 fragment shader may index in
           'vec4 tvR = uTvSw[0]; vec2 tvM = uTvSwM[0]; vec3 tvMean = uTvSwC[0];',
-          'for (int i = 1; i < 4; i++) if (float(i) == tvId) { tvR = uTvSw[i]; tvM = uTvSwM[i]; tvMean = uTvSwC[i]; }',
+          `for (int i = 1; i < ${nS}; i++) if (float(i) == tvId) { tvR = uTvSw[i]; tvM = uTvSwM[i]; tvMean = uTvSwC[i]; }`,
           'vec4 tvE = uTvEl[0]; vec3 tvEc = uTvElC[0];',
-          'for (int i = 1; i < 6; i++) if (float(i) == tvId) { tvE = uTvEl[i]; tvEc = uTvElC[i]; }',
+          `for (int i = 1; i < ${nE}; i++) if (float(i) == tvId) { tvE = uTvEl[i]; tvEc = uTvElC[i]; }`,
           'vec2 tvEm = uTvElM[0]; vec4 tvA = uTvGA[0], tvB = uTvGB[0], tvG = uTvGG[0], tvW = uTvGW[0];',
           'for (int i = 1; i < 3; i++) if (float(i) == tvId) { tvEm = uTvElM[i]; tvA = uTvGA[i]; tvB = uTvGB[i]; tvG = uTvGG[i]; tvW = uTvGW[i]; }',
           // every derivative here, in uniform control flow: the tile coordinate unwrapped (so the wrap is no mip seam), the
@@ -18794,9 +18800,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           'vec2 tvGx = tvIsEl ? dFdx(vUv) : dFdx(tvT) * tvR.zw, tvGy = tvIsEl ? dFdy(vUv) : dFdy(tvT) * tvR.zw;',
           'vec2 tvUv = tvIsEl ? vUv : tvR.xy + tvR.zw * fract(tvT);',
           'if (tvIsEl) tvMean = tvEc;',
-          // held to the gutter (a swatch's 32 texels, an element's 8: the third and the second mip), and the face takes its
+          // held to the gutter (a swatch's 32 texels, the tavern's elements' 8, the hall's 32: uTvGut), and the face takes its
           // mean as a pixel grows past it, so a far house neither bleeds its neighbours in nor shimmers
-          'float tvGm = (tvIsEl ? 6.0 : 24.0) / uTvAtW, tvGl = max(length(tvGx), length(tvGy));',
+          'float tvGm = (tvIsEl ? uTvGut.y : uTvGut.x) / uTvAtW, tvGl = max(length(tvGx), length(tvGy));',
           'tvGx *= min(1.0, tvGm / max(length(tvGx), 1.0e-7)); tvGy *= min(1.0, tvGm / max(length(tvGy), 1.0e-7));',
           gl2 ? 'vec3 tvCol = textureGrad(map, tvUv, tvGx, tvGy).rgb;' : 'vec3 tvCol = texture2D(map, tvUv).rgb;',
           'tvCol = mix(tvCol, tvMean, smoothstep(1.2, 3.0, tvGl / tvGm));',
@@ -18821,7 +18827,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           '{ float tvY = tvWP.y - uTvY0, tvK = tvMd > 0.5 && tvMd < 1.5 ? 1.0 : 0.0;',
           '  vec2 tvPl = vec2(dot(tvWP.xz, uTvE) + tvWP.y * 0.2, tvWP.y);',
           '  float tvBl = tvVN(tvPl * 0.55 + tvId * 7.1) * 0.6 + tvVN(tvPl * 1.9 + 3.3) * 0.4;',
-          '  if (tvId < 0.5) tvCol *= mix(1.0, (0.90 + 0.2 * tvBl) * (1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.8 + 0.4 * tvVN(tvPl * 1.3), tvY))) * (1.0 - 0.4 * smoothstep(10.0, 11.6, tvY)), tvK);',
+          '  if (tvId < 0.5) tvCol *= mix(1.0, (0.90 + 0.2 * tvBl) * (1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.8 + 0.4 * tvVN(tvPl * 1.3), tvY))) * (1.0 - 0.4 * smoothstep(uTvSoot.x, uTvSoot.y, tvY)), tvK);',
           // the brick in the lee of the pent (the front) and of the cornice (the front and the rear): the sky it does not see,
           // which the near shadow map's bias leaves to the ambient (a phone has no occlusion pass)
           '  float tvFw = dot(tvWN.xz, vec2(-uTvE.y, uTvE.x));',
@@ -18835,7 +18841,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           // the room behind the glass, read where its rays are known (WINDOW_INTERIOR_GLSL): the eye's ray in the window's
           // frame, across with the front's run, up, into the house, in the glass's own widths and heights
           '{ vec3 tvRv = normalize(tvWP - cameraPosition);',
-          '  roomRay = vec3(dot(tvRv.xz, uTvE) / tvPane.x, tvRv.y / tvPane.y, max(-dot(tvRv, normalize(tvWN)), 0.02) / tvPane.x); roomPar = 1.0; }',
+          '  vec2 tvRun = abs(dot(normalize(tvWN.xz + vec2(1.0e-5)), uTvE)) > 0.7 ? vec2(-uTvE.y, uTvE.x) : uTvE;',   // Round 210: glass on an end wall (the hall's) runs across the frame
+          '  roomRay = vec3(dot(tvRv.xz, tvRun) / tvPane.x, tvRv.y / tvPane.y, max(-dot(tvRv, normalize(tvWN)), 0.02) / tvPane.x); roomPar = 1.0; }',
         ].join('\n'))
         .replace('#include <emissivemap_fragment>', ['#include <emissivemap_fragment>',
           // after dark the rooms behind the glass (a home's share of them lit by the clock), by day the room lit through its
@@ -18856,7 +18863,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // last, so its line runs first after the chunk: the face's own roughness, which the weather's wet and the glass then take
       sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = tvRough;');
     };
-    mat.customProgramCacheKey = () => 'tavern' + (gl2 ? '' : '|gl1');
+    mat.customProgramCacheKey = () => key + (gl2 ? '' : '|gl1');
     return mat;
   }
   // the house in its own frame: x along the front, left to right for someone on Spruce, y up from its foot, o out of the
@@ -19104,6 +19111,578 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       if (!im) { TAVERN.err = 'atlas did not load'; return; }   // the faces keep their means
       const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);
       U.uTvArt.value = 1; TAVERN.art = 1;
+    });
+    if (!isTouch) go();
+    else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
+  }
+
+  // ---- Independence Hall remodelled (Round 210, Mike: "Can we have independence hall remodeled with the chat GPT api?").
+  // The Round 30s massing (a brick box, a gable, boxes for the trim and a stack of boxes and cones for the steeple, in flat
+  // colours on the core's facade material) is built again here as one mesh on A Man Full of Trouble's material (tvMat),
+  // dressed from indhall_art.json (fetch_indhall_art.py, bake_indhall_art.py: one atlas, INDHALL_ART): the walls in the
+  // hall's Flemish bond, the roofs in weathered cedar shingles, the trim, the cornices, the balustrades and the steeple in
+  // white paint, the quoins, the belt course, the panels, the keystones and the water table in grey marble, and the openings
+  // as generated photographs at their own proportions (refs, looked at and never sent: Wikimedia Commons 'Independence Hall
+  // South Facade.jpg', 'NorthFacade2.jpg', 'The Independence Hall North.jpg', 'Independence National Historical Park
+  // INDE0002.jpg', HABS PA-1430's west wing from the north and its north aerial view). On the complex's own footprint, as
+  // the old massing stood: the main block (32.9 by 13.4 m, nine bays a side, the tower's three in the middle of the south
+  // side), its gabled roof flattened at the ridge into a deck in a balustrade between the end chimneys, the modillioned
+  // cornice running round the tower; the tower (the south doorway in its classical frontispiece, the Palladian window, the
+  // oculus under a pediment, a sash under the top cornice and its parapet with urns), Strickland's 1828 steeple (the clock
+  // stage, its balustrade, the arched octagonal belfry, the ogee dome, the lantern, the spire, the ball and the vane); the
+  // arcades of three arches a side; the two-storey wings with their hipped roofs and central chimneys (HABS: six bays, a
+  // door at each end of the ground floor, white corner pilasters). Every opening is cut from its wall (a rectangle, a round
+  // head or a circle, triangulated) and sits back in a brick reveal; the glass of the twelve-over-twelve sashes is the
+  // page's own (the bake's grid: reflections, the rooms behind them by day and lit after dark). ?real=0 and the phone's
+  // recovery tier keep the old massing exactly; ?indhall=0 is the A/B under the realistic look (__dbg.indhall())
+  const IH_ON = REAL && !TIER2 && typeof INDHALL_ART !== 'undefined' && !!INDHALL_ART && !!INDHALL_ART.el && !!INDHALL_ART.sw && !/[?&]indhall=0\b/.test(location.search);
+  const IH = { mesh: null, tris: 0, verts: 0, art: 0, err: null, parts: {} };
+  const IH_SW = ['brick', 'shingle', 'paint', 'stone'];
+  const IH_EL = ['sashG', 'sashU', 'sashW', 'door', 'tdoor', 'palladian', 'arch', 'clock', 'oculus', 'wdoor', 'cellar'];   // the first three glazed
+  const ihU = {
+    uTvArt: { value: 0 }, uTvY0: { value: 0 }, uTvE: { value: new THREE.Vector2(1, 0) }, uTvAtW: { value: 2048 },
+    uTvEv: { value: new THREE.Vector2(-100, 12.55) },   // no pent; the cornice's bed moulding over the walls
+    uTvSoot: { value: new THREE.Vector2(17.5, 20.2) },  // the end chimneys' heads
+    uTvGut: { value: new THREE.Vector2(24, 28) },   // the bake's 32-texel element gutter: a doorway seen across the square keeps its picture
+    uTvSw: { value: IH_SW.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvSwM: { value: IH_SW.map(() => new THREE.Vector2(1, 1)) },
+    uTvSwC: { value: IH_SW.map(() => new THREE.Vector3(0.2, 0.2, 0.2)) },
+    uTvEl: { value: IH_EL.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvElC: { value: IH_EL.map(() => new THREE.Vector3(0.6, 0.6, 0.6)) },
+    uTvElM: { value: [0, 1, 2].map(() => new THREE.Vector2(1, 1)) }, uTvGA: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    uTvGB: { value: [0, 1, 2].map(() => new THREE.Vector4()) }, uTvGG: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    uTvGW: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    uTvFlat: { value: [new THREE.Vector3(0.012, 0.014, 0.016), new THREE.Vector3(0.012, 0.010, 0.009), new THREE.Vector3(0.05, 0.055, 0.06), new THREE.Vector3(0.008, 0.008, 0.009)] },
+  };
+  // a builder of faces in a building's own frame [x, y, o] (x along, y up, o across, x by y is o: the frame is right-handed),
+  // carrying tvMat's face kinds: W(p) a local point's world position, WN(n) a local direction's; A the art manifest, EL
+  // the element names in the shader's order
+  function tvKit(W, WN, A, EL) {
+    const pos = [], nor = [], uvs = [], tvs = [];
+    const T = (mode, id, shade, win) => [mode, id, Math.round(shade || 0), win || 0];
+    const face = (P, UV, n, t) => {
+      const [p0, p1, p2] = P;
+      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uo = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vo = p2[2] - p0[2];
+      const cx = uy * vo - uo * vy, cy = uo * vx - ux * vo, co = ux * vy - uy * vx;
+      const flip = cx * n[0] + cy * n[1] + co * n[2] < 0;
+      const wn = WN(n);
+      const emit = (i) => { const w = W(P[i]); pos.push(w[0], w[1], w[2]); nor.push(wn[0], wn[1], wn[2]); uvs.push(UV[i][0], UV[i][1]); tvs.push(t[0], t[1], t[2], t[3]); };
+      const tris = P.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
+      for (const [i, j, k] of tris) { emit(i); if (flip) { emit(k); emit(j); } else { emit(j); emit(k); } }
+    };
+    const el = (name) => EL.indexOf(name);
+    const elRect = (name) => A.el[name].rect;
+    // a vertical plane: its origin O, its right-hand axis R (as seen from outside: (-n) by up), its outward normal n; a
+    // plane point [a, b] (a along R, b up) is O + R a + up b
+    const plane = (O, n) => ({ O, n, R: [n[2], 0, -n[0]] });
+    const at = (F, a, b, d) => [F.O[0] + F.R[0] * a - F.n[0] * (d || 0), F.O[1] + b - F.n[1] * (d || 0), F.O[2] + F.R[2] * a - F.n[2] * (d || 0)];
+    const V2 = (p) => new THREE.Vector2(p[0], p[1]);
+    // a wall: its outline and holes in [a, b], triangulated; a swatch face with uvs in metres from the plane (offset off)
+    const wall = (F, outline, holes, t, off) => {
+      const tri = THREE.ShapeUtils.triangulateShape(outline.map(V2), holes.map((h) => h.map(V2)));
+      const pts = outline.concat(...holes);
+      for (const [i, j, k] of tri) face([i, j, k].map((q) => at(F, pts[q][0], pts[q][1])), [i, j, k].map((q) => [pts[q][0] + (off || 0), pts[q][1]]), F.n, t);
+    };
+    // a hole's reveal, depth d into the wall, each edge's face toward the opening, shaded by the way it faces (a head looks
+    // down and sees least)
+    const reveal = (F, hole, d, swId) => {
+      let ca = 0, cb = 0; for (const p of hole) { ca += p[0]; cb += p[1]; } ca /= hole.length; cb /= hole.length;
+      let run = 0;
+      for (let i = 0; i < hole.length; i++) {
+        const p = hole[i], q = hole[(i + 1) % hole.length], ea = q[0] - p[0], eb = q[1] - p[1], L = Math.hypot(ea, eb) || 1e-6;
+        let na = -eb / L, nb = ea / L;
+        if (na * (ca - (p[0] + q[0]) / 2) + nb * (cb - (p[1] + q[1]) / 2) < 0) { na = -na; nb = -nb; }
+        const n = [F.R[0] * na, nb, F.R[2] * na], shade = nb < -0.5 ? 95 : nb > 0.5 ? 20 : 70;
+        face([at(F, p[0], p[1], 0), at(F, q[0], q[1], 0), at(F, q[0], q[1], d), at(F, p[0], p[1], d)], [[run, 0], [run + L, 0], [run + L, d], [run, d]], n, T(1, swId, shade));
+        run += L;
+      }
+    };
+    // an element on a plane, over the polygon P2 in [a, b] (its uvs by the polygon's box), d back from the plane
+    const elPoly = (F, P2, name, d, win, shade) => {
+      const r = elRect(name);
+      let a0 = Infinity, a1 = -Infinity, b0 = Infinity, b1 = -Infinity;
+      for (const p of P2) { a0 = Math.min(a0, p[0]); a1 = Math.max(a1, p[0]); b0 = Math.min(b0, p[1]); b1 = Math.max(b1, p[1]); }
+      const uv = (p) => [r[0] + (p[0] - a0) / (a1 - a0) * r[2], r[1] + (p[1] - b0) / (b1 - b0) * r[3]];
+      const tri = THREE.ShapeUtils.triangulateShape(P2.map(V2), []);
+      for (const [i, j, k] of tri) face([i, j, k].map((q) => at(F, P2[q][0], P2[q][1], d)), [i, j, k].map((q) => uv(P2[q])), F.n, T(0, el(name), shade || 0, win || 0));
+    };
+    // the hole shapes in [a, b]
+    const rect = (a0, a1, b0, b1) => [[a0, b0], [a1, b0], [a1, b1], [a0, b1]];
+    const arched = (a0, a1, b0, b1, seg) => {   // a rectangle whose head is a semicircle reaching b1
+      const r = (a1 - a0) / 2, bs = b1 - r, out = [[a0, b0], [a1, b0], [a1, bs]];
+      const n = seg || 12;
+      for (let k = 1; k < n; k++) { const t = Math.PI * k / n; out.push([(a0 + a1) / 2 + r * Math.cos(t), bs + r * Math.sin(t)]); }
+      out.push([a0, bs]);
+      return out;
+    };
+    const circle = (ca, cb, r, seg) => { const n = seg || 20, out = []; for (let k = 0; k < n; k++) { const t = 2 * Math.PI * k / n; out.push([ca + r * Math.cos(t), cb + r * Math.sin(t)]); } return out; };
+    // an axis-aligned box [x0, x1] by [y0, y1] by [o0, o1]; skin(side) gives a face's kind and uv map, or null to leave it out
+    const XY = (p) => [p[0] + 0.37, p[1]], OY = (p) => [p[2] + 0.61, p[1]], XO = (p) => [p[0], p[2]], YX = (p) => [p[1], p[0]], YO = (p) => [p[1], p[2]];
+    const boxL = (x0, x1, yA, yB, o0, o1, skin) => {
+      const S = [
+        ['+o', [0, 0, 1], [[x0, yA, o1], [x1, yA, o1], [x1, yB, o1], [x0, yB, o1]]],
+        ['-o', [0, 0, -1], [[x1, yA, o0], [x0, yA, o0], [x0, yB, o0], [x1, yB, o0]]],
+        ['+x', [1, 0, 0], [[x1, yA, o1], [x1, yA, o0], [x1, yB, o0], [x1, yB, o1]]],
+        ['-x', [-1, 0, 0], [[x0, yA, o0], [x0, yA, o1], [x0, yB, o1], [x0, yB, o0]]],
+        ['+y', [0, 1, 0], [[x0, yB, o1], [x1, yB, o1], [x1, yB, o0], [x0, yB, o0]]],
+        ['-y', [0, -1, 0], [[x0, yA, o0], [x1, yA, o0], [x1, yA, o1], [x0, yA, o1]]],
+      ];
+      for (const [side, n, P] of S) {
+        const s = skin(side, P);
+        if (!s) continue;
+        if (s.el) {   // an element on the face, its picture left to right as seen from outside
+          const r = elRect(s.el), R = [n[2], 0, -n[0]], as = P.map((p) => p[0] * R[0] + p[2] * R[2]), ys = P.map((p) => p[1]);
+          const aa = Math.min(...as), ab = Math.max(...as), ya = Math.min(...ys), yb = Math.max(...ys);
+          face(P, P.map((p, i) => [r[0] + (as[i] - aa) / (ab - aa) * r[2], r[1] + (p[1] - ya) / (yb - ya) * r[3]]), n, s.t);
+        } else face(P, P.map(s.map || (side[1] === 'o' ? XY : side[1] === 'x' ? OY : XO)), n, s.t);
+      }
+    };
+    // a swept profile: [d out of the path, y] round the section (counter-clockwise, out on the right), a face for each edge
+    // with a kind, along a path in plan {x, o, n: [nx, no]} (n the outward normal of the leg from this vertex), mitred at its
+    // corners; closed joins the last vertex to the first
+    const sweep = (path, prof, kinds, closed) => {
+      const N = path.length, legs = closed ? N : N - 1;
+      const nOf = (i) => path[((i % N) + N) % N].n;
+      const vtx = (i, d, y) => {
+        const pv = path[((i % N) + N) % N];
+        let nA = closed || i > 0 ? nOf(i - 1) : pv.n, nB = closed || i < N - 1 ? pv.n : nOf(i - 1);
+        const dot = nA[0] * nB[0] + nA[1] * nB[1], k = 1 / Math.max(1 + dot, 0.05);
+        const mx = (nA[0] + nB[0]) * k, mo = (nA[1] + nB[1]) * k;
+        return [pv.x + mx * d, y, pv.o + mo * d];
+      };
+      const Lc = [0];
+      for (let i = 1; i <= legs; i++) { const p = path[i % N], q = path[i - 1]; Lc.push(Lc[i - 1] + Math.hypot(p.x - q.x, p.o - q.o)); }
+      const sL = [0];
+      for (let j = 1; j < prof.length; j++) sL.push(sL[j - 1] + Math.hypot(prof[j][0] - prof[j - 1][0], prof[j][1] - prof[j - 1][1]));
+      for (let i = 0; i < legs; i++) {
+        const n2 = path[i].n;
+        for (let j = 0; j + 1 < prof.length; j++) {
+          const kd = kinds[j];
+          if (!kd) continue;
+          const [d0, ya] = prof[j], [d1, yb] = prof[j + 1], ed = d1 - d0, ey = yb - ya, nl = Math.hypot(ey, -ed) || 1;
+          const n = [n2[0] * ey / nl, -ed / nl, n2[1] * ey / nl];
+          face([vtx(i, d0, ya), vtx(i + 1, d0, ya), vtx(i + 1, d1, yb), vtx(i, d1, yb)], [[Lc[i], sL[j]], [Lc[i + 1], sL[j]], [Lc[i + 1], sL[j + 1]], [Lc[i], sL[j + 1]]], n, kd);
+        }
+      }
+      if (!closed) for (const [i, sgn] of [[0, -1], [N - 1, 1]]) {   // the open path's ends: the section, facing along the path
+        const pv = path[i], tl = i === 0 ? [path[1].x - pv.x, path[1].o - pv.o] : [pv.x - path[i - 1].x, pv.o - path[i - 1].o], tL = Math.hypot(tl[0], tl[1]) || 1;
+        const n = [tl[0] / tL * sgn, 0, tl[1] / tL * sgn];
+        for (const [p, q, r] of THREE.ShapeUtils.triangulateShape(prof.map(V2), [])) face([p, q, r].map((k) => vtx(i, prof[k][0], prof[k][1])), [p, q, r].map((k) => [prof[k][0], prof[k][1]]), n, kinds.find(Boolean));
+      }
+    };
+    // a closed path round a polygon in plan (its corners counter-clockwise seen from above in [x, o]... either way: each leg's
+    // normal is taken away from the polygon's centre)
+    const ring = (pts) => {
+      let cx = 0, co = 0; for (const p of pts) { cx += p[0]; co += p[1]; } cx /= pts.length; co /= pts.length;
+      return pts.map((p, i) => {
+        const q = pts[(i + 1) % pts.length], ex = q[0] - p[0], eo = q[1] - p[1], L = Math.hypot(ex, eo) || 1;
+        let nx = eo / L, no = -ex / L;
+        if (nx * ((p[0] + q[0]) / 2 - cx) + no * ((p[1] + q[1]) / 2 - co) < 0) { nx = -nx; no = -no; }
+        return { x: p[0], o: p[1], n: [nx, no] };
+      });
+    };
+    // a lathe round (cx, co): a profile [r, y] bottom to top, seg sides (phase turns them), each band its kind
+    const lathe = (cx, co, prof, seg, t, phase) => {
+      const ph = phase || 0;
+      for (let k = 0; k < seg; k++) {
+        const a0 = ph + 2 * Math.PI * k / seg, a1 = ph + 2 * Math.PI * (k + 1) / seg, am = (a0 + a1) / 2;
+        for (let j = 0; j + 1 < prof.length; j++) {
+          const [r0, y0b] = prof[j], [r1, y1b] = prof[j + 1];
+          if (r0 < 1e-4 && r1 < 1e-4) continue;
+          const P = [[cx + r0 * Math.cos(a0), y0b, co + r0 * Math.sin(a0)], [cx + r0 * Math.cos(a1), y0b, co + r0 * Math.sin(a1)], [cx + r1 * Math.cos(a1), y1b, co + r1 * Math.sin(a1)], [cx + r1 * Math.cos(a0), y1b, co + r1 * Math.sin(a0)]];
+          const dr = r1 - r0, dy = y1b - y0b, L = Math.hypot(dr, dy) || 1, nrm = [Math.cos(am) * dy / L, -dr / L, Math.sin(am) * dy / L];
+          const kd = typeof t === 'function' ? t(j) : t, U = [[k, y0b], [k + 1, y0b], [k + 1, y1b], [k, y1b]];
+          if (r0 < 1e-4) face([P[0], P[2], P[3]], [U[0], U[2], U[3]], nrm, kd);
+          else if (r1 < 1e-4) face([P[0], P[1], P[2]], [U[0], U[1], U[2]], nrm, kd);
+          else face(P, U, nrm, kd);
+        }
+      }
+    };
+    const geometry = () => {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      g.setAttribute('aTv', new THREE.BufferAttribute(new Uint8Array(tvs), 4, true));   // four bytes a vertex (never a 1- or 3-byte stream, Round 158)
+      g.computeBoundingSphere();
+      return g;
+    };
+    return { T, face, el, plane, at, wall, reveal, elPoly, rect, arched, circle, boxL, sweep, ring, lathe, geometry, XY, OY, XO, YX, YO, count: () => pos.length / 3 };
+  }
+  // the hall in the complex's own frame: x east along the main block from its middle, y up from its foot, o south from the
+  // complex's north face (x by y is o)
+  function indhallBuild(ob) {
+    const A = INDHALL_ART, a = obbAxis(ob);
+    const sV = a.pz > 0 ? 1 : -1, Sx = a.px * sV, Sz = a.pz * sV, ex = Sz, ez = -Sx;   // south across the complex, east along it (east by up is south)
+    const hs = a.hs, HLC = a.hl;
+    const BD = 13.4, HL = 16.45;
+    const cMain = [ob.cx + Sx * (BD / 2 - hs), ob.cz + Sz * (BD / 2 - hs)], y0 = siteY(cMain[0], cMain[1], 'ground');
+    const W = (p) => [ob.cx + ex * p[0] + Sx * (p[2] - hs), y0 + p[1], ob.cz + ez * p[0] + Sz * (p[2] - hs)];
+    const WN = (n) => { const L = Math.hypot(n[0], n[1], n[2]) || 1; return [(ex * n[0] + Sx * n[2]) / L, n[1] / L, (ez * n[0] + Sz * n[2]) / L]; };
+    const K = tvKit(W, WN, A, IH_EL), { T, plane, wall, reveal, elPoly, rect, arched, circle, boxL, sweep, ring, lathe, XY, OY, XO } = K;
+    const BRICK = 0, SHINGLE = 1, PAINT = 2, STONE = 3;
+    const sw = (id, shade) => T(1, id, shade);
+    const FLAT = { glass: 0, soot: 1, lead: 2, iron: 3 }, flat = (k, shade) => T(2, FLAT[k], shade);
+    const paint = (shade) => (side) => ({ t: sw(PAINT, side === '-y' ? Math.max(shade || 0, 80) : shade || 0) });
+    const stone = (shade) => (side) => (side === '-y' ? null : { t: sw(STONE, shade || 0) });
+    const brick = (side) => (side === '-y' ? null : { t: sw(BRICK, side === '+y' ? 40 : 0), map: side === '+y' ? XO : null });
+    let win = 1;
+    const parts = {};
+    const mark = (k) => { parts[k] = K.count(); };
+    // the main block's heights: the water table, the ground floor's sashes, the belt course, the panels, the upper sashes,
+    // the cornice (its bed moulding to its crown), the roof's deck
+    const WT = 0.9, G0 = 1.25, G1 = 5.25, BELT = [5.85, 6.15], PAN = [6.35, 7.2], U0 = 7.35, U1 = 10.75, BED = 12.55, EAVE = 13.55, DECK = 17.6, DW = 1.6;
+    const OE = 0.75, SL = (DECK - EAVE) / (BD / 2 - DW + OE);
+    const yR = (o) => (o <= BD / 2 ? EAVE + (o + OE) * SL : EAVE + (BD + OE - o) * SL);   // the roof's top over a point o south
+    const BAY = 3.3, bays = [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => (i - 4) * BAY);
+    // ---- the openings of a wall: each a hole in [a, b], its element, its reveal's depth and its window number
+    const openWall = (F, outline, ops, swId) => {
+      wall(F, outline, ops.map((h) => h.p), sw(swId == null ? BRICK : swId, 0));
+      for (const h of ops) {
+        reveal(F, h.p, h.d, swId == null ? BRICK : swId);
+        elPoly(F, h.p, h.el, h.d, h.win, 0);
+      }
+    };
+    const A_ = (F, x, o) => (x - F.O[0]) * F.R[0] + (o - F.O[2]) * F.R[2];   // a local point's a on a plane
+    // ---- the main block: the north and south walls with their bays, the end walls up into the gables
+    const TX = 4.5, TO0 = BD - 1.4, TO1 = BD + 6.2;   // the tower's half-width and its north and south faces
+    const WTOP = EAVE - 0.4;
+    for (const side of [0, 1]) {
+      const o = side ? BD : 0, n = side ? [0, 0, 1] : [0, 0, -1], F = plane([0, 0, o], n);
+      const ops = [];
+      for (let i = 0; i < 9; i++) {
+        const x = bays[i], a0 = A_(F, x - 0.8, o), a1 = A_(F, x + 0.8, o), lo = Math.min(a0, a1), hi = Math.max(a0, a1);
+        if (side && Math.abs(x) < TX) continue;   // the tower's bays
+        if (!side && i === 4) { const d0 = A_(F, x - 1.1, o), d1 = A_(F, x + 1.1, o); ops.push({ p: rect(Math.min(d0, d1), Math.max(d0, d1), WT, G1), el: 'door', d: 0.25, win: 0 }); }
+        else {
+          ops.push({ p: rect(lo, hi, G0, G1), el: 'sashG', d: 0.14, win: win++ });
+          const c0 = A_(F, x - 0.6, o), c1 = A_(F, x + 0.6, o);
+          ops.push({ p: rect(Math.min(c0, c1), Math.max(c0, c1), 0.12, 0.72), el: 'cellar', d: 0.18, win: 0 });
+        }
+        ops.push({ p: rect(lo, hi, U0, U1), el: 'sashU', d: 0.14, win: win++ });
+      }
+      const aL = A_(F, -HL, o), aR = A_(F, HL, o);
+      openWall(F, rect(Math.min(aL, aR), Math.max(aL, aR), -1.5, WTOP), ops);
+      // the belt course, the marble panels under the upper sashes, the keystones over every sash, the water table
+      const oo = side ? [BD, BD + 0.08] : [-0.08, 0];
+      boxL(-HL - 0.08, HL + 0.08, BELT[0], BELT[1], oo[0], oo[1], stone(0));
+      boxL(-HL - 0.06, HL + 0.06, WT - 0.18, WT, side ? BD : -0.06, side ? BD + 0.06 : 0, stone(10));
+      for (let i = 0; i < 9; i++) {
+        const x = bays[i];
+        if (side && Math.abs(x) < TX) continue;
+        const po = side ? [BD, BD + 0.03] : [-0.03, 0], ko = side ? [BD, BD + 0.07] : [-0.07, 0];
+        boxL(x - 0.8, x + 0.8, PAN[0], PAN[1], po[0], po[1], stone(15));
+        for (const top of [U1, ...(!side && i === 4 ? [] : [G1])]) boxL(x - 0.2, x + 0.2, top, top + 0.55, ko[0], ko[1], stone(0));
+      }
+    }
+    mark('mainWalls');
+    for (const s of [-1, 1]) {   // the end walls: a sash low and two round-headed sashes high, up under the roof's line
+      const x = s * HL, F = plane([x, 0, 0], [s, 0, 0]), aO = (o) => A_(F, x, o);
+      const top = [[0, yR(0) - 0.05], [BD / 2 - DW, DECK - 0.05], [BD / 2 + DW, DECK - 0.05], [BD, yR(BD) - 0.05]];
+      const outline = [[aO(0), -1.5], [aO(BD), -1.5], ...top.slice().reverse().map(([o, y]) => [aO(o), y])];
+      if (outline[0][0] > outline[1][0]) outline.reverse();
+      const ops = [];
+      for (const o of [3.6, 9.8]) { const p0 = aO(o - 0.75), p1 = aO(o + 0.75); ops.push({ p: arched(Math.min(p0, p1), Math.max(p0, p1), U0 - 0.3, U1 + 0.45), el: 'arch', d: 0.14, win: 0 }); }
+      { const p0 = aO(9.8 - 0.8), p1 = aO(9.8 + 0.8); ops.push({ p: rect(Math.min(p0, p1), Math.max(p0, p1), G0, G1), el: 'sashG', d: 0.14, win: win++ }); }
+      openWall(F, outline, ops);
+      const xo = s > 0 ? [HL, HL + 0.08] : [-HL - 0.08, -HL];
+      boxL(xo[0], xo[1], BELT[0], BELT[1], 0, BD, stone(0));   // between the long sides' (their boxes take the corners)
+      boxL(s > 0 ? HL : -HL - 0.06, s > 0 ? HL + 0.06 : -HL, WT - 0.18, WT, 0, BD, stone(10));
+    }
+    // the quoins at the four corners, long and short in turn on each face
+    for (const [cx, co, gx, go] of [[-HL, 0, 1, 1], [HL, 0, -1, 1], [-HL, BD, 1, -1], [HL, BD, -1, -1]]) {
+      for (let k = 0, y = WT; y + 0.4 <= EAVE - 0.9; k++, y += 0.42) {
+        const lx = k % 2 ? 0.5 : 0.85, lo = k % 2 ? 0.85 : 0.5;
+        const x0 = gx > 0 ? cx - 0.03 : cx - lx, x1 = gx > 0 ? cx + lx : cx + 0.03, o0 = go > 0 ? co - 0.03 : co - lo, o1 = go > 0 ? co + lo : co + 0.03;
+        boxL(x0, x1, y + 0.02, y + 0.4, o0, o1, stone(k % 3 === 0 ? 20 : 5));
+      }
+    }
+    mark('quoins');
+    // ---- the cornice: the bed moulding, the frieze's fillet, the soffit over modillions, the corona and the crown, round
+    // the main block's north side and its south side round the tower (the photographs: it runs across the tower), returned
+    // 0.8 m round each end
+    const COR = [[0.0, 13.55], [0.75, 13.55], [0.75, 13.47], [0.71, 13.41], [0.64, 13.33], [0.6, 13.3], [0.6, 13.08], [0.3, 13.03], [0.2, 12.95], [0.12, 12.78], [0.05, 12.63], [0.0, 12.55]];
+    const corK = COR.slice(0, -1).map((_, j) => (j === 0 ? sw(PAINT, 40) : j >= 6 ? sw(PAINT, 90 + 12 * (j - 6)) : sw(PAINT, j === 1 ? 10 : j === 4 ? 30 : 0)));
+    const ccw = (pr, k) => [pr.slice().reverse(), k.slice().reverse()];
+    const [corP, corKs] = ccw(COR, corK);
+    sweep([{ x: -HL, o: 0.8, n: [-1, 0] }, { x: -HL, o: 0, n: [0, -1] }, { x: HL, o: 0, n: [1, 0] }, { x: HL, o: 0.8, n: [1, 0] }], corP, corKs, false);
+    sweep([{ x: HL, o: BD - 0.8, n: [1, 0] }, { x: HL, o: BD, n: [0, 1] }, { x: TX, o: BD, n: [1, 0] }, { x: TX, o: TO1, n: [0, 1] }, { x: -TX, o: TO1, n: [-1, 0] }, { x: -TX, o: BD, n: [0, 1] }, { x: -HL, o: BD, n: [-1, 0] }, { x: -HL, o: BD - 0.8, n: [-1, 0] }], corP, corKs, false);
+    for (const [o0, o1, step] of [[0, 1, 1], [BD, BD - 1, -1]]) {   // the modillions under the soffit, every 0.55 m
+      for (let x = -HL + 0.4; x <= HL - 0.4; x += 0.55) {
+        if (step < 0 && Math.abs(x) < TX + 0.7) continue;   // clear of the tower's own
+        const d0 = o0 === 0 ? -0.55 : BD + 0.15, d1 = o0 === 0 ? -0.15 : BD + 0.55;
+        boxL(x - 0.06, x + 0.06, 12.9, 13.07, d0, d1, paint(30));
+      }
+    }
+    for (const x of [-TX, TX]) for (let o = BD + 0.4; o <= TO1 - 0.3; o += 0.55) boxL(x > 0 ? TX + 0.15 : -TX - 0.55, x > 0 ? TX + 0.55 : -TX - 0.15, 12.9, 13.07, o - 0.06, o + 0.06, paint(30));
+    for (let x = -TX + 0.4; x <= TX - 0.4; x += 0.55) boxL(x - 0.06, x + 0.06, 12.9, 13.07, TO1 + 0.15, TO1 + 0.55, paint(30));
+    mark('cornice');
+    // ---- the roof: the two slopes from the cornice's crown to the deck, the deck itself (lead), the gables' rake boards, and
+    // the balustrade round the deck between the chimneys
+    const XR = HL + 0.1;
+    for (const s of [-1, 1]) {   // the north slope (s -1) and the south
+      const oE = s < 0 ? -OE : BD + OE, oD = s < 0 ? BD / 2 - DW : BD / 2 + DW;
+      const nrm = [0, 1, s < 0 ? -SL : SL];
+      const P = [[-XR, EAVE, oE], [XR, EAVE, oE], [XR, DECK, oD], [-XR, DECK, oD]], run = (o) => Math.abs(o - oE) * Math.hypot(1, SL);
+      K.face(P, P.map((p) => [p[0], run(p[2])]), nrm, sw(SHINGLE, 0));
+      for (const g of [-1, 1]) {   // the rake board up each gable's edge
+        const xg = g * XR, Pr = [[xg, EAVE, oE], [xg, DECK, oD], [xg, DECK - 0.25, oD], [xg, EAVE - 0.25, oE]];
+        K.face(Pr, Pr.map((p) => [run(p[2]), p[1]]), [g, 0, 0], sw(PAINT, 15));
+      }
+    }
+    K.face([[-XR, DECK, BD / 2 - DW], [XR, DECK, BD / 2 - DW], [XR, DECK, BD / 2 + DW], [-XR, DECK, BD / 2 + DW]], [[-XR, 0], [XR, 0], [XR, 2 * DW], [-XR, 2 * DW]], [0, 1, 0], flat('lead', 0));
+    const balus = (x0, o0, x1, o1, yb, h, inner) => {   // a balustrade on a straight run along x or o: rails, posts and balusters (inner: a run between two others, its end posts and its rails' ends theirs)
+      const alongX = Math.abs(x1 - x0) > Math.abs(o1 - o0), L = alongX ? Math.abs(x1 - x0) : Math.abs(o1 - o0);
+      const lo = (v0, v1) => [Math.min(v0, v1), Math.max(v0, v1)];
+      const seg = (t0, t1, ya, yb2, w) => {
+        if (alongX) { const [xa, xb] = lo(x0 + (x1 - x0) * t0, x0 + (x1 - x0) * t1); boxL(xa, xb, ya, yb2, o0 - w, o0 + w, paint(10)); }
+        else { const [oa, ob2] = lo(o0 + (o1 - o0) * t0, o0 + (o1 - o0) * t1); boxL(x0 - w, x0 + w, ya, yb2, oa, ob2, paint(10)); }
+      };
+      const tc = inner ? 0.1 / L : 0;
+      seg(tc, 1 - tc, yb + h - 0.1, yb + h, 0.09); seg(tc, 1 - tc, yb, yb + 0.1, 0.08);
+      const n = Math.max(1, Math.round(L / 0.27));
+      for (let k = inner ? 1 : 0; k <= (inner ? n - 1 : n); k++) {
+        const t = k / n, post = k === 0 || k === n || k % 11 === 0, w = post ? 0.1 : 0.035, d = post ? 0 : 0.0;
+        const xm = x0 + (x1 - x0) * t, om = o0 + (o1 - o0) * t;
+        boxL(xm - w, xm + w, yb + 0.1 + d, yb + h - 0.1, om - w, om + w, paint(post ? 0 : 15));
+      }
+    };
+    const XD = HL - 1.5;
+    balus(-XD, BD / 2 - DW + 0.1, XD, BD / 2 - DW + 0.1, DECK, 0.95);
+    balus(-XD, BD / 2 + DW - 0.1, XD, BD / 2 + DW - 0.1, DECK, 0.95);
+    for (const x of [-XD, XD]) balus(x, BD / 2 - DW + 0.1, x, BD / 2 + DW - 0.1, DECK, 0.95, true);
+    mark('roof');
+    // the end chimneys: a broad stack in each gable wall, a corbelled band under its head and lead caps over its flues
+    for (const s of [-1, 1]) {
+      const x0 = s > 0 ? HL - 1.3 : -HL - 0.03, x1 = s > 0 ? HL + 0.03 : -HL + 1.3,   // 3 cm proud of the gable, never in its plane
+         oa = BD / 2 - 1.7, ob2 = BD / 2 + 1.7, yb = 20.2;
+      boxL(x0, x1, 14.5, yb, oa, ob2, brick);
+      boxL(x0 - 0.07, x1 + 0.07, yb - 0.55, yb - 0.36, oa - 0.07, ob2 + 0.07, (side) => ({ t: sw(BRICK, side === '-y' ? 90 : 10), map: side[1] === 'y' ? XO : null }));
+      for (const oc of [BD / 2 - 0.9, BD / 2 + 0.9]) boxL((x0 + x1) / 2 - 0.3, (x0 + x1) / 2 + 0.3, yb, yb + 0.12, oc - 0.35, oc + 0.35, (side) => (side === '-y' ? null : { t: flat(side === '+y' ? 'soot' : 'lead', 20) }));
+    }
+    mark('chimneys');
+    // the Chestnut Street doorway's marble steps
+    boxL(-1.5, 1.5, -0.3, 0.45, -1.2, -0.06, stone(0)); boxL(-1.5, 1.5, 0.45, WT, -0.6, -0.06, stone(0));   // against the water table's face
+    // ---- the tower: brick to its top cornice, the south doorway, the Palladian window, the oculus under its pediment, a
+    // sash high on each face, brick pilasters at the corners above the cornice, and a parapet with urns
+    const TT = 24.3, TC = 25.0;
+    {
+      const faces = [[[0, 0, TO1], [0, 0, 1]], [[TX, 0, 0], [1, 0, 0]], [[-TX, 0, 0], [-1, 0, 0]], [[0, 0, TO0], [0, 0, -1]]];
+      for (const [O, n] of faces) {
+        const F = plane(O, n), south = n[2] > 0.5, north = n[2] < -0.5;
+        const ext = n[0] !== 0 ? [A_(F, O[0], TO0), A_(F, O[0], TO1)] : [A_(F, -TX, O[2]), A_(F, TX, O[2])];
+        const lo = Math.min(...ext), hi = Math.max(...ext), mid = (lo + hi) / 2;
+        const ops = [];
+        if (south) {
+          ops.push({ p: rect(mid - 1.6, mid + 1.6, WT, WT + 5.0), el: 'tdoor', d: 0.3, win: 0 });
+          ops.push({ p: rect(mid - 1.9, mid + 1.9, 7.3, 12.7), el: 'palladian', d: 0.2, win: 0 });
+        } else if (!north) ops.push({ p: arched(mid - 0.75, mid + 0.75, 7.8, 11.7), el: 'arch', d: 0.18, win: 0 });
+        if (!north) ops.push({ p: circle(mid, 16.1, 0.8, 24), el: 'oculus', d: 0.2, win: 0 });
+        ops.push({ p: rect(mid - 0.75, mid + 0.75, 20.6, 23.3), el: 'sashU', d: 0.16, win: win++ });
+        openWall(F, rect(lo, hi, north ? yR(TO0) - 0.2 : -1.5, TT), ops);
+        if (south) boxL(-2.4, 2.4, -0.3, WT, TO1, TO1 + 1.3, stone(0));   // the doorway's steps
+      }
+      // the pilasters at the corners, from the cornice to the top cornice
+      for (const [cx, co] of [[-TX, TO0], [TX, TO0], [-TX, TO1], [TX, TO1]]) {
+        const x0 = cx < 0 ? cx - 0.12 : cx - 0.7, x1 = cx < 0 ? cx + 0.7 : cx + 0.12, o0 = co < BD ? co - 0.12 : co - 0.7, o1 = co < BD ? co + 0.7 : co + 0.12;
+        boxL(x0, x1, EAVE, TT, o0, o1, brick);
+      }
+      // the pediment over the oculus on the three open faces: a white tympanum under raking cornices
+      for (const [n, O] of [[[0, 0, 1], [0, 0, TO1]], [[1, 0, 0], [TX, 0, 0]], [[-1, 0, 0], [-TX, 0, 0]]]) {
+        const F = plane(O, n), ext = n[0] !== 0 ? [A_(F, O[0], TO0), A_(F, O[0], TO1)] : [A_(F, -TX, O[2]), A_(F, TX, O[2])];
+        const px = n[2] > 0.5 ? 0.15 : 0, lo = Math.min(...ext) - px, hi = Math.max(...ext) + px, mid = (lo + hi) / 2, yb = 18.3, ya = 19.9;   // the side ones meet the south one's ends, never in its planes
+        K.face([K.at(F, lo, yb, -0.25), K.at(F, hi, yb, -0.25), K.at(F, mid, ya, -0.25)], [[lo, yb], [hi, yb], [mid, ya]], n, sw(PAINT, 5));
+        for (const [p, q] of [[[lo, yb], [mid, ya]], [[mid, ya], [hi, yb]], [[hi, yb], [lo, yb]]]) {   // its cornice's top and the soffit under the tympanum
+          const ea = q[0] - p[0], eb = q[1] - p[1], L = Math.hypot(ea, eb), up = [-eb / L, ea / L];
+          const nn = [F.R[0] * up[0] + n[0] * 0, up[1], F.R[2] * up[0]];
+          K.face([K.at(F, p[0], p[1], -0.25), K.at(F, q[0], q[1], -0.25), K.at(F, q[0], q[1], 0), K.at(F, p[0], p[1], 0)], [[0, 0], [L, 0], [L, 0.25], [0, 0.25]], eb === 0 ? [0, -1, 0] : nn, sw(PAINT, eb === 0 ? 90 : 10));
+        }
+      }
+      // the top cornice and the parapet: a balustrade with urns at the corners
+      const TCOR = [[0.0, TC], [0.45, TC], [0.45, TC - 0.1], [0.38, TC - 0.18], [0.3, TC - 0.24], [0.3, TC - 0.42], [0.12, TC - 0.48], [0.05, TC - 0.6], [0.0, TC - 0.7]];
+      const tk = TCOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 5 ? 100 : j === 3 ? 25 : 5));
+      const [tP, tK] = ccw(TCOR, tk);
+      sweep(ring([[-TX, TO0], [TX, TO0], [TX, TO1], [-TX, TO1]]), tP, tK, true);
+      boxL(-TX, TX, TC - 0.01, TC + 0.02, TO0, TO1, (side) => (side === '+y' ? { t: flat('lead', 0), map: XO } : null));
+      balus(-TX + 0.15, TO0 + 0.15, TX - 0.15, TO0 + 0.15, TC, 0.8); balus(-TX + 0.15, TO1 - 0.15, TX - 0.15, TO1 - 0.15, TC, 0.8);
+      balus(-TX + 0.15, TO0 + 0.15, -TX + 0.15, TO1 - 0.15, TC, 0.8, true); balus(TX - 0.15, TO0 + 0.15, TX - 0.15, TO1 - 0.15, TC, 0.8, true);
+    }
+    const URN = [[0.0, 0], [0.22, 0], [0.22, 0.12], [0.1, 0.18], [0.1, 0.26], [0.24, 0.42], [0.27, 0.62], [0.18, 0.82], [0.08, 0.9], [0.1, 0.98], [0.0, 1.1]];
+    const urn = (x, o, y, s) => lathe(x, o, URN.map(([r, h]) => [r * s, y + h * s]), 10, sw(PAINT, 10));
+    const OC = (TO0 + TO1) / 2;
+    for (const [x, o] of [[-TX + 0.15, TO0 + 0.15], [TX - 0.15, TO0 + 0.15], [-TX + 0.15, TO1 - 0.15], [TX - 0.15, TO1 - 0.15]]) urn(x, o, TC + 0.8, 1.0);
+    mark('tower');
+    // ---- the steeple, all white paint: the clock stage (a dial on each face, pilasters at its corners, its cornice and its
+    // balustrade with urns), the arched octagonal belfry round a dark core, its entablature, the ogee dome, the lantern,
+    // its cap, the spire, the ball and the vane
+    const S1 = 3.0, S1T = 31.2;
+    boxL(-S1, S1, TC, S1T - 0.55, OC - S1, OC + S1, (side) => (side[1] === 'y' ? null : { t: sw(PAINT, 0) }));
+    for (const [n, O] of [[[0, 0, 1], [0, 0, OC + S1]], [[0, 0, -1], [0, 0, OC - S1]], [[1, 0, 0], [S1, 0, 0]], [[-1, 0, 0], [-S1, 0, 0]]]) {
+      const F = plane(O, n), cA = n[0] !== 0 ? A_(F, O[0], OC) : A_(F, 0, O[2]);
+      elPoly(F, rect(cA - 1.4, cA + 1.4, 26.8, 29.6), 'clock', -0.05, 0, 0);   // the dial proud of its face
+      for (const g of [-1, 1]) {   // the dial's raised frame's edges
+        K.face([K.at(F, cA + g * 1.4, 26.8, 0), K.at(F, cA + g * 1.4, 29.6, 0), K.at(F, cA + g * 1.4, 29.6, -0.05), K.at(F, cA + g * 1.4, 26.8, -0.05)], [[0, 0], [2.8, 0], [2.8, 0.05], [0, 0.05]], [F.R[0] * g, 0, F.R[2] * g], sw(PAINT, 40));
+        const yE = g < 0 ? 26.8 : 29.6;
+        K.face([K.at(F, cA - 1.4, yE, 0), K.at(F, cA + 1.4, yE, 0), K.at(F, cA + 1.4, yE, -0.05), K.at(F, cA - 1.4, yE, -0.05)], [[0, 0], [2.8, 0], [2.8, 0.05], [0, 0.05]], [0, g, 0], sw(PAINT, g < 0 ? 80 : 20));
+      }
+    }
+    for (const [cx, co] of [[-S1, OC - S1], [S1, OC - S1], [-S1, OC + S1], [S1, OC + S1]]) boxL(cx - 0.3, cx + 0.3, TC, S1T - 0.55, co - 0.3, co + 0.3, paint(0));
+    const SCOR = [[0.0, S1T], [0.4, S1T], [0.4, S1T - 0.1], [0.32, S1T - 0.2], [0.26, S1T - 0.26], [0.26, S1T - 0.38], [0.08, S1T - 0.45], [0.0, S1T - 0.55]];
+    const [sP, sK] = ccw(SCOR, SCOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 5 ? 100 : 5)));
+    sweep(ring([[-S1, OC - S1], [S1, OC - S1], [S1, OC + S1], [-S1, OC + S1]]), sP, sK, true);
+    boxL(-S1, S1, S1T - 0.01, S1T + 0.02, OC - S1, OC + S1, (side) => (side === '+y' ? { t: flat('lead', 0), map: XO } : null));
+    balus(-S1 + 0.15, OC - S1 + 0.15, S1 - 0.15, OC - S1 + 0.15, S1T, 0.75); balus(-S1 + 0.15, OC + S1 - 0.15, S1 - 0.15, OC + S1 - 0.15, S1T, 0.75);
+    balus(-S1 + 0.15, OC - S1 + 0.15, -S1 + 0.15, OC + S1 - 0.15, S1T, 0.75, true); balus(S1 - 0.15, OC - S1 + 0.15, S1 - 0.15, OC + S1 - 0.15, S1T, 0.75, true);
+    for (const [x, o] of [[-S1 + 0.15, OC - S1 + 0.15], [S1 - 0.15, OC - S1 + 0.15], [-S1 + 0.15, OC + S1 - 0.15], [S1 - 0.15, OC + S1 - 0.15]]) urn(x, o, S1T + 0.75, 0.85);
+    // an octagonal stage of arched openings round a dark core: R its corners' radius, [yb, yt] its height, the arch's
+    // width, springing and crown
+    const octo = (R, yb, yt, aw, aCrown, core, colR) => {
+      const P8 = [...Array(8)].map((_, k) => [R * Math.cos(Math.PI / 8 + k * Math.PI / 4), OC + R * Math.sin(Math.PI / 8 + k * Math.PI / 4)]);
+      for (let k = 0; k < 8; k++) {
+        const p = P8[k], q = P8[(k + 1) % 8], mx = (p[0] + q[0]) / 2, mo = (p[1] + q[1]) / 2, L = Math.hypot(q[0] - p[0], q[1] - p[1]);
+        const nl = Math.hypot(mx, mo - OC), n = [mx / nl, 0, (mo - OC) / nl], F = plane([mx, 0, mo], n);
+        const hole = arched(-aw / 2, aw / 2, yb + 0.35, aCrown);
+        wall(F, rect(-L / 2, L / 2, yb, yt), [hole], sw(PAINT, 0));
+        reveal(F, hole, R * 0.22, PAINT);
+      }
+      const C8 = P8.map(([x, o]) => [x * core, OC + (o - OC) * core]);   // the core, dark behind the openings
+      for (let k = 0; k < 8; k++) {
+        const p = C8[k], q = C8[(k + 1) % 8], P = [[p[0], yb, p[1]], [q[0], yb, q[1]], [q[0], yt, q[1]], [p[0], yt, p[1]]];
+        const mx = (p[0] + q[0]) / 2, mo = (p[1] + q[1]) / 2;
+        K.face(P, [[0, 0], [1, 0], [1, 1], [0, 1]], [mx, 0, mo - OC], flat('iron', 0));
+      }
+      for (let k = 1; k < 7; k++) K.face([C8[0], C8[k], C8[k + 1]].map(([x, o]) => [x, yt, o]), [[0, 0], [1, 0], [1, 1]], [0, 1, 0], flat('iron', 0));   // its lid
+      for (const [x, o] of P8) lathe(x, o, [[colR * 1.4, yb], [colR, yb + 0.2], [colR * 0.85, yt - 0.3], [colR * 1.3, yt - 0.1], [colR * 1.3, yt]], 8, sw(PAINT, 0));   // a column at each corner
+      return P8;
+    };
+    const B0 = S1T + 0.02, B1 = 37.6, R2 = 2.6;
+    const P8 = octo(R2, B0, B1, 1.3, 36.3, 0.72, 0.15);
+    const ECOR = [[0.0, B1 + 0.6], [0.35, B1 + 0.6], [0.35, B1 + 0.5], [0.26, B1 + 0.38], [0.2, B1 + 0.3], [0.2, B1 + 0.12], [0.05, B1 + 0.05], [0.0, B1]];
+    const [eP, eK] = ccw(ECOR, ECOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 5 ? 100 : 5)));
+    sweep(ring(P8), eP, eK, true);
+    const D0 = B1 + 0.6;   // the ogee dome, lead
+    lathe(0, OC, [[R2, D0], [R2 * 0.96, D0 + 0.4], [R2 * 0.78, D0 + 1.1], [R2 * 0.5, D0 + 1.9], [R2 * 0.38, D0 + 2.4], [R2 * 0.36, D0 + 2.7], [0, D0 + 2.7]], 8, flat('lead', 0), Math.PI / 8);
+    const L0 = D0 + 2.7, L1 = L0 + 2.3, R3 = 0.95;   // the lantern, its cap and its little dome
+    const P8b = octo(R3, L0, L1, 0.5, L1 - 0.45, 0.6, 0.07);
+    const LCOR = [[0.0, L1 + 0.35], [0.2, L1 + 0.35], [0.2, L1 + 0.22], [0.1, L1 + 0.1], [0.0, L1]];
+    const [lP, lK] = ccw(LCOR, LCOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 3 ? 100 : 5)));
+    sweep(ring(P8b), lP, lK, true);
+    lathe(0, OC, [[R3 * 1.05, L1 + 0.35], [R3 * 0.8, L1 + 0.75], [R3 * 0.4, L1 + 1.05], [R3 * 0.2, L1 + 1.15]], 8, flat('lead', 0), Math.PI / 8);
+    const SP0 = L1 + 1.15;   // the spire, the ball and the vane
+    lathe(0, OC, [[0.2, SP0], [0.14, SP0 + 1.2], [0.07, SP0 + 3.6], [0.04, SP0 + 4.6]], 8, sw(PAINT, 10));
+    lathe(0, OC, [[0, SP0 + 2.9], [0.2, SP0 + 2.97], [0.3, SP0 + 3.15], [0.3, SP0 + 3.35], [0.2, SP0 + 3.52], [0, SP0 + 3.6]], 10, sw(PAINT, 0));
+    boxL(-0.03, 0.03, SP0 + 4.6, 51.35, OC - 0.03, OC + 0.03, () => ({ t: flat('iron', 0) }));
+    boxL(-0.02, 0.6, 50.6, 50.95, OC - 0.01, OC + 0.01, () => ({ t: flat('iron', 0) }));   // the vane
+    mark('steeple');
+    // ---- the arcades: brick walls of three arches each on the north and the south, their imposts and keystones in marble,
+    // a vaulted soffit, a small cornice and a low roof between the main block and the wing
+    const WG = 15.2, WD = 12.0, AO0 = 0.4, AO1 = 5.0, AH = 5.2, AE = 5.6;
+    for (const s of [-1, 1]) {
+      const xa = s * HL, xb = s * (HLC - WG), x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), len = x1 - x0;
+      const pier = 0.9, aw = (len - 4 * pier) / 3, spring = 2.7;
+      for (const [oF, n] of [[AO0, [0, 0, -1]], [AO1, [0, 0, 1]]]) {
+        const F = plane([0, 0, oF], n), holes = [];
+        const aL = A_(F, x0, oF), aR = A_(F, x1, oF), lo = Math.min(aL, aR);
+        for (let k = 0; k < 3; k++) { const ha = lo + pier + k * (aw + pier); holes.push(arched(ha, ha + aw, 0, spring + aw / 2, 14)); }
+        wall(F, rect(lo, lo + len, -1.5, AH), holes, sw(BRICK, 0));
+        for (const h of holes) reveal(F, h, 0.6, BRICK);   // through the wall
+        for (let k = 0; k < 3; k++) {
+          const xm = x0 + pier + k * (aw + pier) + aw / 2, oo = n[2] < 0 ? [AO0 - 0.06, AO0] : [AO1, AO1 + 0.06];
+          boxL(xm - 0.22, xm + 0.22, spring + aw / 2 - 0.12, spring + aw / 2 + 0.42, oo[0], oo[1], stone(0));   // the keystone
+          for (const g of [-1, 1]) boxL(xm + g * aw / 2 - (g > 0 ? 0 : 0.12), xm + g * aw / 2 + (g > 0 ? 0.12 : 0), spring - 0.22, spring, oo[0], oo[1], stone(10));   // the imposts
+        }
+      }
+      // the inner faces of the two walls and the soffit over the walk
+      for (const [oF, n] of [[AO0 + 0.6, [0, 0, 1]], [AO1 - 0.6, [0, 0, -1]]]) {
+        const F = plane([0, 0, oF], n), holes = [], aL = A_(F, x0, oF), aR = A_(F, x1, oF), lo = Math.min(aL, aR);
+        for (let k = 0; k < 3; k++) { const ha = lo + pier + k * (aw + pier); holes.push(arched(ha, ha + aw, 0, spring + aw / 2, 14)); }
+        wall(F, rect(lo, lo + len, 0, 4.6), holes, sw(BRICK, 45));
+      }
+      K.face([[x0, 4.6, AO0 + 0.6], [x1, 4.6, AO0 + 0.6], [x1, 4.6, AO1 - 0.6], [x0, 4.6, AO1 - 0.6]], [[x0, 0], [x1, 0], [x1, 3.4], [x0, 3.4]], [0, -1, 0], sw(PAINT, 110));
+      const ACOR = [[0.0, AE], [0.4, AE], [0.4, AE - 0.08], [0.32, AE - 0.16], [0.28, AE - 0.2], [0.28, AE - 0.32], [0.08, AE - 0.36], [0.0, AE - 0.42]];
+      const [aP, aK] = ccw(ACOR, ACOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 5 ? 100 : 5)));
+      sweep([{ x: x0, o: AO0, n: [0, -1] }, { x: x1, o: AO0, n: [0, -1] }], aP, aK, false);
+      sweep([{ x: x1, o: AO1, n: [0, 1] }, { x: x0, o: AO1, n: [0, 1] }], aP, aK, false);
+      const RG = AE + 1.3, om = (AO0 + AO1) / 2;   // the low roof
+      for (const [oE, nn] of [[AO0 - 0.4, [0, 1, -1.3 / (om - AO0 + 0.4)]], [AO1 + 0.4, [0, 1, 1.3 / (AO1 + 0.4 - om)]]]) {
+        const P = [[x0, AE, oE], [x1, AE, oE], [x1, RG, om], [x0, RG, om]];
+        K.face(P, P.map((p) => [p[0], Math.abs(p[2] - oE) * 1.15]), nn, sw(SHINGLE, 0));
+      }
+    }
+    mark('arcades');
+    // ---- the wings: two storeys of six bays, a door at each end of the ground floor, the sashes with small white keystones,
+    // white pilasters at the corners, a boxed cornice, a hipped roof and a central chimney
+    const WE = 8.4, WC0 = 7.8;
+    for (const s of [-1, 1]) {
+      const xa = s * (HLC - WG), xb = s * HLC, x0 = Math.min(xa, xb), x1 = Math.max(xa, xb), xc = (x0 + x1) / 2;
+      const wb = [0, 1, 2, 3, 4, 5].map((k) => xc + (k - 2.5) * (WG / 6));
+      for (const [oF, n] of [[0, [0, 0, -1]], [WD, [0, 0, 1]]]) {
+        const F = plane([0, 0, oF], n), ops = [];
+        wb.forEach((x, k) => {
+          const p0 = A_(F, x - 0.6, oF), p1 = A_(F, x + 0.6, oF), lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+          if (k === 0 || k === 5) { const d0 = A_(F, x - 0.65, oF), d1 = A_(F, x + 0.65, oF); ops.push({ p: rect(Math.min(d0, d1), Math.max(d0, d1), 0.3, 3.0), el: 'wdoor', d: 0.16, win: 0 }); }
+          else ops.push({ p: rect(lo, hi, 0.95, 3.25), el: 'sashW', d: 0.12, win: win++ });
+          ops.push({ p: rect(lo, hi, 4.6, 6.9), el: 'sashW', d: 0.12, win: win++ });
+        });
+        const aL = A_(F, x0, oF), aR = A_(F, x1, oF);
+        openWall(F, rect(Math.min(aL, aR), Math.max(aL, aR), -1.5, WC0 + 0.1), ops);
+        const ko = n[2] < 0 ? [-0.05, 0] : [WD, WD + 0.05];
+        wb.forEach((x, k) => { for (const top of [k === 0 || k === 5 ? 3.0 : 3.25, 6.9]) boxL(x - 0.13, x + 0.13, top, top + 0.3, ko[0], ko[1], paint(0)); });
+      }
+      for (const [xF, g] of [[x0, -1], [x1, 1]]) {   // the ends (the inner one behind the arcade low down)
+        const F = plane([xF, 0, 0], [g, 0, 0]), ops = [], inner = s * xF < s * xc;
+        for (const o of [3.5, 8.5]) {
+          const p0 = A_(F, xF, o - 0.6), p1 = A_(F, xF, o + 0.6), lo = Math.min(p0, p1), hi = Math.max(p0, p1);
+          if (inner && o < AO1 + 1) continue;   // the arcade and its roof against it
+          ops.push({ p: rect(lo, hi, 0.95, 3.25), el: 'sashW', d: 0.12, win: win++ });
+          ops.push({ p: rect(lo, hi, 4.6, 6.9), el: 'sashW', d: 0.12, win: win++ });
+        }
+        const a0 = A_(F, xF, 0), a1 = A_(F, xF, WD);
+        openWall(F, rect(Math.min(a0, a1), Math.max(a0, a1), -1.5, WC0 + 0.1), ops);
+      }
+      for (const [cx, co] of [[x0, 0], [x1, 0], [x0, WD], [x1, WD]]) {   // the white corner pilasters
+        const gx = cx === x0 ? 1 : -1, go = co === 0 ? 1 : -1;
+        boxL(gx > 0 ? cx - 0.06 : cx - 0.34, gx > 0 ? cx + 0.34 : cx + 0.06, 0.2, WC0, go > 0 ? co - 0.06 : co - 0.34, go > 0 ? co + 0.34 : co + 0.06, paint(0));
+      }
+      const WCOR = [[0.0, WE], [0.5, WE], [0.5, WE - 0.1], [0.42, WE - 0.18], [0.38, WE - 0.22], [0.38, WE - 0.42], [0.1, WE - 0.48], [0.0, WE - 0.6]];
+      const [wP, wK] = ccw(WCOR, WCOR.slice(0, -1).map((_, j) => sw(PAINT, j === 0 ? 30 : j >= 5 ? 100 : 5)));
+      sweep(ring([[x0, 0], [x1, 0], [x1, WD], [x0, WD]]), wP, wK, true);
+      const OV = 0.5, RY = WE + 2.6, run = WD / 2 + OV, rx0 = x0 - OV + run, rx1 = x1 + OV - run;   // the hipped roof
+      const E = [[x0 - OV, WE, -OV], [x1 + OV, WE, -OV], [x1 + OV, WE, WD + OV], [x0 - OV, WE, WD + OV]], Rg = [[rx0, RY, WD / 2], [rx1, RY, WD / 2]];
+      const sl = 2.6 / run, d = (p) => p.map((q) => [q[0], q[2] * 1.2]);
+      K.face([E[0], E[1], Rg[1], Rg[0]], d([E[0], E[1], Rg[1], Rg[0]]), [0, 1, -sl], sw(SHINGLE, 0));
+      K.face([E[2], E[3], Rg[0], Rg[1]], d([E[2], E[3], Rg[0], Rg[1]]), [0, 1, sl], sw(SHINGLE, 0));
+      K.face([E[3], E[0], Rg[0]], [[E[3][2], 0], [E[0][2], 0], [Rg[0][2], run * 1.2]], [-sl, 1, 0], sw(SHINGLE, 0));
+      K.face([E[1], E[2], Rg[1]], [[E[1][2], 0], [E[2][2], 0], [Rg[1][2], run * 1.2]], [sl, 1, 0], sw(SHINGLE, 0));
+      boxL(xc - 0.9, xc + 0.9, WE + 1.2, WE + 4.9, WD / 2 - 0.45, WD / 2 + 0.45, brick);
+      boxL(xc - 0.97, xc + 0.97, WE + 4.4, WE + 4.58, WD / 2 - 0.52, WD / 2 + 0.52, (side) => ({ t: sw(BRICK, side === '-y' ? 90 : 10), map: side[1] === 'y' ? XO : null }));
+    }
+    mark('wings');
+    IH.parts = parts;
+    ihU.uTvY0.value = y0; ihU.uTvE.value.set(ex, ez);
+    return K.geometry();
+  }
+  // the hall built and its atlas asked for (a phone only after Enter, as the tavern's)
+  function indhallMake(ob) {
+    const A = INDHALL_ART, U = ihU, gl2 = !!renderer.capabilities.isWebGL2;
+    U.uTvAtW.value = A.w || 2048;
+    IH_SW.forEach((k, i) => { const s = A.sw[k]; if (!s) return; U.uTvSw.value[i].fromArray(s.rect); U.uTvSwM.value[i].fromArray(s.m); U.uTvSwC.value[i].fromArray(s.mean); });
+    IH_EL.forEach((k, i) => {
+      const e = A.el[k]; if (!e) return;
+      U.uTvEl.value[i].fromArray(e.rect); U.uTvElC.value[i].fromArray(e.mean);
+      if (i > 2 || !e.glass) return;
+      U.uTvElM.value[i].fromArray(e.size); U.uTvGA.value[i].fromArray(e.glass[0]); if (e.glass[1]) U.uTvGB.value[i].fromArray(e.glass[1]);
+      U.uTvGG.value[i].set(e.grid[0][0], e.grid[0][1], e.grid[1] ? e.grid[1][0] : 0, e.grid[1] ? e.grid[1][1] : 0); U.uTvGW.value[i].set(e.bar[0], e.bar[1], 0, 0);
+    });
+    const geo = indhallBuild(ob), mat = tvMat(gl2, U, IH_SW.length, IH_EL.length, 'indhall');
+    const m = new THREE.Mesh(geo, mat);
+    m.name = 'independence-hall'; m.castShadow = m.receiveShadow = true;
+    freeShadingOnUpload(geo);   // a raycast target keeps its positions and uvs
+    groupCity.add(m); rayTargets.push(m);
+    IH.mesh = m; IH.verts = geo.attributes.position.count; IH.tris = IH.verts / 3;
+    m.userData.indhall = { state: IH, u: ihU };
+    const go = () => artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+      if (!im) { IH.err = 'atlas did not load'; return; }   // the faces keep their means
+      const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);
+      U.uTvArt.value = 1; IH.art = 1;
     });
     if (!isTouch) go();
     else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
@@ -48724,7 +49303,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, bridges: bridgesProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

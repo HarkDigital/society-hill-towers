@@ -12389,3 +12389,43 @@ walk from the patio's edge (`SU`, `ST`), the patio's depth wide less 5 and 10 cm
 patio's railing runs whole along its front and its west end, its east end the flight's opening; the far level carries the
 treads too. The door's point (the card, the tap) stays at the entrance bay. Rendered at night from Chestnut Street and from
 the east, and by day from the north-east.
+
+## Round 210 — Independence Hall remodelled from generated art (Oct 20)
+
+Mike: "Can we have independence hall remodeled with the chat GPT api?" The Round 30s massing (a brick box, a gable and a
+stack of boxes and cones in flat colours) is replaced, under the realistic look, by one mesh on A Man Full of Trouble's
+material, which is now a factory (`tvMat(gl2, U, nS, nE, key)`: its uniform arrays sized per building, its own program
+key, the soot band `uTvSoot` and the gutter reach `uTvGut` uniforms; the tavern's numbers unchanged).
+
+- The art: `fetch_indhall_art.py` asked gpt-image-2 for 29 images (seven swatches, two of each of eleven openings; the
+  reference photos looked at and never sent: Commons' south facade, north facade and INDE0002, HABS PA-1430's west wing
+  and north aerial). `bake_indhall_art.py` cuts them with the tavern's tools into one 2048 atlas at 164 px a metre.
+  The first render showed the tower doorway, the Palladian window and the clock as flat white: at 60 m a 5 m element
+  covers 27 atlas texels a pixel and the shader takes an element's mean colour past 1.2 to 3 times its gutter (the
+  tavern's 6 of 8). The hall's elements have 32-texel gutters and read up to 28 (`uTvGut`); the tavern keeps 6.
+  sashU-b's two sashes were 681 and 627 px tall with equal rows, so the bake now equalises on height too (over 1%).
+- The building (`tvKit`, `indhallBuild`, in the complex's own frame: x east from the main block's middle, o south from
+  the complex's north face): the main block 32.9 by 13.4 m with nine bays a side (twelve-over-twelve sashes, the
+  Chestnut Street doorway and its marble steps, cellar grilles, marble keystones, panels, belt course, water table and
+  alternating quoins), a modillioned cornice that runs round the tower, the roof's two shingled slopes up to a lead deck
+  in a balustrade between the two end chimneys; the tower (7.6 m deep, the south doorway, the Palladian window, round
+  sashes east and west, the oculus under a pediment on three faces, a sash on each face high up, brick corner pilasters,
+  the top cornice and a parapet balustrade with urns); Strickland's steeple in white paint (the clock stage with a dial on
+  each face, its balustrade and urns, the arched octagonal belfry round a dark core, the ogee lead dome, the lantern, the
+  spire, ball and vane at 51.35 m against NPS's 168 ft 7 1/4 in); the arcades, three arches a side with marble imposts
+  and keystones and a low shingled roof; the wings, two storeys of six bays (doors at the ends of the ground floor),
+  white corner pilasters, a boxed cornice, a hipped roof and a central chimney. Every opening is a hole cut in its wall
+  (rectangle, round head or circle, triangulated by `THREE.ShapeUtils`) with a brick reveal and its picture set back in
+  it; the glazed sashes take the page's glass, rooms by day and lit rooms at night. 17,789 triangles. Glass on a wall
+  facing along the frame's run (the end walls, the tower's sides) now takes the run across it for the room's parallax
+  (`tvRun`; the tavern's glass all faces across, so it is unchanged).
+- Coplanar faces: the first geometry had 320 overlapping same-facing pairs (balustrade runs meeting at their corner
+  posts, the end walls' belt and water table over the long sides', the chimneys in their gables' plane, the north steps
+  inside the water table, modillions crossing at the tower, the side pediments' soffits over the south one's). Each is
+  now touching only: an inner balustrade run leaves its end posts and rails' ends to the runs it meets, the long sides'
+  boxes take the corners, the chimneys stand 3 cm proud. `tests/test_remodel_indhall.py` holds it at zero by plane
+  bucket under JavaScriptCore.
+- `?indhall=0` (and `?real=0`, and the phone's recovery tier) keeps the old massing whole; `__dbg.indhall()`.
+- Congress Hall and Old City Hall, either side, are still the old boxes.
+Rendered by day from Chestnut Street, Independence Square, the air and the steeple, at night from the square, and on the
+phone path; the old massing beside it from the square.
