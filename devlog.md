@@ -12250,3 +12250,30 @@ Headless, phone emulation (740x360, touch), 21:30: 442 poles meshed over Spruce 
 9 wood); in South Philly 500 (214, 104, 182), the 22 heads within 60 m of (-1200, 2400) identical in position and family to
 the computer's; +88,000 triangles (3.51 M to 3.60 M) and +7 draw calls. The wet air's halo (`wxHaloMesh`) still rides the far
 glow's buffer, so in rain a meshed pole's halo sits at its shaft top, 1.5 m off its head.
+
+## Round 206 — the poles and trees off the streets (Oct 20)
+
+Mike: "Occasionally I am seeing streetlights in the middle of streets, or trees that appear to be growing out of the street.
+Can we assess that and clean it up?"
+
+Assessed first, citywide, with `__dbg.streetCheck()` (a trunk or pole whose edge, 0.3 m round its point, stands on a drawn
+drivable street of any tier) on the build with the push off (`?streetpush=0`): 15,863 of 106,806 trees (561 of 2,004 in the
+core, 9,672 of 38,848 in the outer districts, 5,630 of 65,954 in the far ring) and 38,313 of 200,805 poles (934, 15,209,
+22,170). The surveys put them at the real kerb; a street is drawn at its packed width, which is often wider than the real
+one. The poles had no street test at all; the trees outside the core were refused only within 2.4 m of a centreline, the
+core's only 1.2 m inside a ribbon.
+
+The street index the vehicles snap to (`SRG`, every tier's drivable segments) now carries each segment's drawn half width
+(`SRG.hw`, decimetres), and `streetPush(x, z, clear, deep)` moves a point standing on a drawn street square out to the
+street's edge plus `clear` on its own side, up to three times for a corner. A tree goes to 1 m behind the edge (its pit)
+and one more than 4 m into a street is dropped; in the core the moved tree is re-checked against the buildings and the berm.
+A pole goes to 0.5 m behind the edge before anything else reads it, so its glow, its light pool, its mesh and its arm (aimed
+from the new point) move with it. The lot masts and the deck standards are left where they are placed.
+
+After, same probe: 0 trees on a street (29,723 moved, 346 dropped; the 2.4 m centreline refusal is gone, so 2,500 more trees
+stand than before, at their kerbs) and 728 poles (44,482 moved). The 728 are almost all median lamps between the parallel
+carriageways of Roosevelt Boulevard and the like, where the two drawn roadways overlap the real median and no point clears
+both; they stay at the survey's point. Phone emulation: the same, its half forest (15,431 moved, 258 dropped). Build time
+unchanged (26 to 27 s headless). Renders at four street spots (Center City, the Parkway, the towers' plaza, South Philly
+at night) show the trunks and poles back on the sidewalks. `tests/test_street_push.py` runs the page's own `streetPush` on a
+synthetic grid. `?streetpush=0` keeps the surveyed points.

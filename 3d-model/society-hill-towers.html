@@ -7929,6 +7929,7 @@ RB.add({
   // ?real=0 the Cities: Skylines palette it replaces. On the post pipeline it adds ambient occlusion from the city's own
   // depth (AO) and a filmic grade in the composite; on every device a quieter lawn and a city's warm bounce by night
   const REAL = !/[?&]real=0\b/.test(location.search);
+  const STREET_PUSH = !/[?&]streetpush=0\b/.test(location.search);   // Round 205: the trees and poles on a drawn street go to its kerb (streetPush)
   // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
   // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
   const GLORY_ON = REAL && !/[?&]glory=0\b/.test(location.search);
@@ -16984,7 +16985,7 @@ vec2 wRing(vec2 rc, float tt) {
         const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
         for (let i = 0; i < run.length - 1; i++) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
-          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
+          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
         }
         for (const g of gs) (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)).multiplyScalar(foot || setts ? 1 : streetAge(cr + 3)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
@@ -32250,7 +32251,7 @@ if (uNjLamp > 0.001) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
-      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);
       for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, laneClsOf(t, w));   // for the far ring's seam (Round 88), and the paving season's strips (wideStreetAt)
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       wideRoadRecs.push({pts,w,t,i});
@@ -35470,7 +35471,7 @@ if (uNjLamp > 0.001) {
       const pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (keepAt && !buildingsOnly && !keepAt(pts[pts.length >> 1][0], pts[pts.length >> 1][1])) continue;
-      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);
       roadRecs.push({ pts: densify(pts, 30), w, t, i });
     }
     // how many runs end at each half-metre node key: a run's own end gets a mitre disc only
@@ -38755,8 +38756,9 @@ if (uNjLamp > 0.001) {
       }
       return false;
     };
+    let pushedT = 0, droppedT = 0;
     for (let i = 0; i < nAll; i++) {
-      const x = v[i * 4] * TQ, z = v[i * 4 + 1] * TQ;
+      let x = v[i * 4] * TQ, z = v[i * 4 + 1] * TQ;
       const core = inCore(x, z);
       const outer = !core && !inWide(x, z);
       if (outer && TIER2) continue;                       // tier 2 plants nothing past the wide box (the recovery round)
@@ -38766,9 +38768,17 @@ if (uNjLamp > 0.001) {
         // the core's landmarks were rebuilt by hand and differ from the city
         // footprints the bake rejected against, so re-check here
         if (insideBuilding(x, z) || nearBuildingEdge(x, z, 0.8)) continue;
-        if (nearRoad(x, z, -1.2)) continue;               // >1.2 m INSIDE a road ribbon only
+        if (nearRoad(x, z, -1.2)) continue;               // >1.2 m INSIDE a road ribbon only (the pedestrian streets with them)
         if (bermHit(x, z)) continue;
-      } else if (septaSnapRoad(x, z, 2.4)) continue;      // the surveyed point can sit on a centerline
+      } else if (!STREET_PUSH && septaSnapRoad(x, z, 2.4)) continue;      // the surveyed point can sit on a centerline
+      if (STREET_PUSH) {   // Round 205: a trunk on the drawn asphalt goes back to the kerb's tree pit, 1 m behind the edge; one more than 4 m in is not a street tree
+        const p = streetPush(x, z, 1.0, 4);
+        if (p === false) { droppedT++; continue; }
+        if (p) {
+          x = p[0]; z = p[1]; pushedT++;
+          if (inWater(x, z) > -2 || (core && (insideBuilding(x, z) || nearBuildingEdge(x, z, 0.8) || bermHit(x, z)))) { droppedT++; continue; }
+        }
+      }
       keepTree(x, z, clamp(v[i * 4 + 2], 1, 60), v[i * 4 + 3], core, outer);
     }
     const nInv = n;
@@ -38793,6 +38803,7 @@ if (uNjLamp > 0.001) {
       keepTree(x, z, dbh, -1, inCore(x, z));
     }
     treeInv = { x: X, z: Z, gy: GY, cr: CR, cy: CY, dbh: DBH, ni: NI, n };
+    PERF.streetPush = Object.assign(PERF.streetPush || {}, { treesMoved: pushedT, treesDropped: droppedT });   // __dbg.streetCheck()
     // ---- instancing: full trees in the core, light trees in 3x3 wide chunks
     // the crowns are lumpy, flat-shaded blobs: every vertex of the unit icosahedron steps in
     // or out by a hash of its position (seeded per tree), so a crown is a low-poly puff with
@@ -41393,11 +41404,54 @@ if (uNjLamp > 0.001) {
   // a prefix sum, a fill pass: every segment registered in the same cells as before, so every read sees the same segments
   // in the same order), about 7 MB. A write after the freeze (none happens today) unfreezes it for the next read.
   const SEPTA_RG_CELL = 36;
-  const SRG = { seg: new Float64Array(4 * 65536), n: 0, off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, freezes: 0 };
-  function septaRoadAdd(ax, az, bx, bz) {
+  // Round 205: each segment's drawn half width beside it (SRG.hw, decimetres), for streetPush
+  const SRG = { seg: new Float64Array(4 * 65536), hw: new Uint8Array(65536), n: 0, off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, freezes: 0 };
+  function septaRoadAdd(ax, az, bx, bz, hw) {
     if (SRG.n * 4 + 4 > SRG.seg.length) { const nb = new Float64Array(SRG.seg.length * 2); nb.set(SRG.seg); SRG.seg = nb; }
-    SRG.seg.set([ax, az, bx, bz], SRG.n * 4); SRG.n++;
+    if (SRG.n >= SRG.hw.length) { const nb = new Uint8Array(SRG.hw.length * 2); nb.set(SRG.hw); SRG.hw = nb; }
+    SRG.seg.set([ax, az, bx, bz], SRG.n * 4); SRG.hw[SRG.n] = Math.min(255, Math.round((hw || 0) * 10)); SRG.n++;
     SRG.off = null;
+  }
+  // Round 205 (Mike: "streetlights in the middle of streets, or trees that appear to be growing out of the street"): the
+  // surveys put a pole or a trunk at the real kerb, but a street is drawn at its packed width, often wider than the real
+  // one, so the point lands on the drawn asphalt. streetPush(x, z, clear, deep) finds the drivable street (any tier) the
+  // point stands deepest inside, short of its drawn edge plus clear, and moves it square out to that line on its own side,
+  // up to three times (a corner between two streets); null when it was clear, false when it lay more than deep metres in
+  // or no move clears it, else [x, z]. ?streetpush=0 keeps the surveyed points (STREET_PUSH; __dbg.streetCheck() counts them)
+  function streetInside(x, z, clear) {
+    const C = SEPTA_RG_CELL, gx = Math.floor(x / C), gz = Math.floor(z / C);
+    let best = 0, out = null;
+    for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
+      const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids, H = SRG.hw;
+      for (let q = q0; q < q1; q++) {
+        const k = ids[q], i = k * 4, hw = H[k] / 10;
+        if (!hw) continue;
+        const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az, L2 = dx * dx + dz * dz;
+        if (L2 < 1e-6) continue;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+        const px = ax + dx * t, pz = az + dz * t, d = Math.hypot(x - px, z - pz), depth = hw + clear - d;
+        if (depth > best) { best = depth; out = [px, pz, dx, dz, hw, d, t]; }
+      }
+    }
+    return out;
+  }
+  function streetPush(x, z, clear, deep) {
+    let moved = false;
+    for (let it = 0; it < 3; it++) {
+      const s = streetInside(x, z, clear);
+      if (!s) return moved ? [x, z] : null;
+      const [px, pz, dx, dz, hw, d, t] = s;
+      if (it === 0 && hw - d > deep) return false;
+      let nx = x - px, nz = z - pz;
+      if (d < 0.05 || t <= 0 || t >= 1) {   // on the centreline, or past a segment's end: square to the street, on the point's side
+        const L = Math.hypot(dx, dz), side = (-(dz) * (x - px) + dx * (z - pz)) >= 0 ? 1 : -1;
+        nx = -dz / L * side; nz = dx / L * side;
+        if (t <= 0 || t >= 1) { const e = Math.hypot(x - px, z - pz); if (e > 0.05) { nx = (x - px) / e; nz = (z - pz) / e; } }
+      } else { nx /= d; nz /= d; }
+      x = px + nx * (hw + clear + 0.02); z = pz + nz * (hw + clear + 0.02);
+      moved = true;
+    }
+    return streetInside(x, z, clear) ? false : [x, z];
   }
   function septaRoadFreeze() {
     const S = SRG.seg, n = SRG.n, C = SEPTA_RG_CELL;
@@ -41414,7 +41468,7 @@ if (uNjLamp > 0.001) {
     for (let c = 0; c < w * h; c++) off[c + 1] += off[c];
     const ids = new Uint32Array(off[w * h]), fill = off.slice(0, w * h);
     each((c, k) => { ids[fill[c]++] = k; });
-    SRG.seg = S.slice(0, n * 4);   // the slack goes
+    SRG.seg = S.slice(0, n * 4); SRG.hw = SRG.hw.slice(0, n);   // the slack goes
     Object.assign(SRG, { off, ids, gx0, gz0, w, h, freezes: SRG.freezes + 1 });
   }
   // the cell's first and one-past-last index into SRG.ids, or an empty range off the grid
@@ -48223,7 +48277,7 @@ float pinOccGate() {
       try { famOf = Uint8Array.from(atob(POLE_FAMILIES.b64), (ch) => ch.charCodeAt(0)); } catch (err) { famOf = null; }
     }
     let tArm = 0, armRoad = 0;
-    let underDeck = 0;
+    let underDeck = 0, polesMoved = 0;
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
     const cells = keepInv ? new Map() : null;   // 400 m buckets for the near-mesh reconcile
     const cellAdd = (x, z, i) => { if (!cells) return; const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400); let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i); };
@@ -48260,7 +48314,9 @@ float pinOccGate() {
         cellAdd(x, z, i);
         continue;
       }
-      const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, pk = v[i * 3 + 2];
+      let x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7;
+      const pk = v[i * 3 + 2];
+      if (STREET_PUSH) { const p = streetPush(x, z, 0.5, Infinity); if (p) { x = p[0]; z = p[1]; polesMoved++; } }   // Round 205: a pole on the drawn asphalt stands at its kerb
       if(inCapSite(x,z) || rebuildAt(x, z, 1)) { pos[i*3+1]=-1000; continue; }   // Round 161: none on a rebuilt landmark's ground
       const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1, fam = famOf ? (famOf[i >> 2] >> ((i & 3) * 2)) & 3 : 0;
       const gy = siteY(x, z, 'ground');
@@ -48464,8 +48520,9 @@ float pinOccGate() {
       }
     }
     if (cells) for (const [k, a] of cells) cells.set(k, Int32Array.from(a));
-    poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll } : null;
+    poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll, nPoles } : null;
     if (keepInv && REAL && !isTouch) wxLampCol(pcol);   // the wet streets' glints read each lamp's own colour (wxGlintStep, a computer's)
+    PERF.streetPush = Object.assign(PERF.streetPush || {}, { polesMoved });
     PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     if (FAM) { const fc = [0, 0, 0, 0]; for (let i = 0; i < nAll; i++) fc[FAM[i]]++; PERF.lampsReal = { armMs: Math.round(tArm), armRoad, families: fc }; }   // __dbg.PERF.lampsReal
     const el = document.getElementById('lightsCount');
@@ -55126,6 +55183,14 @@ float pinOccGate() {
       // before this existed; every hand-rolled check before it measured the wrong thing (a row
       // minimum, which finds the carved trough and hides the ridge beside it, or a guessed water
       // level). Anything past the sheet's own z range is skipped, since no water is drawn there.
+      // Round 205: the trees and the poles whose trunk stands on a drawn street (its edge 0.3 m in), by tier, and how many
+      // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
+      streetCheck: (clear) => {
+        const P = poleInv, c = clear == null ? 0.3 : +clear, tier = (x, z) => (inCore(x, z) ? 'core' : x > WIDEB.x0 && x < WIDEB.x1 && z > WIDEB.z0 && z < WIDEB.z1 ? 'wide' : 'far');
+        const count = (n, X, Z, skip) => { const o = { core: [0, 0], wide: [0, 0], far: [0, 0], at: [] }; for (let i = 0; i < n; i++) { if (skip && skip(i)) continue; const t = o[tier(X[i], Z[i])]; t[1]++; const q = streetInside(X[i], Z[i], c); if (q) { t[0]++; if (o.at.length < 40 && (i % 7) === 0) o.at.push([Math.round(X[i]), Math.round(Z[i]), +q[4].toFixed(1), +q[5].toFixed(1)]); } } return o; };   // at: a sample [x, z, the street's half width, the distance from its centreline]
+        return { push: STREET_PUSH, ...(PERF.streetPush || {}), trees: treeInv ? count(treeInv.n, treeInv.x, treeInv.z) : null,
+          poles: P ? count(P.n, P.X, P.Z, (i) => i >= P.nPoles || P.GY[i] < -500) : null };
+      },
       riverCheck: (step) => {
         const SH = TERRAIN.water + 0.5, zr = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.z_range) || [-1e9, 1e9];
         const over = [];
