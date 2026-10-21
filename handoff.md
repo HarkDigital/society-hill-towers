@@ -489,14 +489,19 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   St the I-95 trench drops to −8 between `TERRAIN.trenchW/E`, Penn's Landing shelf −6.5…−7.5,
   water −10, shoreline = `SHORE`, existing plaza caps in `CAPS`. Penn's Landing is a
   separate `CAP_SITE` construction model with elevated girders, partial decking and
-  a fenced bare yard; it must not restore the future lawn in `siteY`. Outside the core low terrain clamps above
+  a fenced bare yard; it must not restore the future lawn in `siteY`. Since Round 216 the trench carries on 170 m north
+  of the core's edge (`trenchNorthY`, `trenchNorthCarve`: its own 2.5 m grid over the north strip's cells, walls and floor,
+  easing up to the DEM before the northbound carriageway reaches Front Street); the core's lanes come down onto it at the
+  edge (`trenchLaneY`), never up to `frontDem`. Outside the core low terrain clamps above
   the water plane except east of `DEL_BANK` / inside `riverCorridor` (Schuylkill polyline).
   Each packed ring pre-scans its own water polygons (`wxWaterGrid`) and refuses any footprint
   whose centroid stands in rendered water, so nothing floats.
 - **Overpasses:** `OVERPASSES` (bake_overpasses.py) drives deck ribbons, parapets, piers, the
   Vine Street cut and sunken ramps; `ovpOwned` suppresses the packed flat ribbons underneath,
   `ovpDeckY` lifts buses, labels and traffic; `BRIDGE_DECKS` registers the two custom river
-  spans' real deck profiles.
+  spans' real deck profiles. Chains inside the core are clipped except the `core` ones: I-95's southern
+  approach (`i95`, `i95-ramp`) and, since Round 216, Market Street's bridge with Penn's Landing Road (`market`),
+  whose profile the page solves against its own trench and streets (`marketDeckSolve`) and whose sidewalks ride it.
 - **Layering (z-fighting):** flat surfaces use the `LAYER` constants (park .06 / plaza .10 /
   sidewalk .16 / road .24 / footway .32 / pools .38), every ribbon gets a deterministic few-cm
   lift, and the renderer runs reversed-Z float depth (Round 192) or, where that is refused, `logarithmicDepthBuffer: true`.

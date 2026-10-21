@@ -248,6 +248,19 @@ def i95_approach_y(z, grade_y):
     trench_surface = 1.5 - DATUM + 0.55 + 0.24
     return trench_surface * (1.0 - t) + (grade_y + 6.8) * t
 
+# Round 216 (Mike, over I-95 at Market Street: the street climbed out of the trench as a narrow deck at Front Street's
+# height, dropped 6 m at the trench's east wall and never met the street on the river side). OSM maps Market Street east
+# of Front Street as a layer-1 bridge over I-95 and Columbus Boulevard, carried round to the riverfront by Penn's Landing
+# Road (layer 1 too). Both lie inside the core, which this bake leaves to the page's own trench, so they were clipped and
+# the core drew them flat. They are kept whole now (core "market"): the page solves the profile against its own trench,
+# lanes and streets (marketDeckSolve in app.js) and trims the ends where the deck has come down to the street, so the
+# bake carries the geometry, every node, and a deck wide enough for the generated sidewalks (7 m roadway, 3 m walks)
+def penns_landing_bridge(tags, pts):
+    return (tags.get("highway") == "unclassified" and tags.get("bridge") not in (None, "no")
+            and tags.get("name") in ("Market Street", "Penn's Landing Road")
+            and all(100 < x < 420 and -520 < z < -250 for x, z in pts))
+MARKET_DECK_W = 13
+
 # ---------------------------------------------------------------- classify ways
 def parse_layer(t):
     try:
@@ -273,7 +286,8 @@ for wid, w in raw_ways.items():
     W[wid] = {"nds": nds, "pts": [nodes[n] for n in nds], "cls": CLS[hw], "hw": hw,
               "w": ROAD_W.get(hw, 7), "mo": hw in MOTOR, "layer": ly, "tunnel": tu,
               "elev": (br or ly > 0) and not tu, "sunk": tu or ly < 0,
-              "skipname": any(s in name for s in SKIP_NAMES), "i95core": approach, "core_ramp": False}
+              "skipname": any(s in name for s in SKIP_NAMES), "i95core": approach, "core_ramp": False,
+              "market": penns_landing_bridge(t, [nodes[n] for n in nds])}
 def way_len(w):
     return sum(math.hypot(w["pts"][i + 1][0] - w["pts"][i][0], w["pts"][i + 1][1] - w["pts"][i][1])
                for i in range(len(w["pts"]) - 1))
@@ -476,7 +490,7 @@ grade_bridge = set()
 for wid, w in W.items():
     if not w["elev"] or w["skipname"]:
         continue
-    if w["i95core"]:
+    if w["i95core"] or w["market"]:
         continue
     if w["core_ramp"]:
         grade_bridge.add(wid); continue
@@ -704,16 +718,18 @@ for cids in elev_chains:
     P, s, g, y, ek = r
     if max(y[i] - g[i] for i in range(len(P))) < 0.35:
         continue
-    keep_core = any(W[c]["i95core"] or W[c]["core_ramp"] for c in cids)
-    prof = simplify_profile(P, y, keep_nodes=core_ramp_nodes if keep_core else ())
+    market = any(W[c]["market"] for c in cids)
+    keep_core = market or any(W[c]["i95core"] or W[c]["core_ramp"] for c in cids)
+    keep_nodes = {p[3] for p in P if p[3] is not None} if market else core_ramp_nodes if keep_core else ()
+    prof = simplify_profile(P, y, keep_nodes=keep_nodes)
     cmin = min(W[c]["cls"] for c in cids)
-    wmax = max(W[c]["w"] for c in cids)
+    wmax = MARKET_DECK_W if market else max(W[c]["w"] for c in cids)
     for run, f0, f1 in emit_runs(P, y, ek, prof, keep_core):
         if run_len(run) < 24:
             continue
         record = {"c": cmin, "w": wmax, "p": run, "e": [f0, f1]}
         if keep_core:
-            record["core"] = "i95" if any(W[c]["i95core"] for c in cids) else "i95-ramp"
+            record["core"] = "market" if market else "i95" if any(W[c]["i95core"] for c in cids) else "i95-ramp"
         out_el.append(record)
 
 # ---------------------------------------------------------------- Vine corridor

@@ -9018,14 +9018,42 @@ vec2 wRing(vec2 rc, float tt) {
     return v[k] + (v[k + 1] - v[k]) * t;
   }
   // I-95's lanes in the core's trench: down from the street's own height (base) to the floor over 14 m from each wall and
-  // 60 m from the core's ends (the road loop's, the street names' and the cars' one rule since Round 207)
+  // 60 m from the core's south end (the road loop's, the street names' and the cars' one rule since Round 207). Round 216:
+  // at the north end they no longer climb back to Front Street's height (frontDem, 4 to 7 m over the outer districts' I-95,
+  // right under Market Street); they ease 0.6 m down onto the trench's own ground at the core's edge and carry on north in
+  // it (trenchNorthY), which siteY reads past the edge. The walls' ease (a ramp climbing out along a wall; it holds the
+  // southbound carriageway 1.7 m over the floor) goes over the same 60 m, so every lane meets that ground at the edge
   function trenchLaneY(x, z, base) {
     const o = frontOff(x, z);
-    if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE) return base;
-    const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
-    const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
+    if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE || z < CORE_EXT.z0) return base;
+    const n = clamp((z - (CORE_EXT.z0 + 4)) / 60, 0, 1);
+    const eo = Math.max(Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14, 1 - n);
+    const ez = ((CORE_EXT.z1 - 4) - z) / 60;
     const t = clamp(Math.min(eo, ez), 0, 1);
-    return lerp(base, TERRAIN.trenchFloor + 0.55 - trenchDip(x, z), t * t * (3 - 2 * t));
+    return lerp(base, TERRAIN.trenchFloor + 0.55 - 0.6 * (1 - n * n * (3 - 2 * n)) - trenchDip(x, z), t * t * (3 - 2 * t));
+  }
+  // Round 216 (Mike, over I-95 at Market Street, #p=336.2,30.6,-523.7: "the ground plane ends in a big dark slab that cuts
+  // across the I-95 lanes"). The core's trench stopped dead at the core's north edge, 30 m past Market Street, where the
+  // outer districts take over on the bare DEM, which has no trench: a 6 m slope from Front Street down to Columbus Boulevard,
+  // the DEM's edge standing 3 to 7 m over the trench floor across the lanes. The trench now carries on north for
+  // TRENCH_NORTH_L between the same walls, its ground easing from the floor at the edge up to the DEM's, a finer grid of its
+  // own in the outer districts' ground ('Laying out the ground'), so the roads, the cars and the lamps that read the drawn
+  // ground follow it, and siteY reads this for everything else. North of it I-95 runs on the DEM as before. The length is
+  // the northbound carriageway's: it drifts west toward Front Street and its west edge reaches the wall's line 160 m north
+  // of the edge, so the trench has to be all but out by then (a longer, gentler ease left a step under its lanes there)
+  const TRENCH_NORTH_L = 170;
+  let TRENCH_NORTH_PLANE = null;   // the outer districts' surface the trench is carved from, (x, z) => y ('Laying out the ground')
+  let TRENCH_NORTH_FLOOR = Infinity;   // the z its dark floor runs north to (the bare ground's tufts keep off it)
+  function trenchNorthY(x, z) {   // the carried-on trench's ground at (x, z), null outside it
+    const Z0 = CORE_EXT.z0;
+    if (z >= Z0 || z <= Z0 - TRENCH_NORTH_L) return null;
+    const o = frontOff(x, z);
+    if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE) return null;
+    return trenchNorthCarve(z, demY(x, z) - 0.05);
+  }
+  function trenchNorthCarve(z, nat) {   // the trench's ground at z over ground that stood at nat (the wide strips' 5 cm under the DEM)
+    const t = clamp((z - (CORE_EXT.z0 - TRENCH_NORTH_L)) / TRENCH_NORTH_L, 0, 1), k = t * t * (3 - 2 * t);
+    return Math.min(nat, lerp(nat, TERRAIN.trenchFloor - 0.05, k));
   }
   // Penn's Landing CAP: a construction-stage model, not the future finished park.
   // Local s follows Front Street; o measures east toward the river. The working
@@ -9229,6 +9257,8 @@ vec2 wRing(vec2 rc, float tt) {
     if (!inCore(x, z)) { // outer districts ride the wide DEM. Low terrain east of the
       // Delaware bank is river; low LAND west of it (stadiums, FDR, the airport — NED
       // reads made-land near 0 ASL) clamps just above the water plane instead of flooding
+      const tn = trenchNorthY(x, z);   // Round 216: the I-95 trench carried on north of the core
+      if (tn !== null) return tn;
       const y = demY(x, z);
       if (y >= TERRAIN.water + 0.6) return y;
       return eastOfDelaware(x, z) ? TERRAIN.bulkhead : TERRAIN.water + 0.45;
@@ -9241,6 +9271,118 @@ vec2 wRing(vec2 rc, float tt) {
     return shelfY(x, z);
   }
   function walkY(x, z) { return Math.max(siteY(x, z, 'ground'), siteY(x, z, 'road')); }
+
+  // Round 216 (Mike, over I-95 at Market Street: a narrow deck that climbs from Front Street, drops back down at its east end
+  // and never meets the street on the Columbus Boulevard side, with cars under it). OSM's Market Street east of Front Street
+  // is a bridge over I-95 and Columbus Boulevard, carried round to the riverfront by Penn's Landing Road; the core drew it as
+  // a flat street, at Front Street's height over the trench (siteY's rule for a cross street) and on the shelf past it.
+  // bake_overpasses.py keeps it whole as one chain, core 'market'; its profile is solved here, where the trench, its lanes
+  // and the streets are known: TRENCH_CLEAR plus the deck's depth over every carriageway it crosses (I-95's lanes by
+  // trenchLaneY), never under the street's own height, level between the crossings and over the trench (no sag over the
+  // shelf between I-95 and Columbus Boulevard), down to the street at a street's grade (the bake's 5.5%), and trimmed where it
+  // has come down to the street, so each end meets the flat street at that street's height. The core's carriageway under it
+  // is the deck's (ovpOwned), its generated sidewalks ride on it (marketDeck), and the deck lift in 'Raising the overpasses'
+  // leaves it alone (it was solved against this ground)
+  const MARKET_GRADE = 0.055, MARKET_DECKS = [];
+  function marketDeckSolve() {
+    const roads = [];
+    for (const r of D.roads) if (r.pts.length > 1 && !/footway|path|steps|cycleway|pedestrian/.test(r.t)) roads.push(r);
+    for (const c of OVP.el) {
+      if (c.core !== 'market' || c.p.length < 2) continue;
+      const pts = densify(c.p.map((q) => [q[0], q[1]]), 5), n = pts.length, hw = c.w / 2, dep = c.c <= 1 ? 1.7 : (c.c === 6 ? 0.5 : 1.15);
+      // the flat street's surface (ribbon: LAYER.road and its few-cm jitter); over the trench Front Street's own, square across
+      // from the point (capTop's rule for the I-95 deck: siteY's frontDem, the DEM 110 m inland, stood 0.4 m over the street)
+      const inTrench = (q) => { const o = frontOff(q[0], q[1]); return o >= TERRAIN.trenchW && o < TERRAIN.trenchE; };   // siteY's own bounds
+      const hug = pts.map((q) => {
+        if (!inTrench(q)) return siteY(q[0], q[1], 'road') + LAYER.road + 0.03;
+        const w = capPoint(TERRAIN.trenchW - 1.5, capAlong(q[0], q[1]));
+        return cityY(w[0], w[1]) + plazaLift(w[0], w[1]) + LAYER.road + 0.03;
+      });
+      const req = new Float64Array(n).fill(-Infinity), cross = [];
+      let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
+      for (const q of pts) { bx0 = Math.min(bx0, q[0] - 40); bx1 = Math.max(bx1, q[0] + 40); bz0 = Math.min(bz0, q[1] - 40); bz1 = Math.max(bz1, q[1] + 40); }
+      const near = roads.filter((r) => r.pts.some((q) => q[0] > bx0 && q[0] < bx1 && q[1] > bz0 && q[1] < bz1) ||
+        r.pts.some((q, k) => k > 0 && Math.min(q[0], r.pts[k - 1][0]) < bx1 && Math.max(q[0], r.pts[k - 1][0]) > bx0 && Math.min(q[1], r.pts[k - 1][1]) < bz1 && Math.max(q[1], r.pts[k - 1][1]) > bz0));
+      const offChain = (q) => {   // the distance from q to the chain's own line
+        let d2 = Infinity;
+        for (let i = 0; i + 1 < n; i++) {
+          const a = pts[i], b = pts[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1e-9;
+          const t = clamp(((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / L2, 0, 1), ex = a[0] + dx * t - q[0], ez = a[1] + dz * t - q[1];
+          d2 = Math.min(d2, ex * ex + ez * ez);
+        }
+        return Math.sqrt(d2);
+      };
+      for (let i = 0; i < n; i++) {
+        const [x, z] = pts[i], p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)];
+        const ul = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1, ux = (p1[0] - p0[0]) / ul, uz = (p1[1] - p0[1]) / ul;
+        if (inTrench(pts[i])) req[i] = hug[i];   // over the trench: never under Front Street's height
+        for (const r of near) {
+          const mot = /motorway/.test(r.t), reach = hw + r.w / 2 + 1;
+          for (let k = 0; k + 1 < r.pts.length; k++) {
+            const a = r.pts[k], b = r.pts[k + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz;
+            if (L2 < 1e-6 || Math.abs((dx * ux + dz * uz) / Math.sqrt(L2)) > 0.8) continue;   // along the deck: its own carriageway, not one under it
+            const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / L2, 0, 1), px = a[0] + dx * t, pz = a[1] + dz * t;
+            if ((px - x) * (px - x) + (pz - z) * (pz - z) > reach * reach) continue;
+            // west of the trench the streets meet it at grade (Front Street's junction; OSM's bridge runs on to 2nd Street
+            // with no node at Front Street), and a street with a node on it joins it (its own ways round the turn, Chestnut
+            // Street's stub at Penn's Landing Road's end) rather than passing under it
+            if (frontOff(px, pz) <= TERRAIN.trenchW || offChain(a) < 1.5 || offChain(b) < 1.5) continue;
+            const under = mot ? trenchLaneY(px, pz, siteY(px, pz, 'road')) : siteY(px, pz, 'road');
+            const need = under + LAYER.road + TRENCH_CLEAR + dep;
+            if (need > req[i]) req[i] = need;
+            cross.push({ i, name: r.name || r.t, under: +(under + LAYER.road).toFixed(2) });
+          }
+        }
+      }
+      const y = pts.map((q, i) => Math.max(hug[i], req[i]));
+      const pre = new Float64Array(n), suf = new Float64Array(n);
+      for (let i = 0; i < n; i++) pre[i] = Math.max(i ? pre[i - 1] : -Infinity, req[i]);
+      for (let i = n - 1; i >= 0; i--) suf[i] = Math.max(i < n - 1 ? suf[i + 1] : -Infinity, req[i]);
+      for (let i = 0; i < n; i++) y[i] = Math.max(y[i], Math.min(pre[i], suf[i]));   // level between the crossings
+      const ds = (i, j) => Math.hypot(pts[i][0] - pts[j][0], pts[i][1] - pts[j][1]);
+      const grade = () => {
+        for (let i = 1; i < n; i++) y[i] = Math.max(y[i], y[i - 1] - MARKET_GRADE * ds(i, i - 1));
+        for (let i = n - 2; i >= 0; i--) y[i] = Math.max(y[i], y[i + 1] - MARKET_GRADE * ds(i, i + 1));
+      };
+      grade();
+      for (let k = 0; k < 2; k++) {   // soften the knees, then hold every clearance and the street under it again
+        const s = y.slice();
+        for (let i = 1; i < n - 1; i++) y[i] = Math.max((s[i - 1] + s[i] + s[i + 1]) / 3, req[i], hug[i]);
+        grade();
+      }
+      // the deck runs from its first crossing to its last, and on out each way while it stands over the street (a ramp down
+      // over a hump in the street further on is no deck: it held the old trim's end 90 m out at 2nd Street)
+      let a = 0, b = n - 1;
+      while (a < n - 1 && req[a] === -Infinity) a++;
+      while (b > a && req[b] === -Infinity) b--;
+      while (a > 0 && y[a - 1] - hug[a - 1] >= 0.05) a--;
+      while (b < n - 1 && y[b + 1] - hug[b + 1] >= 0.05) b++;
+      a = Math.max(0, a - 1); b = Math.min(n - 1, b + 1);   // one point at the street's own height at each end
+      c.p = pts.slice(a, b + 1).map((q, i) => [q[0], q[1], y[a + i]]);
+      c.e = [0, 0];
+      let clear = Infinity;
+      for (const q of cross) if (q.i >= a && q.i <= b) clear = Math.min(clear, y[q.i] - dep - q.under);
+      MARKET_DECKS.push(c);
+      (PERF.marketDeck || (PERF.marketDeck = [])).push({ pts: c.p.length, from: c.p[0].map((v) => +v.toFixed(1)), to: c.p[c.p.length - 1].map((v) => +v.toFixed(1)), top: +Math.max(...c.p.map((q) => q[2])).toFixed(2), clear: +clear.toFixed(2), crossings: [...new Set(cross.map((q) => q.name))],
+        prof: pts.map((q, i) => [Math.round(q[0]), Math.round(q[1]), +y[i].toFixed(2), +hug[i].toFixed(2), req[i] > -1e9 ? +req[i].toFixed(2) : null]).filter((q, i) => i % 3 === 0) });   // every 15 m: x, z, the deck, the street under it, the clearance it holds
+    }
+    if (MARKET_DECKS.length) ovpIndex();
+  }
+  marketDeckSolve();
+  // a market deck under (x, z): [its top there, the distance from its line, its roadway's half width with 30 cm to spare (the
+  // core's 7 m street; the rest of the deck is its sidewalks)], else null
+  function marketDeck(x, z) {
+    let best = null, bd = Infinity;
+    for (const c of MARKET_DECKS) {
+      const hw = c.w / 2;
+      for (let i = 0; i + 1 < c.p.length; i++) {
+        const a = c.p[i], b = c.p[i + 1], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1e-9;
+        const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / L2, 0, 1), px = a[0] + dx * t - x, pz = a[1] + dz * t - z, d2 = px * px + pz * pz;
+        if (d2 <= hw * hw && d2 < bd) { bd = d2; best = [a[2] + (b[2] - a[2]) * t, Math.sqrt(d2), 3.8]; }
+      }
+    }
+    return best;
+  }
 
   // collision + occupancy structures (filled during build)
   const colGrid = new Map();
@@ -9809,8 +9951,10 @@ vec2 wRing(vec2 rc, float tt) {
       const FMZ = { x0: -3690, x1: -2480, z0: -2950, z1: -1720 };
       const pkC = new THREE.Color(COLORS.park), gdC = new THREE.Color(COLORS.ground);
       const fmR = [pkC.r / gdC.r, pkC.g / gdC.g, pkC.b / gdC.b];
+      let TN = null;   // Round 216: the north strip's cells the carried-on I-95 trench takes over (trenchNorthY), and the strip's grid
       for (const [x0, x1, z0, z1] of strips) {
         const cell = 25, nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
+        const tn = z1 === CORE_EXT.z0 ? { i0: Math.floor((225 - x0) * nx / (x1 - x0)), i1: Math.ceil((375 - x0) * nx / (x1 - x0)), j0: Math.floor((z1 - TRENCH_NORTH_L - z0) * nz / (z1 - z0)) } : null;
         const pos = [];
         const col = [];
         const hole = [];   // vertices inside the Vine Street cut: their cells are skipped
@@ -9837,7 +9981,7 @@ vec2 wRing(vec2 rc, float tt) {
           // the Vine Street Expressway cut is open ground: drop cells touching it
           // (index skip only — pos and col stay parallel; the collar apron built in
           // 'Raising the overpasses' hides the ragged hole rim at grade)
-          if (hole[a] || hole[b] || hole[c] || hole[d]) { skip[j * nx + i] = 1; skipped++; continue; }
+          if (hole[a] || hole[b] || hole[c] || hole[d] || (tn && i >= tn.i0 && i < tn.i1 && j >= tn.j0)) { skip[j * nx + i] = 1; skipped++; continue; }
           idx.push(a, c, b, b, c, d);
         }
         const g = new THREE.BufferGeometry();
@@ -9846,8 +9990,65 @@ vec2 wRing(vec2 rc, float tt) {
         g.setIndex(idx);
         g.computeVertexNormals();
         registerGround(g, x0, x1, z0, z1, nx, nz, null, skipped ? skip : null, cell);   // the drawn surface, for conformDrape and the roads
+        if (tn) TN = { ...tn, x0, x1, z0, z1, nx, nz, ys: groundGrids[groundGrids.length - 1].ys };
         const m = new THREE.Mesh(elPortalClipGround(g), wideGroundMat);
         groupCity.add(m); rayTargets.push(m);
+      }
+      // Round 216: the I-95 trench carried on north of the core (trenchNorthY): a 2.5 m grid over the north strip's cells it
+      // takes, registered after the strip so the drape, the cars and the lamps read it there. Outside the trench's walls it
+      // is the strip's own surface (its triangles' planes, so the seams with the strip's cells round it match); between them
+      // it is trenchNorthCarve of that surface. A cell across a wall's line is cut on the line, each side keeping its own
+      // height out to the wall (the core grid's Round 207 cut), so no bank of ground leans into the lanes
+      if (TN) {
+        const cw = (TN.x1 - TN.x0) / TN.nx, ch = (TN.z1 - TN.z0) / TN.nz;
+        const X0 = TN.x0 + TN.i0 * cw, X1 = TN.x0 + TN.i1 * cw, ZA = TN.z0 + TN.j0 * ch, ZB = TN.z1;
+        TRENCH_NORTH_PLANE = (x, z) => { groundCell(TN, x, z, _gc4); return groundPlaneY(TN, _gc4[0], _gc4[1], _gc4[2] + _gc4[3] <= 1 ? 0 : 1, _gc4[2], _gc4[3]); };
+        const TW = TERRAIN.trenchW, TE = TERRAIN.trenchE, cell = 2.5, nx = Math.round((X1 - X0) / cell), nz = Math.round((ZB - ZA) / cell);
+        const sideOf = (o) => (o < TW ? 0 : o > TE ? 2 : 1);
+        const hAt = (x, z, r) => { const p = TRENCH_NORTH_PLANE(x, z); return r === 1 ? trenchNorthCarve(z, p) : p; };
+        const pos = [], reg = [], idx = [];
+        for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+          const x = X0 + (X1 - X0) * i / nx, z = ZA + (ZB - ZA) * j / nz, r = sideOf(frontOff(x, z));
+          pos.push(x, hAt(x, z, r), z); reg.push(r);
+        }
+        const clipO = (poly, lo, hi) => {   // Sutherland-Hodgman on the offset from Front Street: keep lo <= o <= hi
+          for (const [lim, sg] of [[lo, 1], [hi, -1]]) {
+            if (!Number.isFinite(lim) || poly.length < 3) continue;
+            const out = [];
+            for (let e = 0; e < poly.length; e++) {
+              const p = poly[e], q = poly[(e + 1) % poly.length], fp = sg * (p.o - lim), fq = sg * (q.o - lim);
+              if (fp >= 0) out.push(p);
+              if ((fp >= 0) !== (fq >= 0)) { const t = fp / (fp - fq); out.push({ x: p.x + (q.x - p.x) * t, z: p.z + (q.z - p.z) * t, o: lim, k: -1 }); }
+            }
+            poly = out;
+          }
+          return poly;
+        };
+        let cut = 0;
+        const tri = (a, b, c) => {
+          if (reg[a] === reg[b] && reg[b] === reg[c]) { idx.push(a, b, c); return; }
+          const P = [a, b, c].map((k) => ({ x: pos[k * 3], z: pos[k * 3 + 2], o: frontOff(pos[k * 3], pos[k * 3 + 2]), k }));
+          for (const [r, lo, hi] of [[0, -Infinity, TW], [1, TW, TE], [2, TE, Infinity]]) {
+            const poly = clipO(P, lo, hi);
+            if (poly.length < 3) continue;
+            const ks = poly.map((q) => { if (q.k >= 0 && reg[q.k] === r) return q.k; const k = pos.length / 3; pos.push(q.x, hAt(q.x, q.z, r), q.z); return k; });
+            for (let e = 1; e + 1 < ks.length; e++) idx.push(ks[0], ks[e], ks[e + 1]);
+          }
+          cut++;
+        };
+        for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+          const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
+          tri(a, c, b); tri(b, c, d);
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+        g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(pos.length).fill(1), 3));
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        registerGround(g, X0, X1, ZA, ZB, nx, nz, null, null, cell);
+        const m = new THREE.Mesh(elPortalClipGround(g), wideGroundMat);
+        groupCity.add(m); rayTargets.push(m);
+        PERF.trenchNorth = { box: [X0, X1, +ZA.toFixed(1), ZB], cells: nx * nz, wallCut: cut };
       }
     }
     // trench floor
@@ -9864,6 +10065,25 @@ vec2 wRing(vec2 rc, float tt) {
     })();
     const trench = new THREE.Mesh(trenchG, new THREE.MeshStandardMaterial({ color: 0x4b4843, roughness: 0.95 }));
     trench.receiveShadow = true; groupCity.add(trench);
+    // Round 216: and on north with the carried-on trench, 5 cm over its ground (16 columns: its ground is the DEM's slope,
+    // not one level), until it has come up to within a metre of the ground beside it
+    if (TRENCH_NORTH_PLANE) {
+      const NO = 16, rows = [], pos = [], idx = [];
+      for (let z = Z0; z > Z0 - TRENCH_NORTH_L; z -= 5) {
+        const q = frontPt((TERRAIN.trenchW + TERRAIN.trenchE) / 2, z), p = TRENCH_NORTH_PLANE(q[0], q[1]);
+        if (p - trenchNorthCarve(z, p) < 1) break;
+        rows.push(z);
+      }
+      if (rows.length > 1) TRENCH_NORTH_FLOOR = rows[rows.length - 1];
+      for (const z of rows) for (let i = 0; i <= NO; i++) { const q = frontPt(TERRAIN.trenchW + (TERRAIN.trenchE - TERRAIN.trenchW) * i / NO, z); pos.push(q[0], trenchNorthCarve(z, TRENCH_NORTH_PLANE(q[0], q[1])) + 0.05, q[1]); }
+      for (let j = 0; j + 1 < rows.length; j++) for (let i = 0; i < NO; i++) { const a = j * (NO + 1) + i, b = a + 1, c = a + NO + 1, d = c + 1; idx.push(a, b, c, b, d, c); }
+      if (rows.length > 1) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setIndex(idx); g.computeVertexNormals();
+        const m = new THREE.Mesh(g, trench.material);
+        m.receiveShadow = true; groupCity.add(m);
+      }
+    }
     // waterfront shelf: heightfield between the trench's east wall and the shoreline, 5 m rows
     {
       const rows = [], cols = 40;
@@ -9893,8 +10113,8 @@ vec2 wRing(vec2 rc, float tt) {
     // (river bed is the global far plane; the water surface is one plane at river level)
     // vertical faces: trench walls (parapet on the Front St side), bulkhead along the shore, ship slips
     const wallParts = [];
-    const vstrip = (ax, az, bx, bz, y0, y1, hex) => {
-      const arr = new Float32Array([ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y0, az, bx, y1, bz, ax, y1, az]);
+    const vstrip = (ax, az, bx, bz, y0, y1, hex, by0 = y0, by1 = y1) => {   // b's own foot and head where given (a sloping wall)
+      const arr = new Float32Array([ax, y0, az, bx, by0, bz, bx, by1, bz, ax, y0, az, bx, by1, bz, ax, y1, az]);
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
       g.computeVertexNormals();
@@ -9908,6 +10128,19 @@ vec2 wRing(vec2 rc, float tt) {
       vstrip(a[0], a[1], b[0], b[1], TERRAIN.trenchFloor - 0.3 - Math.max(trenchDip(a[0], a[1]), trenchDip(b[0], b[1])), frontDem(z + 12) + 1.2, '#9a978f');
       const c = frontPt(TERRAIN.trenchE, z), d = frontPt(TERRAIN.trenchE, Math.min(z + 25, Z1));
       vstrip(c[0], c[1], d[0], d[1], TERRAIN.trenchFloor - 0.3 - Math.max(trenchDip(c[0], c[1]), trenchDip(d[0], d[1])), shelfY(d[0] + 3, z + 12) + 0.3, '#9a978f');
+    }
+    // Round 216: the walls of the trench carried on north (trenchNorthY), the TRENCH_NORTH_L it takes to come up to the DEM
+    // (Callowhill's lanes lie 1.2 km further on): each from under the trench's ground to the ground beside it, the core's
+    // parapet over Front Street and lip over the shelf easing out with the trench's depth, in 10 m panels that slope with it
+    if (TRENCH_NORTH_PLANE) {
+      const k = (z) => { const t = clamp((z - (Z0 - TRENCH_NORTH_L)) / TRENCH_NORTH_L, 0, 1); return t * t * (3 - 2 * t); };
+      const side = (o, z, head) => { const p = frontPt(o, z), nat = TRENCH_NORTH_PLANE(p[0], p[1]); return [p, trenchNorthCarve(z, nat) - 0.3, Math.max(nat, lerp(nat, head(p, z), k(z)))]; };
+      for (const [o, head] of [[TERRAIN.trenchW, (p, z) => frontDem(z) + 1.2], [TERRAIN.trenchE, (p, z) => shelfY(p[0] + 3, z) + 0.3]]) {
+        for (let z = Z0 - TRENCH_NORTH_L; z < Z0 - 1e-6; z += 10) {
+          const [a, a0, a1] = side(o, z, head), [b, b0, b1] = side(o, Math.min(z + 10, Z0), head);
+          if (a1 - a0 > 0.35 || b1 - b0 > 0.35) vstrip(a[0], a[1], b[0], b[1], a0, a1, '#9a978f', b0, b1);
+        }
+      }
     }
     // Round 195: where a berth opens through the bulkhead (the Moshulu's, slips' fifth entry) its run inside the slip is
     // left out, and the slip's own ends stop at the shore
@@ -10336,10 +10569,13 @@ vec2 wRing(vec2 rc, float tt) {
     const splitRuns = (pts, keep) => { const out = []; let cur = []; for (let i = 0; i < pts.length; i++) { if (keep[i]) cur.push(pts[i]); else { if (cur.length > 1) out.push(cur); cur = []; } } if (cur.length > 1) out.push(cur); return out; };
     const cZebra = new THREE.Color(0xb8b5ad);
     let zebras = 0, cutWalk = 0, dupFoot = 0;
+    // Round 216: on the Market Street deck a sidewalk rides the deck's top, 10 cm proud of its roadway, and stops only at the
+    // deck's own roadway, not at Columbus Boulevard and I-95 passing under it
+    const walkOnDeck = (x, z) => { const m = marketDeck(x, z); return m ? m[0] - LAYER.sidewalk + 0.1 : siteY(x, z, 'road'); };
     for (const j of walkJobs) {
-      const pts = densify(j.line, 1.5), keep = pts.map((q) => !carHit(q[0], q[1], -0.3));
+      const pts = densify(j.line, 1.5), keep = pts.map((q) => { const m = marketDeck(q[0], q[1]); return m ? m[1] > m[2] : !carHit(q[0], q[1], -0.3); });
       if (keep.some((k) => !k)) cutWalk++;
-      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, j.w || 3.0, LAYER.sidewalk), color: j.col });
+      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, j.w || 3.0, LAYER.sidewalk, MARKET_DECKS.length ? walkOnDeck : null), color: j.col });
     }
     for (const j of footJobs) {
       const pts = densify(j.run, 1.0), n = pts.length, cls = new Array(n);
@@ -31866,7 +32102,7 @@ if (uNjLamp > 0.001) {
     const DECK_LIFT = LAYER.road + 0.4, DECK_GRADE = 0.07;
     let deckLifted = 0, deckLiftMax = 0;
     for (const c of OVP.el) {
-      if (c.p.length < 2) continue;
+      if (c.p.length < 2 || c.core === 'market') continue;   // Round 216: solved against the drawn trench and streets already (marketDeckSolve); the lift stood its ends 0.3 m over the street
       const pts = dens3(c.p, 13), nrm = norms(pts), hw = Math.max(1.6, c.w / 2);
       let lifted = false;
       for (let i = 0; i < pts.length; i++) {
@@ -32061,7 +32297,7 @@ if (uNjLamp > 0.001) {
         const gy = siteY(p[0], p[1], 'ground'), gm = groundMeshY(p[0], p[1]) ?? gy;   // near-grade by the DEM, the skirt down to the drawn mesh (the carved bank, Round 85)
         return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gm - 0.4) : p[2] - dep;
       });
-      boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || COLORS.asphalt, 1), tint(cConc, jit), bots, null, true, c.core ? 1 : null);
+      boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || COLORS.asphalt, 1), tint(cConc, jit), bots, null, true, c.core && c.core !== 'market' ? 1 : null);   // the market deck carries a city street and its sidewalks, not a highway's edge lines
       // parapets: fade in past the ends, break at every ramp mouth on their side
       const nrm = norms(pts);
       const ss = [0];
@@ -33680,6 +33916,7 @@ if (uNjLamp > 0.001) {
   const grassPolyBB = [];
   function bareGroundAt(x, z) {
     if (inCore(x, z)) return false;
+    if (z > TRENCH_NORTH_FLOOR && trenchNorthY(x, z) !== null) return false;   // Round 216: the I-95 trench's floor, carried on north of the core
     for (const pi of grassNear) { const bb = grassPolyBB[pi]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, GRASS_POLYS[pi])) return false; }
     for (const li of noSowNear) { const bb = NO_SOW_RING_BB[li]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, NO_SOW_RINGS[li])) return false; }
     if (sidewalkAt(x, z)) return false;   // the realism pass: the outer districts' sidewalks (their own grid, not noSow's arrays)

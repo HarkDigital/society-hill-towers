@@ -12520,3 +12520,51 @@ test passes the blue). `?elblue=0` keeps the old dark steel. 12 materials, about
 `tests/test_el_stations.py`; `tests/test_rebuilds.py` counts the new def (one skipped record, a reach of 1.2 km).
 Rendered by day and at night from Girard Avenue, from Front Street under the El and over Berks Street, and on the phone
 path. Rounds after this one could give York-Dauphin, Huntingdon and the stations north the same design.
+
+## Round 216 — Market Street over I-95, and the trench carried on north (Oct 20)
+
+Mike, with a night screenshot from over I-95 at `#p=336.2,30.6,-523.7,-1.934,-0.477`: Market Street a narrow raised deck that
+climbed from Front Street over the trench and dropped back down at its east end without meeting the street on the Columbus
+Boulevard side, cars on the slope and under the deck, and beside it the ground ending in a big dark slab across I-95's lanes.
+Two causes, both at the core's north edge (z -520), 30 m past Market Street.
+
+**The trench stopped dead at the core's edge.** North of it the outer districts' ground is the bare DEM, which has no trench:
+a smooth 6 m slope from Front Street (+0.8) down to Columbus Boulevard (-6), so the northbound carriageway at the edge sits at
++0.2 and the southbound at -3.3, against the core floor's -6.89. To meet it, `trenchLaneY` eased the lanes from the floor to
+`base` (siteY's `frontDem`, Front Street's height) over the core's last 60 m, which is right under Market Street, and the
+DEM's edge stood 3 to 7 m over the trench floor across the lanes: the slab. No ramp inside the 27 to 33 m between Market Street
+and the edge could do it (9 to 19 per cent), so the trench now carries on north for `TRENCH_NORTH_L` 170 m between the same
+walls, its ground easing from the core floor at the edge up to the outer districts' surface (`trenchNorthCarve`): a 2.5 m grid
+over the north strip's cells it takes, registered after the strip so the drape, the cars and the lamps read it, the cells
+across a wall's line cut on the line (the core grid's Round 207 cut), sloping wall panels from under its ground to the
+ground beside it with the core's parapet and lip easing out, the dark floor carried on until the trench is within a metre
+of the ground (no tufts on it), and `siteY` reading `trenchNorthY` there for everything else. In the core the lanes now ease
+0.6 m down onto that ground over the last 60 m instead of up to Front Street, and the walls' 14 m ease (the on-ramps climbing
+out along a wall; it held the southbound carriageway 1.7 m over the floor) fades over the same 60 m, so every lane meets the
+carried-on ground at the edge. The length is the northbound carriageway's: it drifts west toward Front Street and its west
+edge reaches the wall's line about 160 m north of the edge, so the trench has to be all but out by then (0.1 m left there).
+Measured along the carriageways: 5.1 to 5.9 per cent at the steepest under the northbound one, 2.4 to 4.0 under the others.
+
+**Market Street was drawn flat.** OSM maps Market Street east of Front Street as a westbound `bridge=yes, layer=1` way over
+I-95 and Columbus Boulevard, carried round to the riverfront by Penn's Landing Road (layer 1 too). Both lie inside the core,
+which `bake_overpasses.py` clips out, so the core drew Market Street as a street: at `frontDem` across the trench (siteY's
+rule for a cross street) and on the shelf past the east wall, 6 m lower, with Columbus Boulevard passing through it. The bake
+now keeps the two ways whole as one chain (`penns_landing_bridge`, `core: 'market'`, every node, 13 m for the 7 m roadway and
+the generated 3 m walks) and the page solves its profile where the trench, its lanes and the streets are known
+(`marketDeckSolve`): `TRENCH_CLEAR` plus the deck's depth over every carriageway it crosses (I-95's lanes by `trenchLaneY`),
+Front Street's own height over the trench (capTop's rule; `frontDem` stood 0.4 m over the street), level between the crossings
+(no sag over the shelf between I-95 and Columbus Boulevard), down to the street at the bake's 5.5 per cent, and trimmed from
+the first crossing to the last and on out while it stands over the street, so each end meets the flat street at that street's
+height. West of the trench a street meets it at grade (OSM's way runs on to 2nd Street with no node at Front Street), and a
+street with a node on the chain joins it (Chestnut Street's construction stub at Penn's Landing Road's end held the whole deck
+2 m up until that was told apart). The core's carriageway under the deck is owned by it, the generated sidewalks ride on it
+10 cm proud (`marketDeck`) and stop only at its own roadway, the deck lift in 'Raising the overpasses' leaves it alone and it
+carries no highway edge lines. After: the deck runs from Front Street at 1.6 (just west of the trench wall) level over I-95
+and Columbus Boulevard, 5.0 m clear at the least, round onto Penn's Landing Road and down to it at (390, -402).
+`PERF.marketDeck` has the profile every 15 m (x, z, the deck, the street under it, the clearance held) and `PERF.trenchNorth`
+the grid. `tests/test_i95_elevation.py`'s `MarketStreetCrossing`: the baked chain, the trench's edge (no climb, every lane
+on the carried-on ground, out by its end, under 6 per cent) and the solver on a synthetic crossing. Captured before (HEAD's
+page) and after at Mike's pose by night, along Market Street from 2nd Street, down the trench both ways and over the river.
+Left as it was: the Market Street on-ramp from Front Street into the trench draws across the face of the trench's west wall
+(the same in HEAD's page), and I-95 north of the carried-on trench still rides the DEM's cross slope to the viaduct at Race
+Street.
