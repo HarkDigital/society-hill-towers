@@ -12,7 +12,7 @@ what a phone never reads:
 - static canvases and DataTextures free their source at upload on a phone (freeTexOnUpload), the pin badges keeping a
   one-bit alpha for the tap test; the six venue screens share three textures; the unused leaf sprite is not painted;
 - the street text, the Northeast Corridor, the lamp glow and the light map's splats free their arrays at upload;
-- a phone builds no pole inventory (it has no pole meshes to reconcile);
+- a phone's pole inventory is typed arrays (since Round 218 every tier keeps it, for its pole meshes);
 - the ground registry's normals go when the last conformDrape is done;
 - the El's sleepers are gathered without a 28,344-argument spread and its ties' matrices go at upload;
 - every material the post-build weather pass re-hooks is disposed, so r149 releases the program it had compiled.
@@ -387,9 +387,10 @@ class FreedArrays(unittest.TestCase):
         self.assertEqual(s.count('poleGlow.geometry'), 1)
         self.assertIn('const p = new THREE.Points(poleGlow.geometry, m);', cut(s, '  function wxHaloMesh() {', '\n  }\n'))
 
-    def test_a_tier_2_phone_builds_no_pole_inventory(self):
-        # Round 205: a phone's other tiers mesh their nearest poles and keep the inventory, its cells as typed arrays
-        self.assertIn('const POLE_MESH_CAP = isTouch ? (TIER2 ? 0 : 500) : 1600;', self.src)
+    def test_the_pole_inventory_is_typed_arrays(self):
+        # Round 205: a phone meshes its nearest poles and keeps the inventory, its cells as typed arrays; Round 218: on every
+        # tier (tests/test_phone_lamps.py)
+        self.assertIn('const POLE_MESH_CAP = isTouch ? 500 : 1600;', self.src)
         lamps = cut(self.src, "  step('Lighting the streetlamps'", "  step('Fitting out the rooftops'")
         self.assertIn('if (cells) for (const [k, a] of cells) cells.set(k, Int32Array.from(a));', lamps)
         self.assertIn('const keepInv = POLE_MESH_CAP > 0;', lamps)

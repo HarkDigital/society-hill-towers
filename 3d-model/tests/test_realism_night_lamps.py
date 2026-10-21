@@ -230,15 +230,15 @@ class Wiring(unittest.TestCase):
 
     def test_real_gates_the_new_look_and_keeps_the_old(self):
         s = self.s
-        self.assertIn('const LAMPNEAR = { on: REAL && !LITE,', s)
+        self.assertIn('const LAMPNEAR = { on: REAL,', s)
         self.assertIn('if (REAL) { lampLightPatchReal(shader, worldExpr, mode); return; }', s)
         # ?real=0 keeps Round 146's wash, word for word
         old = cut(s, '  function lampLightPatch(', '  function lampLightPatchReal(')
         self.assertIn("0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - vBase))", old)
         self.assertIn('totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0);', old)
-        # the near meshes, the lenses and the glare only in the realistic look; since Round 205 a phone's too (but tier 2's)
+        # the near meshes, the lenses and the glare only in the realistic look; since Round 205 a phone's too (every tier since Round 218)
         self.assertIn('if (REAL) polesRealBuild(maxPtOf());', cut(s, '    if (POLE_MESH_CAP > 0) {', '    poleInv = keepInv'))
-        self.assertIn('const POLE_MESH_CAP = isTouch ? (TIER2 ? 0 : 500) : 1600;', s)
+        self.assertIn('const POLE_MESH_CAP = isTouch ? 500 : 1600;', s)
         # ?real=0 keeps the shaft-top glow, the far splats where they were and the hashed arms: headAt does nothing there,
         # and the inventory carries no families or colours
         self.assertIn('if (!ROT || !REAL) return;', s)

@@ -12679,3 +12679,36 @@ north: Round 92's frame (kept by Round 195) stood 17 m south and 4.5 degrees wes
   the seat colour, the sink, a convex cut holding the whole bowl, the cut reaching the ground, the river and the lots.
 - Left for later: the "Phillies" script and the "Citizens Bank Park" letters (lettering is the page's rule), the
   statues, the netting, a crowd on game days.
+
+## Round 218 — every phone tier draws its lamp posts (Oct 20)
+
+Mike, from the app at night: "I again am not seeing lamp posts on mobile at night. Is that due to some light load? I dont
+want that to happen if so. The loading screen can take longer if needed, or be creative in how to load the map so that all
+assets are there."
+
+It was a light load. Round 205 gave a phone its 500 nearest poles within 300 m on every tier but tier 2 (`POLE_MESH_CAP`
+0, and with it no inventory, no near glow, no lenses or glare), and a phone only reaches tier 2 by dying. The load beacons
+tell the story of his app (iOS 18.7, `Philly3DApp`): a build death on Oct 16 at "Raising the rest of Philadelphia" made it a
+sticky tier 1 for a fortnight (`lr` ts), every load today was tier 1, and at 20:07 a context loss in the tier 1 build
+("Rebuilding the landmarks") sent it to tier 2, where every load since (20:22, 21:40, settled at 21:44) drew the glow alone
+at the top of a shaft that was not there: Round 205's floating orbs again. The lite tiers had also drawn no near pool map
+(`LAMPNEAR` on `REAL && !LITE`), so since Oct 16 his pools had been the far map's 7.8 m wash.
+
+Now the lamps are no tier's to drop. `POLE_MESH_CAP` is 500 on every phone (1,600 on a computer), so the inventory, the
+near glow, the lenses and the glare come with it at tier 2, and the near map is on wherever the look is realistic. Nothing
+in the streetlamps' constants, light maps, step, reconcile, night switch or near map reads a tier, the Graphics choice or
+the pace. No crash-safety rule changed: the tiers still decide the far ring, the far trees, traffic and the roof kit.
+
+Measured headless with the capture skill's memory tool (740x360 at 1.25, touch, 21:30), the deployed build against this one
+at `?lite=2`: 0 poles and no near map before; 431 poles over Spruce Street after (267 cobra heads, 162 lanterns, 2 wood) and
+448 in South Philly, the near map drawing. The cost: +1 MB of live heap at ready (84 to 85 MB) and +1 MB of GPU at night (649
+to 650 MB), the same 227 MB peak and the same 188 s load, +45,000 to +100,000 triangles and +7 draw calls. That is too
+little to be worth staging behind the veil, so the loading screen is unchanged. Tiers 1 and 0 mesh the same 431 and 448; the
+desktop path at the same poses meshes 892 and 281 cobra heads of its 1,600 within 1 km, as before. The night captures at
+Spruce Street, before and after, show the orbs standing on their lantern posts and the pools on the sidewalks.
+`__dbg.poles()` reports a load's tier, cap, meshed count, inventory, near glow and near map; `tests/test_phone_lamps.py`
+holds it (no tier gate in any of those blocks, and the cap and the near map run under Node for every device, tier and
+pick).
+
+- Not changed: why his phone dies in the build at all (Oct 16 at tier 0, tonight at tier 1). That is the real cost of the
+  tiers, and it takes the far trees, traffic and roof kit off his phone for a fortnight at a time.

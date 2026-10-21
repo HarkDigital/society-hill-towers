@@ -50818,10 +50818,14 @@ float pinOccGate() {
   // 300 m (Round 205, Mike from the phone: "the street lights are just floating orbs"; since Round 158 a phone had drawn
   // the glow alone, with no pole under it). A phone aims each arm only when its pole is first meshed (poleReconcile), so its
   // far glow stays at the shaft's top and the meshed poles' glow is drawn at their heads from the glare's own buffer
-  // (poleNearGlow), the far glow hiding exactly the poles the reconcile meshed (uPoleHide); tier 2 meshes none
+  // (poleNearGlow), the far glow hiding exactly the poles the reconcile meshed (uPoleHide). Round 218 (Mike, from the app at
+  // night: "I again am not seeing lamp posts on mobile at night. Is that due to some light load? I dont want that to happen"):
+  // every phone tier meshes them. Tier 2 meshed none, and a phone reaches tier 2 by dying, so the phones that had died once
+  // lost their poles exactly when they were dying least: his app had been at tier 1 since a build death on Oct 16 and a
+  // context loss in tonight's build took it to tier 2. The lamps, their pools and the near pool map are never a tier's to drop
   const LIGHTS = { on: true, ready: false };
   const btnLights = document.getElementById('btnLights');
-  const POLE_MESH_CAP = isTouch ? (TIER2 ? 0 : 500) : 1600;
+  const POLE_MESH_CAP = isTouch ? 500 : 1600;   // every tier (Round 218): no crash tier, Graphics choice or pace drops a pole
   const POLE_MESH_R = isTouch ? 300 : 1000;
   const POLE_RECON_MOVE = isTouch ? 60 : 220;   // the reconcile's distance trigger, against a phone's 300 m circle
   const POLE_AIM_BUILD = !isTouch;              // every arm aimed at the build (a computer's): its glow and pools at the head
@@ -50859,8 +50863,9 @@ float pinOccGate() {
   // it within a circle that glides with the eye, the far map beyond it and above 420 m. ?real=0 keeps Round 146's wash
   // A phone's is 256 px over 400 m (0.7 MB in half float with its mips, under the 8-bit 512 px map's 1.4: a pool under a
   // 7.5 m head is still ten texels across and the gap between two of them twenty), and it is redrawn at most every
-  // LAMP_NEAR_EVERY ms while the eye turns (the centre sits up to 112 m ahead, so a turn alone moves it)
-  const LAMPNEAR = { on: REAL && !LITE, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
+  // LAMP_NEAR_EVERY ms while the eye turns (the centre sits up to 112 m ahead, so a turn alone moves it). Every tier since
+  // Round 218: the lite tiers had drawn no near map, so their pools were the far map's 7.8 m wash under every pole
+  const LAMPNEAR = { on: REAL, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
   const LAMP_NEAR_EVERY = isTouch ? 250 : 0;
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
@@ -51051,7 +51056,7 @@ float pinOccGate() {
     // Round 158: the inventory (ROT and the 400 m cells, with X, Z, GY and HM kept past the step) feeds only poleReconcile,
     // which runs only for the near pole meshes; tier 2 (POLE_MESH_CAP 0) keeps X, Z, GY and HM for this step alone and
     // builds neither ROT nor the cells (about 5.8 MB). Round 205: a phone's other tiers keep it (their poles), the cells as
-    // typed arrays
+    // typed arrays. Round 218: tier 2 too (POLE_MESH_CAP is 500 on every phone), so keepInv holds on every device
     const keepInv = POLE_MESH_CAP > 0;
     const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = keepInv ? new Float32Array(nAll).fill(NaN) : null;
     // the realism round (night#5): the family each pole is drawn as (pole_families.json from bake_pole_families.py, 2 bits a
@@ -51070,7 +51075,7 @@ float pinOccGate() {
     const cellAdd = (x, z, i) => { if (!cells) return; const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400); let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i); };
     // the glow and the pool stand at the luminaire, not on top of the shaft (night#5): the lantern's glass, or the head at
     // the end of the arm, which reaches over the nearest street (poleArmRot; the meshes' own geometry, POLE_HEAD). A phone
-    // draws no poles and keeps the shaft's top, and so does ?real=0 (the glow, the far splats and the old hashed arms as
+    // keeps the shaft's top until poleReconcile meshes the pole, and so does ?real=0 (the glow, the far splats and the old hashed arms as
     // they were, and no time spent aiming the arms at the build)
     const headAt = (i, fam) => {
       if (!ROT || !REAL) return;
@@ -52738,6 +52743,7 @@ float pinOccGate() {
   const _v2lamp = new THREE.Vector2();
   function lampNightFx(night, show) {
     if (window.__dbg && !window.__dbg.lampNear) Object.assign(window.__dbg, {   // ?dev=1: the near map and the near meshes, and the realistic response's strength
+      poles: () => ({ tier: TIER, cap: POLE_MESH_CAP, r: POLE_MESH_R, meshed: poleMesh ? poleMesh.count : 0, inv: !!poleInv, nearGlow: !!poleNearGlow, nearMap: LAMPNEAR.on, nearRenders: LAMPNEAR.renders, lamps: LIGHTS.on, night: +lampUniform.value.toFixed(3) }),   // Round 218: what a phone's tier draws of the lamps
       lampNear: () => ({ on: LAMPNEAR.on, half: LAMPNEAR.half, cx: LAMPNEAR.cx, cz: LAMPNEAR.cz, renders: LAMPNEAR.renders, size: LAMPNEAR.size, span: LAMPNEAR.span, k: lampMapU.uLampReal.value.x, realK: LAMP_REAL_K, meshes: POLE_REAL.n, every: LAMP_NEAR_EVERY, held: LAMPNEAR.held || 0, halo: haloU.uHalo.value, ...(PERF.lampsReal || {}) }),
       lampReal: (k) => { if (k != null) LAMP_REAL_K = +k; lampMapU.uLampReal.value.y = LAMP_REAL_K; return LAMP_REAL_K; },
       lampShape: (sh, cut) => {   // the near pool's shoulder and cut-off (redraws the near map)
