@@ -10178,7 +10178,8 @@ vec2 wRing(vec2 rc, float tt) {
     // ground on every side, and a sheet that size lay over the apron as a band along the world's
     // edge (the strip along the south edge, then the east, Round 55 codas)
     const dipHole = trenchDipHole();   // Round 207: no river over the dipped I-95 trench
-    const sheetG = new THREE.ShapeGeometry(shapeFromPoly([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], dipHole ? [dipHole] : null));
+    const sheetHoles = (dipHole ? [dipHole] : []).concat(GROUND_CUTS.map((c) => c.ring));   // Round 217: nor over the ballpark's sunk bowl, under the river's level
+    const sheetG = new THREE.ShapeGeometry(shapeFromPoly([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], sheetHoles.length ? sheetHoles : null));
     sheetG.rotateX(-Math.PI / 2); sheetG.translate(0, TERRAIN.water, 0);
     const water = new THREE.Mesh(sheetG, waterMat);
     PERF.waterHole = dipHole && dipHole.map((q) => q.map((v) => Math.round(v)));
@@ -24553,7 +24554,7 @@ if (uOlLamp > 0.001) {
   // (seams on aUv.x), a patina standing-seam roof, turf
   const VK = { matte: 0, metal: 1, glass: 2, wall: 3, screen: 4, lamps: 5, led: 6, membrane: 7, patina: 8, turf: 9 };
   // the atlas's strips, in bake_stadium_art.py's order
-  const VEN_STRIP = { cbp: 0, lincGlass: 1, lincScreen: 2, arenaFins: 3, arenaPodium: 4, arenaDrum: 5, lincOffice: 6, cbpAtrium: 7 };
+  const VEN_STRIP = { cbp: 0, lincGlass: 1, lincScreen: 2, arenaFins: 3, arenaPodium: 4, arenaDrum: 5, lincOffice: 6, cbpAtrium: 7, cbpPattison: 8, cbpAlley: 9, cbpIvy: 10 };
   const venU = {
     uVenNight: nightUniform, uVenArt: { value: 0 }, uVenWall: { value: null }, uVenSeat: { value: null }, uVenGrass: { value: null },
     uVenClay: { value: null }, uVenScreen: { value: null }, uVenDigits: { value: null },
@@ -24562,7 +24563,7 @@ if (uOlLamp > 0.001) {
     // the ballpark's outfield fence and its foul ground's wall (the field wall from the left field corner round home to the
     // right field corner), in its field frame (metres), for the warning track: venCbp fills them (the first cut never did,
     // and the track shrank to a disc at home plate)
-    uVenFence: { value: Array.from({ length: 8 }, () => new THREE.Vector2()) },
+    uVenFence: { value: Array.from({ length: 16 }, () => new THREE.Vector2()) },   // (16 since Round 217: the Angle, the bullpens' jog; unused points repeat the last)
     uVenFoul: { value: Array.from({ length: 17 }, () => new THREE.Vector2()) },
   };
   // a strip's panes as the shader reads them: its bays across, its rows of panes up its height (and their offset, so a row's
@@ -24677,9 +24678,9 @@ if (uOlLamp > 0.001) {
     for (const k in venU) sh.uniforms[k] = venU[k];
     VEN_VERT(sh);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', ['#include <common>',
-      'uniform float uVenNight, uVenArt; uniform sampler2D uVenGrass, uVenClay, uVenDigits; uniform vec2 uVenFence[8]; uniform vec2 uVenFoul[17];',
+      'uniform float uVenNight, uVenArt; uniform sampler2D uVenGrass, uVenClay, uVenDigits; uniform vec2 uVenFence[16]; uniform vec2 uVenFoul[17];',
       'varying vec2 vVUv; varying vec4 vVCol; varying vec4 vVLit; varying vec3 vVW;', VEN_GLSL_COMMON,
-      'float venSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }',
+      'float venSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0)); }',
       'float venNoise(vec2 x) { vec2 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f); return mix(mix(venHash(i), venHash(i + vec2(1.0, 0.0)), f.x), mix(venHash(i + vec2(0.0, 1.0)), venHash(i + vec2(1.0, 1.0)), f.x), f.y); }',
       // a line of width w at distance d, box-filtered over the pixel's footprint fw: past a pixel's width it covers w / 2fw
       // of it, never more (the first cut's smoothstep widened with fw at full strength, and from 450 m the Linc's ten
@@ -24721,7 +24722,7 @@ if (uOlLamp > 0.001) {
         '  sd = min(sd, max(abs(abs(p.y) - p.x) * 0.7071 - 0.92, max(-p.x, p.x - 21.0)));',
         // the warning track: 4.6 m along the outfield fence and the field wall round the foul ground
         '  float wt = 99.0;',
-        '  for (int i = 0; i < 7; i++) wt = min(wt, venSeg(p, uVenFence[i], uVenFence[i + 1]));',
+        '  for (int i = 0; i < 15; i++) wt = min(wt, venSeg(p, uVenFence[i], uVenFence[i + 1]));',
         '  for (int i = 0; i < 16; i++) wt = min(wt, venSeg(p, uVenFoul[i], uVenFoul[i + 1]));',
         '  float skin = 1.0 - smoothstep(-fw, fw, sd), track = 1.0 - smoothstep(4.6 - fw, 4.6 + fw, wt);',
         // the clay: dragged, a little uneven, darker and wetter along its cut edges; the track's crushed brick redder
@@ -24970,6 +24971,29 @@ if (uOlLamp > 0.001) {
         if (cx * nx + cy * ny + cz * nz >= 0) b.I.push(i0 + t[0], i0 + t[1], i0 + t[2]); else b.I.push(i0 + t[0], i0 + t[2], i0 + t[1]);
       }
     };
+    // stepped stands (Round 217): n rows between two paths of the same length, the front at yf and the back at yb. Each row a
+    // riser up from the row below, its tread, and the seats' backs standing on the tread's front half facing the field (the
+    // seat tile's one row across them, aUv.x the seats along the row over sw); seen from the field the rows read as rows,
+    // not a picture on a plane (Round 195's ramps). keep(j) chooses the segments, as band's; aisle(j) leaves a segment's
+    // seats off (its treads and risers the aisle's steps)
+    K.rows = (pf, pb, yf, yb, n, mTread, mSeat, o = {}) => {
+      const N = pf.length, last = o.closed ? N : N - 1, sw = o.sw || 4.16, sh = o.sh || 0.62, sat = o.sat == null ? 0.35 : o.sat;
+      const lerp2 = (j, t) => [pf[j][0] + (pb[j][0] - pf[j][0]) * t, pf[j][1] + (pb[j][1] - pf[j][1]) * t];
+      for (let r = 0; r < n; r++) {
+        const t0 = r / n, t1 = (r + 1) / n, ts = t0 + (t1 - t0) * sat, y0 = yf + (yb - yf) * t0, y1 = yf + (yb - yf) * t1;
+        let s = 0;
+        for (let j = 0; j < last; j++) {
+          const j1 = (j + 1) % N, a0 = lerp2(j, t0), c0 = lerp2(j1, t0), L = Math.hypot(c0[0] - a0[0], c0[1] - a0[1]);
+          if (o.keep && !o.keep(j, j1)) { s += L; continue; }
+          const a1 = lerp2(j, t1), c1 = lerp2(j1, t1), as = lerp2(j, ts), cs = lerp2(j1, ts);
+          const u0 = s / sw, u1 = (s + L) / sw;
+          K.quad([a0[0], a0[1], y0], [c0[0], c0[1], y0], [c0[0], c0[1], y1], [a0[0], a0[1], y1], mTread, [[u0, 0], [u1, 0], [u1, 0.1], [u0, 0.1]]);   // the riser
+          K.quad([a0[0], a0[1], y1], [c0[0], c0[1], y1], [c1[0], c1[1], y1], [a1[0], a1[1], y1], mTread, [[u0, 0], [u1, 0], [u1, 1], [u0, 1]]);     // the tread
+          if (!(o.aisle && o.aisle(j))) K.quad([as[0], as[1], y1], [cs[0], cs[1], y1], [cs[0], cs[1], y1 + sh], [as[0], as[1], y1 + sh], mSeat, [[u0, 0.75], [u1, 0.75], [u1, 1], [u0, 1]]);   // the seats' backs (none on an aisle)
+          s += L;
+        }
+      }
+    };
     // a square bar from a to c, w wide, its four sides (no ends)
     K.bar = (a, c, w, m) => {
       const A = W(a), C = W(c), d = [C[0] - A[0], C[1] - A[1], C[2] - A[2]], L = Math.hypot(...d);
@@ -25112,7 +25136,7 @@ if (uOlLamp > 0.001) {
     const fieldRing = front.concat([[72, 76]], CBP.fence.slice().reverse(), [[72, -76]]);
     const ub = Math.round((F.ux * 0.5 + 0.5) * 255), vb = Math.round((F.uz * 0.5 + 0.5) * 255);
     field.cap(fieldRing, 0.3, { c: [0, 0, 0, 0], l: [255, ub, vb, 0] }, null, 1);   // aUv: the field frame's metres
-    CBP.fence.forEach((q, i) => venU.uVenFence.value[i].set(q[0], q[1]));
+    venU.uVenFence.value.forEach((u, i) => { const q = CBP.fence[Math.min(i, CBP.fence.length - 1)]; u.set(q[0], q[1]); });   // (the unused points repeat the last)
     cbpFoul().forEach((q, i) => venU.uVenFoul.value[i].set(q[0], q[1]));
     // the field wall, padded green, and the fence (its track is the field shader's)
     near.wall(front, 0, 1.6, venM(VC.pad, VK.matte, VL.inner), { rw: 4 });
@@ -25375,6 +25399,382 @@ if (uOlLamp > 0.001) {
     far.wall(rfU1, F.foot, 25, venM(0x7a6050));
     // the ground it owns (no tuft, tree or pole in it): the field and the stands' outline
     out.rings.push(out1.concat(back(CBP.fence, 30).slice().reverse()));
+  }
+  // ---- Citizens Bank Park rebuilt (Round 217, Mike: "I also want Citizen's bank park to be completely remodeled. The
+  // current iteration is pretty bad"). Round 195's park was a horseshoe of ramps grown from a guessed centre, at grade,
+  // its seats a picture on each ramp under a flat canopy all round, the outfield a row of brick boxes. This one is built
+  // from the research the round's devlog lists (the Phillies' facts pages, Clem's Baseball, the OSM pitch and outline, the
+  // Commons photographs): home plate at (-1864.7, 4412.2) with centre field 9.5 degrees east of north (the OSM pitch's
+  // poles and backstop; Round 92's frame stood 17 m south and 4.5 degrees west), the field 23 ft under the street with the
+  // main concourse at street level, the octagonal bowl (a straight backstop 49 ft 5 in behind the plate, the stands 51 ft
+  // off the lines) in stepped rows of sapphire blue seats: the field level's 34 rows up to the concourse, the suites' dark
+  // glass and their LED ring, the Hall of Fame Club's 10 rows, the Terrace's 8, the walkway and the 400s' 16, the flat roof
+  // over the 400s' top half on maroon trusses with its patina top; outside, the maroon frame open over the concourses with
+  // K and V bracing, the Pattison Avenue brick front round home (generated from Commons' Citizensbankparkside), the two
+  // gates with their portal light towers in pairs on the roof's back edge, the brick ends; the outfield wall as measured
+  // (329, 334, 374, the Angle's 387 and 381, 409, 401, 398, 384, 369, 343, 330 ft; its heights by run), the low left field
+  // stands and the porch, the 2023 board on its frame over Harry the K's with its light tower, the batter's eye's ivied brick,
+  // the stacked bullpens behind the open rail, Ashburn Alley at street level with its concession row and rooftop bleachers,
+  // the retired numbers' pavilions, the clock and the flags, the right field stands 20 ft lower than the grandstand under
+  // their own roof and portal tower, and the Liberty Bell's outline on its four-legged maroon tower. The ground is cut over
+  // the sunk bowl (GROUND_CUTS: its hull, a little out) and a street-level slab with the bowl's hole closes the rest of the
+  // hull. ?cbp=0 keeps Round 195's park (and the ground whole); __dbg.venues()
+  const CBP_ON = VENUES_ON && !/[?&]cbp=0\b/.test(location.search);
+  const CB = (() => {
+    const ft = 0.3048, DG = Math.PI / 180, r2 = Math.SQRT1_2;
+    const pol = (g, f) => [f * ft * Math.cos(g * DG), f * ft * Math.sin(g * DG)];
+    const o = [-1864.7, 4412.2], a = 9.5 * DG, ux = Math.sin(a), uz = -Math.cos(a), vx = -uz, vz = ux;
+    const W = (q) => [o[0] + ux * q[0] + vx * q[1], o[1] + uz * q[0] + vz * q[1]];
+    // the outfield wall from the left field pole to the right: [angle from centre field (+ toward right), feet, the run's
+    // height at its start and at its end (m)]: the corner's 334, the straight run past 374, the Angle (387 in to 381, then out
+    // to the 409 corner, the wall rising from 12 ft 8 in to 19 ft), centre field's 6 ft wall with its open rail, the
+    // bullpens' face from the 398 corner, right field's 13 ft 3 in past 369 to the pole
+    const FW = [[-45, 329, 3.2, 3.2], [-40, 334, 3.2, 3.2], [-27, 374, 3.2, 3.2], [-21, 387, 3.9, 4.6], [-17, 381, 4.6, 5.8], [-11, 409, 1.8, 1.8], [0, 401, 1.8, 1.8],
+      [11, 398, 4.0, 4.0], [16, 384, 4.0, 4.0], [24, 369, 4.0, 4.0], [36, 343, 4.0, 4.0], [45, 330, 4.0, 4.0]];
+    const fence = FW.map(([g, f]) => pol(g, f));
+    // the foul ground's wall: the backstop, then the stands 51 ft off each line to 98 m out, and across to the pole
+    const back = (49 + 5 / 12) * ft, side = 51 * ft, tc = side - back / r2, te = 98;
+    const lineP = (t, s) => [r2 * t - side * r2, s * (r2 * t + side * r2)];
+    const corners = [lineP(te, -1), lineP(tc, -1), lineP(tc, 1), lineP(te, 1)];
+    // a run from A to B in sections of seats and 1.2 m aisles (even segments seats, odd aisles), its last point excluded
+    const sections = (A, B, w = 9.4, ai = 1.2) => {
+      const L = Math.hypot(B[0] - A[0], B[1] - A[1]), n = Math.max(1, Math.round(L / (w + ai))), un = L / n, at = (s) => [A[0] + (B[0] - A[0]) * s / L, A[1] + (B[1] - A[1]) * s / L], out = [];
+      for (let k = 0; k < n; k++) out.push(at(k * un), at(k * un + un - Math.min(ai, un * 0.3)));
+      return out;
+    };
+    const run = (pts) => { const out = []; for (let i = 0; i + 1 < pts.length; i++) out.push(...sections(pts[i], pts[i + 1])); out.push(pts[pts.length - 1]); return out; };
+    const front = run(corners);
+    const fs = [0]; for (let j = 1; j < front.length; j++) fs.push(fs[j - 1] + Math.hypot(front[j][0] - front[j - 1][0], front[j][1] - front[j - 1][1]));
+    // a path offset away from the field (a mitre at each corner), and a path moved out from home plate
+    const nrm = (p0, p1) => { const du = p1[0] - p0[0], dv = p1[1] - p0[1], L = Math.hypot(du, dv) || 1; let nu = dv / L, nv = -du / L; if (nu * ((p0[0] + p1[0]) / 2 - 55) + nv * (p0[1] + p1[1]) / 2 < 0) { nu = -nu; nv = -nv; } return [nu, nv]; };
+    const offs = (P, d) => P.map((q, j) => {
+      const n0 = j > 0 ? nrm(P[j - 1], q) : nrm(q, P[j + 1]), n1 = j < P.length - 1 ? nrm(q, P[j + 1]) : n0;
+      let mu = n0[0] + n1[0], mv = n0[1] + n1[1]; const ml = Math.hypot(mu, mv) || 1; mu /= ml; mv /= ml;
+      const k = d / Math.max(0.5, mu * n1[0] + mv * n1[1]);
+      return [q[0] + mu * k, q[1] + mv * k];
+    });
+    const rad = (P, d) => P.map(([u, v]) => { const L = Math.hypot(u, v); return [u + u / L * d, v + v / L * d]; });
+    const lerp2 = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+    // the outfield's runs: the left field stands (pole to the 409 corner), the batter's eye (409 corner to 3 degrees right of
+    // centre), the bullpens (to the 398 corner), the right field stands (398 corner to the pole)
+    const bp0 = lerp2(fence[6], fence[7], 3 / 11);
+    const lf = run(fence.slice(0, 6)), be = [fence[5], fence[6], bp0], bp = [bp0, fence[7]], rf = run(fence.slice(7));
+    const LFD = 17.5, RFD = 17.5, BED = 7, BPD = 16, LOWD = 28.4;
+    // the sunk bowl: the field level's back, the right field stands', the bullpens', the batter's eye's, the left field stands'
+    const S = offs(front, LOWD).concat(rad(rf, RFD).reverse(), rad(bp, BPD).reverse(), rad(be, BED).reverse(), rad(lf, LFD).reverse());
+    const hull = (P) => {
+      const pts = P.slice().sort((p, q) => p[0] - q[0] || p[1] - q[1]), cr = (o2, p, q) => (p[0] - o2[0]) * (q[1] - o2[1]) - (p[1] - o2[1]) * (q[0] - o2[0]);
+      const lo = [], hi = [];
+      for (const p of pts) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+      for (let i = pts.length - 1; i >= 0; i--) { const p = pts[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop(); hi.push(p); }
+      return lo.slice(0, -1).concat(hi.slice(0, -1));
+    };
+    const grow = (P, d) => { let cu = 0, cv = 0; for (const p of P) { cu += p[0]; cv += p[1]; } cu /= P.length; cv /= P.length; return P.map(([u, v]) => { const L = Math.hypot(u - cu, v - cv) || 1; return [u + (u - cu) / L * d, v + (v - cv) / L * d]; }); };
+    const H = hull(S);
+    // the board (Daktronics 2023, 152 by 86 ft) faces home from left field just fair of the line; the Bell's tower stands
+    // behind the bullpens over the alley (both fitted from the photographs, low confidence in the research)
+    const board = pol(-38, 513), bell = pol(9, 500);
+    return { o, a, ux, uz, W, hull, fence, FW, corners, front, fs, offs, rad, lerp2, run, sections, lf, be, bp, rf, bp0, S, H, grow, board, bell, LFD, RFD, BED, BPD, LOWD, sink: 7.0,
+      seat: 0x1f3e8c, maroon: 0x6a2a2e, patina: 0x8cb9a6, pad: 0x1f4a35,
+      cut: grow(H, 0.3).map(W) };   // the ground's cut, in the scene (a little out of the hull, under the slab's edge)
+  })();
+  const GROUND_CUTS = CBP_ON ? [{ name: 'Citizens Bank Park', ring: CB.cut }] : [];
+  function venCbp215(F, out) {
+    const near = venKit(out.shell, F), seats = venKit(out.seats, F), far = venKit(out.far, F), field = venKit(out.field, F);
+    const { front, fs, offs, rad, lerp2, fence, FW, corners, lf, be, bp, rf, S, H, LOWD, LFD, RFD, BPD } = CB;
+    const N = front.length, last = N - 1, SF = F.sfoot == null ? 5 : F.sfoot, ST = CB.sink;   // the street's foot and level over the field
+    const both = (fn) => { fn(near); fn(far); };
+    const mSeat = venM(CB.seat, 0, VL.seatsLow), mSeatUp = venM(CB.seat, 0, VL.seatsUp), mTread = venM(VC.conc, 2, VL.inner), mTreadUp = venM(VC.conc, 2, VL.seatsUp);
+    const mMar = venM(CB.maroon, VK.metal), mMarLit = venM(CB.maroon, VK.matte, 0x4a3e30), mConc = venM(VC.conc, VK.matte), mConcLit = venM(VC.conc, VK.matte, 0x6a5a44);
+    const mPad = venM(CB.pad, VK.matte, VL.inner), mPat = venM(CB.patina, VK.patina), mGlass = venM(0x34424c, VK.glass, 0x3a3a30);
+    const strip = (k) => (VEN_ART ? VEN_ART.strips[k].aspect : 3);
+    const mBrick = venM(0x9c4a3a, VK.wall, 0xffcf90, VEN_STRIP.cbp), mPatt = venM(0x9c4a3a, VK.wall, 0xffd8a0, VEN_STRIP.cbpPattison);
+    const mAlley = venM(0x9c4a3a, VK.wall, 0xffc890, VEN_STRIP.cbpAlley), mIvy = venM(0x2d3d33, VK.wall, 0, VEN_STRIP.cbpIvy), mClub = venM(0x5a5e5f, VK.wall, 0xffd8a0, VEN_STRIP.cbpAtrium);
+    const mean = (k, fb) => (VEN_ART ? (VEN_ART.strips[k].mean[0] << 16) | (VEN_ART.strips[k].mean[1] << 8) | VEN_ART.strips[k].mean[2] : fb);
+    const P = (path, d) => offs(path, d);
+    // ---- the field: inside the foul wall and the fence (aUv the field frame's metres, aLit.gb the frame's u for the mowing)
+    const fieldRing = [fence[0], ...corners, fence[fence.length - 1], ...fence.slice(1, -1).reverse()];
+    const ub = Math.round((F.ux * 0.5 + 0.5) * 255), vb = Math.round((F.uz * 0.5 + 0.5) * 255);
+    field.cap(fieldRing, 0.3, { c: [0, 0, 0, 0], l: [255, ub, vb, 0] }, null, 1);
+    venU.uVenFence.value.forEach((u, i) => { const q = fence[Math.min(i, fence.length - 1)]; u.set(q[0], q[1]); });
+    const foul = [fence[0], ...corners, fence[fence.length - 1]];
+    venU.uVenFoul.value.forEach((u, i) => { const q = foul[Math.min(i, foul.length - 1)]; u.set(q[0], q[1]); });
+    // ---- the pit: its floor, its retaining wall, and the street-level slab over the rest of the cut (the hull, a little out,
+    // with the bowl's hole). At both levels: from any distance the bowl is a bowl
+    const Hs = CB.grow(H, 0.5);
+    both((K) => {
+      K.cap(S, -0.05, K === far ? venM(0x3e3d38) : venM(0x3e3d38, VK.matte, VL.inner));
+      K.wall(S, -0.05, ST, K === far ? venM(VC.concDark) : venM(VC.concDark, VK.matte, VL.inner), { closed: true, rw: 8 });
+      K.cap(Hs, ST, K === far ? venM(0x8a7f74) : venM(0x8a7f74, VK.matte, 0x6a5a44), [S.slice().reverse()]);
+    });
+    // ---- the field wall (padded green to 1.2 m) and the outfield wall by its runs, its yellow line on top, the CF rail
+    near.wall(foul, 0, 1.2, mPad, { rw: 4 });
+    for (let i = 0; i + 1 < fence.length; i++) {
+      const [, , h0, h1] = FW[i], seg = [fence[i], fence[i + 1]];
+      near.wall(seg, 0, (j) => (j ? h1 : h0), i === 9 || i === 10 ? venM(0x101214, VK.matte, VL.inner) : mPad, { rw: 4 });   // (right field's out-of-town board black)
+      near.band(seg, seg, (j) => (j ? h1 : h0), (j) => (j ? h1 : h0) + 0.15, venM(VC.yellow, VK.matte));
+      far.wall(seg, 0, (j) => (j ? h1 : h0), venM(CB.pad));
+    }
+    for (const q of CB.run([fence[5], fence[6], fence[7]])) near.bar([q[0], q[1], 1.8], [q[0], q[1], 3.0], 0.08, venM(0x1c3a2a, VK.metal));
+    near.bar([fence[5][0], fence[5][1], 3.0], [fence[6][0], fence[6][1], 3.0], 0.08, venM(0x1c3a2a, VK.metal));
+    near.bar([fence[6][0], fence[6][1], 3.0], [fence[7][0], fence[7][1], 3.0], 0.08, venM(0x1c3a2a, VK.metal));
+    for (const q of [fence[0], fence[fence.length - 1]]) both((K) => K.bar([q[0], q[1], 0.2], [q[0], q[1], 25.9], 0.42, venM(VC.yellow, VK.matte, 0x806a20)));   // the foul poles, 85 ft
+    // ---- the dugouts: sunk into the field level along each line between 8 and 30 m from the plate
+    const lineAt = (t, s) => [Math.SQRT1_2 * t - 51 * 0.3048 * Math.SQRT1_2, s * (Math.SQRT1_2 * t + 51 * 0.3048 * Math.SQRT1_2)];
+    for (const s of [-1, 1]) {
+      const pts = [lineAt(8, s), lineAt(30, s)], inn = pts.map(([u, v]) => [u + Math.SQRT1_2 * 2.6, v - s * Math.SQRT1_2 * 2.6]);
+      near.band(pts, inn, 1.3, 1.3, mPad);
+      near.wall(inn, 0, 0.3, mConc, { rw: 4 }); near.wall(inn, 0.3, 1.05, venM(0x0b0d0e, VK.matte), { rw: 4 }); near.wall(inn, 1.05, 1.3, mPad, { rw: 4 });
+      for (const k of [0, 1]) near.quad([pts[k][0], pts[k][1], 0], [inn[k][0], inn[k][1], 0], [inn[k][0], inn[k][1], 1.3], [pts[k][0], pts[k][1], 1.3], mPad);
+    }
+    // ---- the grandstand, front to back (y over the field; the street at 7): the field level, the suites, the club, the
+    // Terrace, the walkway, the 400s, the roof. Seats a section, aisles between (odd segments)
+    const aisle = (j) => j % 2 === 1;
+    const lowF = P(front, 0.4), lowB = P(front, LOWD);
+    seats.rows(lowF, lowB, 1.2, ST, 34, mTread, mSeat, { aisle });
+    const sui = P(front, 25), suiB = P(front, 34), clF = P(front, 25.6), clB = P(front, 32.8), cl2 = P(front, 33.5);
+    const tF = P(front, 29.5), tB = P(front, 35.5), wk = P(front, 38), uF = P(front, 38.4), uB = P(front, 54.5), rf0 = P(front, 46), out57 = P(front, 57), rfB = P(front, 57.6);
+    near.band(sui, lowB, 10.6, 10.6, mConcLit);                                   // the suites' soffit over the field level's back rows
+    near.wall(sui, 10.6, 11.2, mConc, { rw: 8 });
+    near.wall(sui, 11.2, 14.2, mGlass, { rw: 6 });                                // the suites' dark glass
+    near.wall(sui, 14.2, 15.0, venM(VC.dark, VK.led, VL.ribbon), { rw: 6 });      // the LED ring (2025)
+    seats.rows(clF, clB, 15.4, 18.6, 10, mTread, mSeat, { aisle });
+    near.wall(cl2, 18.6, 19.6, venM(0x2a3238, VK.glass, 0x806a50), { rw: 6 });     // the club's glass behind its rows
+    near.band(tF, cl2, 19.6, 19.6, mConcLit);                                     // the Terrace's soffit over the club's back rows
+    near.wall(tF, 19.6, 20.4, venM(VC.dark, VK.led, VL.ribbon), { rw: 6 });       // its LED ring
+    seats.rows(tF, tB, 20.4, 24.4, 8, mTreadUp, mSeatUp, { aisle });
+    near.band(tB, wk, 24.7, 24.7, mConc);                                         // the walkway (Clem's notch)
+    near.wall(wk, 24.7, 25.6, mConc, { rw: 8 });                                  // the 400s' front wall
+    seats.rows(uF, uB, 25.6, 36.6, 16, mTreadUp, mSeatUp, { aisle });
+    near.wall(offs(front, 55), 36.6, 38.8, venM(0x3d4d57, VK.glass), { rw: 6 });     // the glass windbreak behind the top row
+    // the roof over the 400s' top half: patina standing seams, a maroon fascia, the underside on maroon trusses
+    near.band(rf0, rfB, 41.0, 40.6, mPat, { rw: 0.9 });
+    near.band(rf0, rfB, 40.2, 39.8, venM(0x5a3a36, VK.matte, VL.soffit));
+    near.wall(rf0, 40.0, 41.1, mMar, { rw: 4 });
+    for (let j = 0; j < N; j += 2) {
+      const a = rf0[j], c = rfB[j], m2 = lerp2(a, c, 0.5);
+      near.bar([a[0], a[1], 39.9], [c[0], c[1], 39.5], 0.35, mMar);
+      near.bar([a[0], a[1], 39.9], [m2[0], m2[1], 38.2], 0.2, mMar); near.bar([m2[0], m2[1], 38.2], [c[0], c[1], 39.5], 0.2, mMar);
+      near.bar([m2[0], m2[1], 38.2], [m2[0], m2[1], 39.7], 0.2, mMar);
+    }
+    // the 400s' underside over the Terrace concourse (lit after dark), seen through the frame
+    near.band(uF, uB, 24.9, 35.9, venM(0x625f58, VK.matte, 0x4a3e30), { rw: 6 });
+    for (let j = 0; j < N; j += 2) near.bar([uF[j][0], uF[j][1], 24.9], [uB[j][0], uB[j][1], 35.6], 0.5, venM(0x57554f, VK.matte, 0x4a3e30));
+    // the floors behind: the main concourse at the street, the club's at 18.6, the Terrace concourse at 24.7
+    both((K) => K.band(lowB, out57, ST, ST, K === far ? venM(VC.concDark) : venM(0x7c7a73, VK.matte, 0x6a5a44)));
+    near.band(suiB, out57, 10.6, 10.6, mConcLit); near.band(suiB, out57, 11.2, 11.2, mConc);   // the suites' floor and the concourse's ceiling
+    near.wall(suiB, 11.2, 18.6, venM(0x3d3935, VK.matte, 0x6a5a44), { rw: 6 });              // the suites' back wall along the concourse
+    near.band(cl2, out57, 18.6, 18.6, mConc); near.band(cl2, out57, 18.1, 18.1, mConcLit);
+    near.band(wk, out57, 24.7, 24.7, mConc); near.band(wk, out57, 24.2, 24.2, mConcLit);
+    // ---- the outside: by the front's arc, the brick zones (the Pattison front round home, the two ends) and the open maroon
+    // frame over the two gates. A zone of the outer line: its segments' midpoints' arc on the front
+    const S0 = fs[last], home0 = fs.findIndex((s) => s > S0 / 2 - 31), home1 = fs.findIndex((s) => s > S0 / 2 + 31);
+    const zoneOf = (j) => { const s = (fs[j] + fs[Math.min(last, j + 1)]) / 2; return s < 18 || s > S0 - 18 ? 'end' : s > S0 / 2 - 31 && s < S0 / 2 + 31 ? 'home' : 'gate'; };
+    const runs = [];
+    for (let j = 0; j < last; j++) { const z = zoneOf(j), r = runs[runs.length - 1]; if (r && r.z === z) r.b = j + 1; else runs.push({ z, a: j, b: j + 1 }); }
+    const at = (path, r) => path.slice(r.a, r.b + 1);
+    const out64 = P(front, 64), out63 = P(front, 63), out55 = P(front, 55), out66 = P(front, 66);
+    for (const r of runs) {
+      const o57 = at(out57, r), o64 = at(out64, r);
+      if (r.z === 'home') {   // the Pattison Avenue block: four storeys of brick over its red granite, 18 m from the street
+        near.wall(o64, SF, ST + 18, mPatt, { h: ST + 18 - SF });
+        near.band(o57, o64, ST + 18, ST + 18, venM(0x7a6a5e));
+        near.wall(o57, ST + 18, ST + 19, venM(0xc9a99a, VK.matte), { rw: 6 });
+        far.wall(o64, SF, ST + 18, venM(mean(VEN_STRIP.cbpPattison, 0x8a5a48))); far.band(o57, o64, ST + 18, ST + 18, venM(0x7a6a5e));
+      } else if (r.z === 'end') {   // the ends: brick in two storeys to 21 m
+        near.wall(o64, SF, ST + 14, mBrick, { h: ST + 14 - SF });
+        near.wall(at(out57, r), ST + 14, 28, mBrick, { h: 14 });
+        near.band(o57, o64, ST + 14, ST + 14, venM(VC.concDark));
+        far.wall(o64, SF, ST + 14, venM(mean(VEN_STRIP.cbp, 0x7a6050))); far.wall(o57, ST + 14, 28, venM(mean(VEN_STRIP.cbp, 0x7a6050)));
+      } else {   // a gate: the frame open over the concourses, the club's glass boxes, the stair towers, the 400s' underside behind
+        near.wall(at(out55, r), 18.6, 24.2, mClub, { h: 5.6 });
+        for (let j = r.a; j < r.b; j++) if (j % 4 === 1) {   // a stair tower every other bay: grey panel balconies on a maroon frame
+          const a = out57[j], c = out57[j + 1], a2 = out63[j], c2 = out63[j + 1];
+          for (let y = ST + 4; y < 33; y += 4.2) { near.wall([a2, c2], y, y + 1.1, venM(0xb7b9b6, VK.matte), { rw: 4 }); near.band([a, c], [a2, c2], y, y, mConc); }
+          for (const q of [a2, c2]) near.bar([q[0], q[1], SF], [q[0], q[1], 33.5], 0.45, mMar);
+          near.band([a, c], [a2, c2], 33.5, 33.5, mPat);
+        }
+        far.wall(at(out57, r), SF, 41, venM(0x55302e));
+      }
+      // the frame on the outer line: columns at the sections, beams at the floors, V bracing over the Terrace concourse
+      for (let j = r.a; j <= r.b; j++) if (j % 2 === 0 || j === r.b) near.bar([out57[j][0], out57[j][1], r.z === 'gate' ? SF : ST + 18], [out57[j][0], out57[j][1], 41], 0.6, mMar);
+      for (const y of [ST, 11.2, 18.6, 24.7, 36.6]) if (r.z === 'gate' || y > ST + 17) for (let j = r.a; j < r.b; j++) near.bar([out57[j][0], out57[j][1], y], [out57[j + 1][0], out57[j + 1][1], y], 0.4, mMar);
+      for (let j = r.a; j < r.b; j++) {
+        const a = out57[j], c = out57[j + 1], m2 = lerp2(a, c, 0.5);
+        near.bar([a[0], a[1], 36.6], [m2[0], m2[1], 24.7], 0.25, mMar); near.bar([c[0], c[1], 36.6], [m2[0], m2[1], 24.7], 0.25, mMar);
+      }
+    }
+    // the green barrel roofs on the Pattison block's corners
+    for (const j of [home0, home1 - 2]) {
+      const a = out57[j], c = out57[j + 2], a2 = out64[j], c2 = out64[j + 2];
+      for (let k = 0; k < 8; k++) {
+        const t0 = k / 8, t1 = (k + 1) / 8, y0 = ST + 18 + Math.sin(t0 * Math.PI) * 2.6, y1 = ST + 18 + Math.sin(t1 * Math.PI) * 2.6;
+        const p0 = lerp2(a, a2, t0), p1 = lerp2(a, a2, t1), q0 = lerp2(c, c2, t0), q1 = lerp2(c, c2, t1);
+        near.quad([p0[0], p0[1], y0], [q0[0], q0[1], y0], [q1[0], q1[1], y1], [p1[0], p1[1], y1], mPat, [[0, 0], [12, 0], [12, 1], [0, 1]]);
+      }
+    }
+    // the gates' canopies: maroon steel under a thin green roof, lit under after dark, in the middle of each arm
+    for (const s of [S0 * 0.22, S0 * 0.78]) {
+      const j = fs.findIndex((q) => q > s), a = out57[j - 2], c = out57[j + 2], a2 = out66[j - 2], c2 = out66[j + 2];
+      near.band([a, c], [a2, c2], ST + 5.4, ST + 5.4, venM(0xc0b8aa, VK.matte, 0xd0b890));
+      near.band([a, c], [a2, c2], ST + 6.0, ST + 6.0, mPat);
+      near.wall([a2, c2], ST + 5.4, ST + 6.0, mMar, { rw: 4 });
+      for (const q of [a2, c2, lerp2(a2, c2, 0.5)]) near.bar([q[0], q[1], SF], [q[0], q[1], ST + 5.4], 0.5, mMar);
+    }
+    // the grandstand's two ends, on the plane of the end's offset: the field level, and the stack over the concourse
+    for (const j of [0, last]) {
+      const nu = (out57[j][0] - front[j][0]) / 57, nv = (out57[j][1] - front[j][1]) / 57;
+      const E = (d, y) => [front[j][0] + nu * d, front[j][1] + nv * d, y];
+      both((K) => {
+        K.vpoly([E(0.4, -0.05), E(0.4, 1.6), E(LOWD, ST + 0.6), E(LOWD, -0.05)], K === far ? venM(VC.conc) : venM(VC.conc, VK.matte, 0x4a4a4a));
+        K.vpoly([E(25, 10.6), E(25, 15.4), E(32.8, 18.6), E(29.5, 19.6), E(29.5, 20.4), E(35.5, 24.4), E(38, 24.7), E(38.4, 25.6), E(54.5, 36.6), E(55, 39), E(57, 39.5), E(57, ST), E(LOWD, ST), E(LOWD, 10.6)],
+          K === far ? venM(0x5a3a36) : venM(0x6b5e58, VK.matte, 0x4a3e30));
+        K.vpoly([E(46, 39.8), E(46, 41.1), E(57.6, 40.6), E(57.6, 39.5)], K === far ? venM(CB.maroon) : mMar);
+      });
+    }
+    // ---- the light towers: portal frames on the roof's back edge (a pair over each gate, the legs carried down the face),
+    // their banks of lamps turned to the infield; and the flood points for the night
+    const portal = (K, A, B, y0, y1) => {   // legs at A and B (frame points) from y0, the bank between them up to y1
+      const mid = lerp2(A, B, 0.5), du = B[0] - A[0], dv = B[1] - A[1], L = Math.hypot(du, dv), tu = du / L, tv = dv / L;
+      let nu = -tv, nv = tu; if (nu * (40 - mid[0]) + nv * (0 - mid[1]) < 0) { nu = -nu; nv = -nv; }   // toward the infield
+      const rot = Math.atan2(tv, tu);
+      for (const q of [A, B]) {
+        if (K === far) K.box(q[0], q[1], y0, y1 - 1, 1.4, 1.4, venM(CB.maroon), rot);
+        else K.lattice(q[0], q[1], y0, y1 - 1, 1.5, 1.5, mMar, 2.4, rot, 0.14);
+      }
+      const b0 = y1 - 7.2, Lp = [A[0] + nu * 0.8, A[1] + nv * 0.8], Bp = [B[0] + nu * 0.8, B[1] + nv * 0.8];
+      if (K !== far) for (const y of [b0 - 0.6, b0 + 2.4]) K.bar([A[0], A[1], y], [B[0], B[1], y], 0.35, mMar);
+      K.quad([Lp[0], Lp[1], b0], [Bp[0], Bp[1], b0], [Bp[0], Bp[1], y1], [Lp[0], Lp[1], y1], venM(0x8a8f8c, VK.lamps), [[0, 0], [Math.round(L / 1.25), 0], [Math.round(L / 1.25), 5], [0, 5]]);
+      if (K !== far) for (const q of [A, B]) K.bar([q[0], q[1], y1], [q[0], q[1], y1 + 3.5], 0.12, mMar);
+      if (K === near) for (const t of [0.2, 0.5, 0.8]) { const q = lerp2(Lp, Bp, t); out.flood.push(...F.P(q[0], q[1], (b0 + y1) / 2)); }
+    };
+    for (const s of [S0 * 0.13, S0 * 0.31, S0 * 0.69, S0 * 0.87]) {
+      const j = fs.findIndex((q) => q > s) & ~1, A = out57[j], B = out57[Math.min(last, j + 2)];
+      both((K) => portal(K, A, B, 41, 57));
+      for (const q of [A, B]) near.bar([q[0], q[1], SF], [q[0], q[1], 41], 0.9, mMar);
+    }
+    // ---- the corners between the field level's ends and the outfield stands: rows fanned from the foul wall's last run
+    seats.rows([corners[0], fence[0]], [lowB[0], rad(lf, LFD)[0]], 1.2, ST, 24, mTread, mSeat);
+    seats.rows([corners[3], fence[fence.length - 1]], [lowB[last], rad(rf, RFD)[rf.length - 1]], 1.2, ST, 24, mTread, mSeat);
+    // ---- left field: the low stands (21 rows over the 10.5 ft wall), the porch over their back, Harry the K's and the board
+    const lfB = rad(lf, LFD), lfP0 = rad(lf, 15), lfP1 = rad(lf, 21.5), lfR1 = rad(lf, 21.8);
+    seats.rows(rad(lf, 0.4), lfB, 3.4, 9.0, 21, mTread, mSeat, { aisle });
+    near.band(lfP0, lfB, 9.6, 9.6, mConcLit);
+    seats.rows(lfP0, lfP1, 10.4, 12.8, 6, mTread, mSeat, { aisle });
+    for (let j = 0; j < lf.length; j += 2) near.bar([lfR1[j][0], lfR1[j][1], 12.8], [lfR1[j][0], lfR1[j][1], 14.0], 0.12, venM(0x1c2a22, VK.metal));   // the porch's rail
+    near.wall(lfP1, 12.8, 13.8, mConc, { rw: 8 });
+    near.wall(rad(lf, 23), SF, 12.8, mBrick, { h: 12.8 - SF });
+    far.band(rad(lf, 0.4), lfB, 3.4, 9.0, venM(0x34466e, VK.matte, VL.seatsLow)); far.wall(rad(lf, 23), SF, 12.8, venM(mean(VEN_STRIP.cbp, 0x7a6050)));
+    {
+      const [bu, bv] = CB.board, face = Math.atan2(-bv, -bu), c = Math.cos(face), s = Math.sin(face);
+      const at2 = (w, d) => [bu - s * w + c * d, bv + c * w + s * d];
+      // Harry the K's: two glazed levels under the board, on its frame
+      both((K) => K.box(...at2(0, 4), SF, ST + 10, 9, 46, K === far ? venM(0x4a3a36) : venM(0x4a3a36, VK.matte), face, K === far ? null : [mClub, null, null, null], true));
+      for (const w of [-21, -7, 7, 21]) near.lattice(...at2(w, 1.5), ST + 10, 19.2, 2.0, 2.0, mMar, 3, face, 0.2);
+      both((K) => K.box(bu, bv, 18.6, 45.2, 2.6, 47.5, K === far ? venM(0x2f3a48) : venM(0x2f3a48, VK.metal), face));   // the board's box, its back clad
+      const A = at2(-23.15, 1.35), B = at2(23.15, 1.35);
+      both((K) => K.quad([A[0], A[1], 19.0], [B[0], B[1], 19.0], [B[0], B[1], 45.0], [A[0], A[1], 45.0], venM(VC.dark, VK.screen, 0, 0), [[0, 0], [1, 0], [1, 1], [0, 1]]));
+      both((K) => K.box(...at2(0, 0.2), 45.2, 49.6, 1.2, 30, K === far ? venM(0xb32032) : venM(0xb32032, VK.led, 0xff2040), face));   // the script's sign over it (no lettering)
+      // its light tower on the centre field side
+      const T = at2(30, -2);
+      near.lattice(T[0], T[1], SF, 51, 4.2, 3.0, mMar, 6, face, 0.3);
+      far.box(T[0], T[1], SF, 51, 3.4, 3.4, venM(CB.maroon), face);
+      both((K) => portal(K, at2(25, 0.5), at2(35, 0.5), 50, 57.5));
+    }
+    // ---- the batter's eye: three overlapping brick walls under thick ivy, a planted bed before them
+    const beA = rad(be, 2.5), beB = rad([lerp2(be[0], be[1], 0.45), be[1], be[2]], 5.2);
+    near.wall(beA.slice(0, 2), 0, 12.2, mIvy, { h: 12.2 });
+    near.wall(beB, 0, 13.4, mIvy, { h: 13.4 });
+    near.wall([lerp2(be[1], be[2], 0.2), be[2]].map((q) => rad([q], 3.6)[0]), 0, 11.6, mIvy, { h: 11.6 });
+    for (const [pth, h] of [[beA.slice(0, 2), 12.2], [beB, 13.4]]) near.band(pth, rad(pth, 0.8), h, h, venM(0xb07060));
+    near.band(rad(be, 0.3), rad(be, 2.4), 0.5, 0.5, venM(0x2d4a24, VK.turf, VL.inner));
+    far.wall(rad(be, 4), 0, 13, venM(mean(VEN_STRIP.cbpIvy, 0x2d3d33)));
+    // ---- the bullpens: the Phillies' at field level, the visitors' above it, behind the open rail; green walls
+    const bpM = rad(bp, 8.5);
+    near.band(rad(bp, 0.1), bpM, 0.05, 0.05, venM(0x2d4a24, VK.turf, VL.inner));
+    near.wall(bpM, 0, 2.6, mPad, { rw: 4 });
+    near.band(bpM, rad(bp, BPD), 2.6, 2.6, venM(0x2d4a24, VK.turf, VL.inner));
+    near.wall(rad(bp, BPD), 2.6, ST, mPad, { rw: 4 });
+    for (const pth of [bpM, rad(bp, BPD)]) near.bar([pth[0][0], pth[0][1], pth === bpM ? 3.6 : ST + 1], [pth[1][0], pth[1][1], pth === bpM ? 3.6 : ST + 1], 0.08, venM(0x1c3a2a, VK.metal));
+    // ---- right field: the field level over the 13 ft wall, the Pavilion, the Pavilion Deck under its own roof (the whole of it
+    // 20 ft under the grandstand's), the maroon frame behind, its ends
+    const R = (d) => rad(rf, d);
+    seats.rows(R(0.4), R(RFD), 4.4, 9.8, 21, mTread, mSeat, { aisle });
+    near.band(R(13.5), R(RFD), 11.6, 11.6, mConcLit);
+    near.wall(R(13.5), 11.6, 12.6, venM(VC.dark, VK.led, VL.ribbon), { rw: 6 });
+    seats.rows(R(13.5), R(23), 12.6, 16.2, 12, mTread, mSeat, { aisle });
+    near.band(R(19), R(23), 17.6, 17.6, mConcLit);
+    near.wall(R(19), 17.6, 18.6, mConc, { rw: 8 });
+    seats.rows(R(19), R(36.5), 18.6, 30.6, 21, mTreadUp, mSeatUp, { aisle });
+    near.band(R(30.5), R(38.5), 34.8, 34.6, mPat, { rw: 0.9 }); near.band(R(30.5), R(38.5), 34.2, 34.0, venM(0x5a3a36, VK.matte, VL.soffit));   // over the deck's rows 14 and up
+    near.wall(R(30.5), 33.9, 34.9, mMar, { rw: 4 });
+    near.band(R(19), R(36.5), 18.9, 30.0, venM(0x625f58, VK.matte, 0x4a3e30), { rw: 6 });
+    const rB = R(37.5);
+    for (let j = 0; j < rf.length; j++) near.bar([rB[j][0], rB[j][1], SF], [rB[j][0], rB[j][1], 34.8], 0.55, mMar);
+    for (const y of [ST, 18.6, 30.6]) for (let j = 0; j + 1 < rf.length; j++) near.bar([rB[j][0], rB[j][1], y], [rB[j + 1][0], rB[j + 1][1], y], 0.35, mMar);
+    near.wall(R(38), SF, ST + 9, mBrick, { h: ST + 9 - SF });
+    both((K) => {
+      for (const j of [0, rf.length - 1]) {
+        const [u, v] = rf[j], L = Math.hypot(u, v), E = (d, y) => [u + u / L * d, v + v / L * d, y];
+        K.vpoly([E(0.4, 0), E(0.4, 4.6), E(RFD, 10.4), E(23, 16.8), E(36.5, 31.2), E(38.5, 35), E(38.5, SF), E(RFD, SF), E(RFD, 0)], K === far ? venM(0x5a3a36) : venM(0x6b5e58, VK.matte, 0x4a3e30));
+      }
+    });
+    far.band(R(0.4), R(36.5), 4.4, 30.6, venM(0x34466e, VK.matte, VL.seatsLow)); far.band(R(30.5), R(38.5), 34.8, 34.6, venM(CB.patina));
+    { const j = Math.floor(rf.length / 2) & ~1; both((K) => portal(K, rad([rf[j]], 37.5)[0], rad([rf[Math.min(rf.length - 1, j + 2)]], 37.5)[0], 34.8, 50)); }
+    // ---- Ashburn Alley at the street: the concession row along its far side with the rooftop bleachers, the retired numbers'
+    // pavilions behind the batter's eye, the clock on its maroon frame, the flags
+    const arc = (g0, g1, r, n) => Array.from({ length: n + 1 }, (_, k) => { const g = (g0 + (g1 - g0) * k / (n || 1)) * Math.PI / 180; return [r * Math.cos(g), r * Math.sin(g)]; });
+    for (const [g0, g1] of [[-19, -9], [-7, 3], [5, 14], [16, 24]]) {
+      const fr = arc(g0, g1, 146, 3), bk = arc(g0, g1, 158, 3);
+      near.wall(fr, SF, ST + 6, mAlley, { h: ST + 6 - SF });
+      near.wall(bk, SF, ST + 6, mBrick, { h: ST + 6 - SF });
+      near.cap(fr.concat(bk.slice().reverse()), ST + 6, venM(0x8a7f74));
+      far.wall(fr, SF, ST + 6, venM(mean(VEN_STRIP.cbpAlley, 0x8a5a48))); far.cap(fr.concat(bk.slice().reverse()), ST + 6, venM(0x8a7f74));
+      seats.rows(arc(g0, g1, 147, 3), arc(g0, g1, 154, 3), ST + 6.1, ST + 8.6, 6, mTread, mSeat);   // the rooftop bleachers' blue benches
+      near.wall(arc(g0, g1, 146.3, 3), ST + 6, ST + 7.1, venM(0x1c2a22, VK.metal), { rw: 2 });
+    }
+    for (const g of [-10, 0]) both((K) => K.box(...arc(g, g, 141, 0)[0], SF, ST + 8.5, 8, 9, K === far ? venM(mean(VEN_STRIP.cbp, 0x7a6050)) : mBrick, g * Math.PI / 180, null, venM(0x8a7f74)));
+    {
+      const [cu, cv] = arc(-5, -5, 141, 0)[0], fc = Math.atan2(-cv, -cu), c = Math.cos(fc), s = Math.sin(fc);
+      for (const w of [-1.8, 1.8]) near.bar([cu - s * w, cv + c * w, ST], [cu - s * w, cv + c * w, ST + 14], 0.4, mMar);
+      near.box(cu, cv, ST + 9.5, ST + 13, 0.5, 3.4, venM(0xf0f0ec, VK.matte, 0xffffff), fc);
+    }
+    for (let k = 0; k < 8; k++) { const q = arc(-16 + k * 2.2, 0, 137.5, 0)[0]; near.bar([q[0], q[1], ST], [q[0], q[1], ST + 24], 0.22, venM(0xe8e8e4, VK.metal)); }
+    // ---- the Liberty Bell: its outline (lit after dark, 26,000 LEDs since 2022) on a four-legged maroon lattice tower over
+    // the bullpens, the lattice of its face, the yoke; its top 102 ft over the street
+    {
+      const [bu, bv] = CB.bell, fc = Math.atan2(-bv, -bu), c = Math.cos(fc), s = Math.sin(fc), by = 29.6;
+      const at2 = (w, d) => [bu - s * w + c * d, bv + c * w + s * d];
+      near.lattice(bu, bv, ST, by + 9.5, 6.2, 5.6, mMar, 3.6, fc, 0.26);
+      far.box(bu, bv, ST, by + 9.5, 5.6, 5.6, venM(CB.maroon), fc);
+      const bell = [[-5.3, -5], [-4.9, -4.2], [-4.2, -3.2], [-3.4, -2], [-3.0, 0], [-2.8, 2.5], [-2.4, 4.8], [-1.6, 6.3], [-0.7, 6.9], [0.7, 6.9], [1.6, 6.3], [2.4, 4.8], [2.8, 2.5], [3.0, 0], [3.4, -2], [4.2, -3.2], [4.9, -4.2], [5.3, -5]];
+      const BP = (w, y, d = 3.4) => { const q = at2(w, d); return [q[0], q[1], by + y]; };
+      const mLed = venM(0xe8e6de, VK.led, 0xfff4e0), ring = bell.concat([bell[0]]);
+      for (let j = 0; j + 1 < ring.length; j++) near.bar(BP(ring[j][0], ring[j][1]), BP(ring[j + 1][0], ring[j + 1][1]), 0.4, mLed);
+      for (const k of [-3, -1.5, 0, 1.5, 3]) { near.bar(BP(k - 2, -5), BP(k + 2, 6.5), 0.12, mMar); near.bar(BP(k + 2, -5), BP(k - 2, 6.5), 0.12, mMar); }
+      near.bar(BP(-0.2, -5), BP(0.5, -1), 0.3, mLed);                                                   // the crack
+      for (const [y, w] of [[7.6, 5.2], [9.4, 6.4]]) near.bar(BP(-w, y), BP(w, y), 0.4, mLed);         // the yoke
+      near.bar(BP(-5.2, 7.6), BP(-6.4, 9.4), 0.4, mLed); near.bar(BP(5.2, 7.6), BP(6.4, 9.4), 0.4, mLed);
+      far.vpoly(bell.map(([w, y]) => BP(w, y)), venM(0x8a8a86));
+    }
+    // ---- the far level's stands: bands in the seats' mean, the roof, the suites' glass
+    const sMean = 0x34466e;
+    far.band(lowF, lowB, 1.2, ST, venM(sMean, VK.matte, VL.seatsLow));
+    far.wall(sui, 10.6, 15.0, venM(VC.dark), { rw: 8 });
+    far.band(clF, clB, 15.4, 18.6, venM(sMean, VK.matte, VL.seatsUp));
+    far.band(tF, tB, 20.4, 24.4, venM(sMean, VK.matte, VL.seatsUp));
+    far.band(uF, uB, 25.6, 36.6, venM(sMean, VK.matte, VL.seatsUp));
+    far.band(rf0, rfB, 41.0, 40.6, venM(CB.patina));
+    far.band(uF, uB, 24.9, 35.9, venM(0x6a675f));
+    // ---- the flight's walls (Round 214): the grandstand's stack from the suites out, the right field stands, the board, the
+    // Bell's tower and the alley's row, as columns to their tops
+    const Wq = (q) => { const p = F.P(q[0], q[1], 0); return [p[0], p[2]]; };
+    for (let j = 0; j < last; j++) hitNote([sui[j], sui[j + 1], rfB[j + 1], rfB[j]].map(Wq), F.y0 + 41.2);
+    for (let j = 0; j + 1 < rf.length; j++) hitNote([R(13.5)[j], R(13.5)[j + 1], R(38.5)[j + 1], R(38.5)[j]].map(Wq), F.y0 + 35);
+    { const [bu, bv] = CB.board, face = Math.atan2(-bv, -bu), c = Math.cos(face), s = Math.sin(face); hitNote([[-24, -2], [24, -2], [24, 9], [-24, 9]].map(([w, d]) => Wq([bu - s * w + c * d, bv + c * w + s * d])), F.y0 + 50); }
+    hitNote([[-3.2, -3.2], [3.2, -3.2], [3.2, 3.2], [-3.2, 3.2]].map(([a2, b2]) => Wq([CB.bell[0] + a2, CB.bell[1] + b2])), F.y0 + 39);
+    // the ground it owns (no tuft, tree or pole in it): the hull and everything out to the outer blocks and the alley's row
+    out.rings.push(CB.grow(CB.hull(CB.H.concat(out64, arc(-20, 25, 160, 8), [CB.board])), 2));
   }
   // ---- Lincoln Financial Field. The field's centre at the origin, its length along u (8 degrees west of north), the east
   // stands along +v. Every ring is a rounded rectangle of the same steps (venRRect), so the stands, the walks and the roofs
@@ -25701,8 +26101,8 @@ if (uOlLamp > 0.001) {
       return [hi, lo];
     };
     const defs = [];
-    if (ctx.stadia.some((sd) => sd.def.baseball)) defs.push({ id: 'cbp', name: 'Citizens Bank Park', o: [-1861, 4429], a: 5 * deg, r: 165, build: venCbp,
-      lc: [45, 0] });
+    if (ctx.stadia.some((sd) => sd.def.baseball)) defs.push(CBP_ON ? { id: 'cbp', name: 'Citizens Bank Park', o: CB.o, a: CB.a, r: 190, build: venCbp215, lc: [60, 0], sink: CB.sink }
+      : { id: 'cbp', name: 'Citizens Bank Park', o: [-1861, 4429], a: 5 * deg, r: 165, build: venCbp, lc: [45, 0] });
     if (ctx.stadia.some((sd) => !sd.def.baseball)) defs.push({ id: 'linc', name: 'Lincoln Financial Field', o: [-1938.4, 4939.4], a: -8 * deg, r: 150, build: venLinc,
       lc: [0, 0] });
     if (ctx.arena) {
@@ -25717,8 +26117,9 @@ if (uOlLamp > 0.001) {
     }
     for (const d of defs) {
       const ux = Math.sin(d.a), uz = -Math.cos(d.a);
-      const [hi, lo] = span(venFrame(d.o[0], d.o[1], ux, uz, 0), d.lc, d.r), y0 = hi + 0.45, F = venFrame(d.o[0], d.o[1], ux, uz, y0);
+      const [hi, lo] = span(venFrame(d.o[0], d.o[1], ux, uz, 0), d.lc, d.r), y0 = hi + 0.45 - (d.sink || 0), F = venFrame(d.o[0], d.o[1], ux, uz, y0);
       F.foot = Math.min(-1, lo - y0 - 0.6);
+      F.sfoot = lo - y0 - 0.6;   // (Round 217: the street's foot over a sunk field)
       const out = { shell: venBuf(), seats: venBuf(), field: venBuf(), far: venBuf(), flood: [], rings: [], bars: [], sheets: [] };
       if (d.id === 'arena') venArena(F, out, d.ext, d.slot); else d.build(F, out);
       const mk = (b, mat, nm, cast) => {
@@ -28520,7 +28921,7 @@ if (uOlLamp > 0.001) {
       drapeLog('the outer districts');
       if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
       if (lotSheetParts.length) {   // the realism pass: the sports complex's lots, the photographed lot asphalt on the street grid
-        const g = mergeColored(lotSheetParts); freeOnUpload(g);
+        const g = GROUND_CUTS.length ? elPortalClipGround(mergeColored(lotSheetParts)) : mergeColored(lotSheetParts); freeOnUpload(g);   // (Round 217: the district sheet, the lots' hull, ran over the ballpark's sunk bowl)
         groupCity.add(new THREE.Mesh(g, lotSheetMat()));
       }
     });
@@ -37619,7 +38020,8 @@ float pinOccGate() {
   // literals put a Flyers bubble, a 76ers bubble and a concert placard on one spot (Round 56)
   const ARENA_VENUE = { x: -2327, z: 4892, h: 115, top: 40, r: 110 };   // r: a tap this near is on the building (Round 167)
   const SCORE_VENUES = {
-    mlb: { x: -1857, z: 4383, h: 135, top: 44, r: 170 }, nfl: { x: -1946, z: 4954, h: 150, top: 57, r: 170 },
+    mlb: CBP_ON ? { x: -1854.8, z: 4353.0, h: 135, top: 44, r: 170 } : { x: -1857, z: 4383, h: 135, top: 44, r: 170 },   // (Round 217: over the rebuilt park's field)
+    nfl: { x: -1946, z: 4954, h: 150, top: 57, r: 170 },
     nhl: ARENA_VENUE, nba: ARENA_VENUE,
   };
   const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
@@ -37725,14 +38127,19 @@ float pinOccGate() {
     // the concert placards stack over the games: a game arriving or ending re-stacks them
     CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh();
   }
+  // Round 214 (Mike: "make it so concert pins only pop up within 1 mile of the user") and Round 217 (Mike, of a score bubble
+  // over Citizens Bank Park from Penn's Landing: "That is not particularly close"): a concert placard and a score bubble, with
+  // their tethers and balls, show within EVENT_PIN_R of the eye, the straight-line distance as the ships' pins
+  const EVENT_PIN_R = 1609.34;   // 1 mile
   function scoresRender() {
     for (let i = 0; i < SCORES.games.length; i++) {
       const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
       if (g.hidden) continue;   // dismissed (Round 167): down until its building is tapped
       _scv.set(v.x, g.y, v.z);
-      const blocked = pinBlocked(v.x, (g.top != null ? g.top : g.y) + 3, v.z);   // shown or hidden whole (Round 127), as the concerts
-      if (g.line) g.line.visible = g.ball.visible = !blocked;
-      const far = camera.position.distanceTo(_scv) > 14000 || blocked;
+      const out = camera.position.distanceTo(_scv) > EVENT_PIN_R;   // within a mile of the eye, as the concerts (Round 217)
+      const blocked = !out && pinBlocked(v.x, (g.top != null ? g.top : g.y) + 3, v.z);   // shown or hidden whole (Round 127), as the concerts
+      if (g.line) g.line.visible = g.ball.visible = !out && !blocked;
+      const far = out || blocked;
       _scv.project(camera);
       if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; el.style.visibility = 'hidden'; continue; }   // hidden, not only clear: its X must not catch a tap
       el.style.opacity = '1'; el.style.visibility = '';
@@ -37883,7 +38290,6 @@ float pinOccGate() {
     }
     concertStatus();
   }
-  const CONCERT_PIN_R = 1609.34;   // 1 mile (Round 214)
   function concertsRender() {
     concertsRefresh();
     for (const s of CONCERTS.shown) {
@@ -37891,9 +38297,7 @@ float pinOccGate() {
       _ccv.set(s.x, s.y, s.z);
       // Round 127 (Mike: no concert pin through a building): the placard, its tether and its ball are
       // shown or hidden together, by whether the pin's landing point on the roof is in clear view
-      // Round 214 (Mike: "make it so concert pins only pop up within 1 mile of the user"): the placard, its tether and its ball
-      // show within CONCERT_PIN_R of the eye, the straight-line distance as the ships' pins; the score bubbles keep 14 km
-      const out = camera.position.distanceTo(_ccv) > CONCERT_PIN_R;
+      const out = camera.position.distanceTo(_ccv) > EVENT_PIN_R;   // within a mile of the eye (Round 214)
       const blocked = !out && pinBlocked(s.x, s.top + 3, s.z);
       if (s.line) s.line.visible = s.ball.visible = !out && !blocked;
       const far = out || blocked;
@@ -38467,6 +38871,7 @@ float pinOccGate() {
     const box=g.boundingBox,bounds=[box.min.x,box.max.x,box.min.z,box.max.z];
     const cuts=elTrackProfiles().filter(p=>streetOverlap(bounds,p.bounds)).flatMap(p=>p.cuts)
       .concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)})).filter(c=>streetOverlap(bounds,c.bounds)))   // Round 139: the excavations
+      .concat(GROUND_CUTS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)})).filter(c=>streetOverlap(bounds,c.bounds)))   // Round 217: the ballpark's sunk bowl
       .concat(patcoCuts().filter(c=>streetOverlap(bounds,c.bounds)));   // Round 141: PATCO's open cut at 5th Street
     if(!cuts.length)return g;
     const pos=g.attributes.position,idx=g.index,indices=[],extra={};

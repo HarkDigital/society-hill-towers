@@ -84,6 +84,24 @@ ITEMS = {
                    'divided into bays by deep red brick piers about 1.5 metres wide standing on pale grey granite bases 1.2 '
                    'metres tall, a dark green steel band across the whole wall at 6 metres, a pale precast stone coping along '
                    'the top', '1536x512'),
+    # Round 217 (Mike: "I also want Citizen's bank park to be completely remodeled"): the Pattison Avenue front (Commons'
+    # Citizensbankparkside.jpg) and Ashburn Alley's concession buildings (Center_Field_Wall_at_Citizens_Bank_Park); the ivy
+    # ('cbp-ivy', made in Round 195 and unused till now) dresses the batter's eye
+    'cbp-pattison': ('wall', 'the Pattison Avenue street front of a 2004 Philadelphia major league ballpark: a four-storey red '
+                     'brick office and club block 18 metres tall and 6 identical bays. A base 1.4 metres tall of polished deep '
+                     'red granite panels with a thin black granite band along its top. Tall brick piers about 2.5 metres wide in '
+                     'several blended shades of red brick rise the full height between the bays, each standing on a pale '
+                     'pinkish-tan precast stone block 3 metres tall. In every bay: at the bottom a tall glazed opening two '
+                     'storeys high of dark blue-grey tinted glass in slim dark grey aluminium frames, recessed into the wall; '
+                     'above it two storeys each with a pair of tall narrow windows of dark blue-grey tinted glass in dark grey '
+                     'frames with pale stone sills; near the top a chain of three diamond shapes laid in black brick across '
+                     'the bay; a pale pinkish-tan precast cornice along the top', '1536x512'),
+    'cbp-alley': ('wall', 'the low brick concession buildings along the outfield promenade of a 2004 Philadelphia ballpark, '
+                  '6 metres tall and 8 identical bays: red brick in several blended shades laid in running bond; in every bay '
+                  'a wide service opening 3 metres tall with a dark green painted steel roll-up shutter half raised over a '
+                  'dimly lit counter and a dark interior; a dark green painted steel canopy band 0.5 metres deep across the '
+                  'wall over the openings; plain brick piers between the bays; a pale pinkish-tan precast coping along the top',
+                  '1536x512'),
     'board': ('photo', 'the picture on a ballpark\'s giant outdoor video board between innings, filling the frame edge to edge: '
               'a wide high view of an empty major league baseball field at dusk under the lights, from high behind home plate '
               'looking toward centre field, the green outfield with mowing stripes, the brown infield dirt, the pitcher\'s '

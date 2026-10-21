@@ -36,12 +36,16 @@ KIND = 'stadiums'
 STRIP_W, STRIP_H, PAD = 1024, 256, 8
 # (strip id, the raw picture): the podium's strip is the glazed one since the review's round ('arena-podium' stays on disk)
 WALLS = [('cbp-brick', 'cbp-brick'), ('linc-glass', 'linc-glass'), ('linc-screen', 'linc-screen'), ('arena-fins', 'arena-fins'),
-         ('arena-podium', 'arena-podium-glass'), ('arena-drum', 'arena-drum'), ('linc-office', 'linc-office'), ('cbp-atrium', 'cbp-atrium')]
+         ('arena-podium', 'arena-podium-glass'), ('arena-drum', 'arena-drum'), ('linc-office', 'linc-office'), ('cbp-atrium', 'cbp-atrium'),
+         ('cbp-pattison', 'cbp-pattison'), ('cbp-alley', 'cbp-alley'), ('cbp-ivy', 'cbp-ivy')]   # Round 217: the ballpark's own three
 # a strip's panes: rows of them in its height, the rows' offset (the page's row is floor(sv * rows + off), sv 0 at the foot:
 # the offset puts a boundary between two rows of panes, never through one, as the pictures were measured), and the share lit
 # after dark (0 for a wall without glass)
 WINDOWS = {'cbp-brick': (2, -0.16, 0.45), 'linc-glass': (2, 0.0, 0.8), 'linc-screen': (1, 0.0, 0), 'arena-fins': (1, 0.0, 0),
-           'arena-podium': (2, 0.1, 0.85), 'arena-drum': (1, 0.0, 0), 'linc-office': (3, 0.04, 0.55), 'cbp-atrium': (2, 0.06, 0.9)}
+           'arena-podium': (2, 0.1, 0.85), 'arena-drum': (1, 0.0, 0), 'linc-office': (3, 0.04, 0.55), 'cbp-atrium': (2, 0.06, 0.9),
+           # (the Pattison front's rows are unequal: 4.76 a height puts the boundaries at 0.25, 0.46 and 0.67, between the
+           # storefront's two storeys and the window rows, as the picture was measured)
+           'cbp-pattison': (4.76, -0.19, 0.5), 'cbp-alley': (1, 0.0, 0.7), 'cbp-ivy': (1, 0.0, 0)}
 
 
 def glass_mask(src, a):
@@ -57,6 +61,10 @@ def glass_mask(src, a):
         return (b - r > 7) & (lum > 40)
     if src == 'linc-office':   # the pale blue panes against the grey panels
         return (b - r > 14) & (lum > 60)
+    if src == 'cbp-pattison':   # the blue-grey panes against the red brick, the tan precast and the red granite base
+        return (b - r > 5) & (lum < 120) & (yf > 0.05) & (yf < 0.9)
+    if src == 'cbp-alley':   # the dark interiors under the half-raised shutters
+        return (lum < 45) & (yf > 0.4) & (yf < 0.8)
     if src == 'cbp-atrium':   # the curtain wall's panes: not the brick, the green steel, the granite or the coping
         return (r - g < 20) & (g - r < 18) & (lum < 160) & (yf > 0.06) & (yf < 0.88)
     return np.zeros(a.shape[:2], bool)

@@ -1,6 +1,6 @@
 {
- "walls": "art/stadiums/walls.b7269ecb73.webp",
- "wallsHalf": "art/stadiums/walls-half.144278369f.webp",
+ "walls": "art/stadiums/walls.cac27ff118.webp",
+ "wallsHalf": "art/stadiums/walls-half.32a3a21a85.webp",
  "stripH": 256,
  "pad": 8,
  "strips": [
@@ -123,6 +123,51 @@
    "off": 0.06,
    "lit": 0.9,
    "glass": 0.588
+  },
+  {
+   "id": "cbp-pattison",
+   "bays": 7,
+   "period": 206.08,
+   "aspect": 2.8184,
+   "mean": [
+    110,
+    81,
+    72
+   ],
+   "rows": 4.76,
+   "off": -0.19,
+   "lit": 0.5,
+   "glass": 0.245
+  },
+  {
+   "id": "cbp-alley",
+   "bays": 8,
+   "period": 186.12,
+   "aspect": 2.9082,
+   "mean": [
+    106,
+    78,
+    63
+   ],
+   "rows": 1,
+   "off": 0.0,
+   "lit": 0.7,
+   "glass": 0.156
+  },
+  {
+   "id": "cbp-ivy",
+   "bays": 3,
+   "period": 511.98,
+   "aspect": 3.0,
+   "mean": [
+    45,
+    61,
+    51
+   ],
+   "rows": 1,
+   "off": 0.0,
+   "lit": 0,
+   "glass": 0.0
   }
  ],
  "board": "art/stadiums/board.78612394a7.webp",

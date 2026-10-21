@@ -57,6 +57,7 @@ const ctx2d = new Proxy({}, { get: (_, k) => k === 'createLinearGradient' ? () =
 const document = { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
 const groundMeshY = (x, z) => 3 + 0.002 * (x + 1900) + 0.001 * (z - 4600), siteY = () => 3;
 const groupCity = { kids: [], add(m) { this.kids.push(m); }, remove() {} };
+const HITS = [], hitNote = (poly, top) => HITS.push([poly.length, top]);   // Round 217: the ballpark's walls for the flight
 const pendingUpload = [], freeOnUpload = () => {}, NO_SOW_RINGS = [], NO_SOW_RING_BB = [], REBUILD_OCC = [];
 const rbBox = (ring) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const q of ring) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0, x1, z0, z1]; };
 const camera = { position: new V3(-1900, 400, 3900) };
@@ -74,8 +75,7 @@ const meshes = groupCity.kids.map((m) => {
 const fieldM = groupCity.kids.find((m) => m.name === 'venue-cbp-field'), fg = fieldM.geometry, P = fg.attributes.position.array, I = fg.index.array;
 let triA = 0;
 for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c = I[i + 2] * 3; triA += Math.abs((P[b] - P[a]) * (P[c + 2] - P[a + 2]) - (P[c] - P[a]) * (P[b + 2] - P[a + 2])) / 2; }
-const ctl = CBP.control.flatMap((q, j, a) => j + 1 < a.length ? [q, [(q[0] + a[j + 1][0]) / 2, (q[1] + a[j + 1][1]) / 2]] : [q]);
-const ring = ctl.concat([[72, 76]], CBP.fence.slice().reverse(), [[72, -76]]);
+const ring = [CB.fence[0], ...CB.corners, CB.fence[CB.fence.length - 1], ...CB.fence.slice(1, -1).reverse()];   // (Round 217's field)
 let ringA = 0; for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length]; ringA += p[0] * q[1] - q[0] * p[1]; }
 // the arena's roof: every position over the eyebrow's lip with the normals it carries
 const arenaM = groupCity.kids.find((m) => m.name === 'venue-arena-shell'), ag = arenaM.geometry, AP = ag.attributes.position.array, AN = ag.attributes.normal.array;
@@ -90,7 +90,7 @@ const roofSplit = [...byPos.values()].filter((v) => v.size > 1).length;
 // floodlight (aLit.rgb) on the matte faces
 const stripsOf = (nm) => { const g = groupCity.kids.find((m) => m.name === nm).geometry, C = g.attributes.aCol.array, L = g.attributes.aLit.array, o = {}; for (let i = 0; i < C.length / 4; i++) if (C[i * 4 + 3] === 3) o[L[i * 4 + 3]] = (o[L[i * 4 + 3]] || 0) + 1; return o; };
 console.log(JSON.stringify({ ok, err: VEN.err, probe: venuesProbe(), meshes, flood: flood.length / 3, roofSplit, roofPositions: byPos.size,
-  fence: venU.uVenFence.value.map((q) => [q.x, q.y]), foul: venU.uVenFoul.value.map((q) => [q.x, q.y]), cbpFence: CBP.fence, cbpFoul: cbpFoul(),
+  fence: venU.uVenFence.value.map((q) => [q.x, q.y]), foul: venU.uVenFoul.value.map((q) => [q.x, q.y]), cbpFence: CB.fence.concat(Array(16 - CB.fence.length).fill(CB.fence[CB.fence.length - 1])), cbpFoul: (() => { const f = [CB.fence[0], ...CB.corners, CB.fence[CB.fence.length - 1]]; return f.concat(Array(17 - f.length).fill(f[f.length - 1])); })(), hits: HITS.length, cut: GROUND_CUTS.map((c) => c.ring.length), sCount: CB.S.length, cb: { o: CB.o, a: CB.a, sink: CB.sink, fenceFt: CB.fence.map(([u, v]) => Math.hypot(u, v) / 0.3048), ring: GROUND_CUTS[0].ring, S: CB.S.map(CB.W), y0: VEN.list.find((V) => V.id === 'cbp').y0, seat: CB.seat },
   cbpStrips: stripsOf('venue-cbp-shell'), lincStrips: stripsOf('venue-linc-shell'), arenaStrips: stripsOf('venue-arena-shell'), winGlsl: VEN_WIN_GLSL, rings: REBUILD_OCC.length, sow: NO_SOW_RINGS.length,
   theme: themeParts.map((p) => p.slot), sheets: themeSheets.map((s) => [s.slot, s.grad]), fieldArea: triA, ringArea: Math.abs(ringA) / 2,
   strips: VEN_STRIP, classes: [0, 6, 12, 23, 24, 30, 41, 42, 48, 59, 60, 66, 71].map((j) => lincClass(j)) }));
@@ -118,7 +118,7 @@ class Build(unittest.TestCase):
             self.assertTrue(m['finite'], m['name'])
 
     def test_the_budget(self):
-        near = {'cbp': 12000, 'linc': 6000, 'arena': 3000}
+        near = {'cbp': 40000, 'linc': 6000, 'arena': 3000}   # (Round 217: the ballpark's stands in stepped rows, its frame and towers)
         for v in self.out['probe']['venues']:
             t = v['tris']
             self.assertLess(t.get('shell', 0) + t.get('seats', 0) + t.get('field', 0), near[v['id']], v)
@@ -163,8 +163,9 @@ class Build(unittest.TestCase):
         self.assertEqual(self.out['foul'], self.out['cbpFoul'])
         self.assertTrue(all(abs(x) + abs(y) > 50 for x, y in self.out['fence']))
         # the arrays as the shader declares and loops them
-        self.assertIn('uniform vec2 uVenFence[8]; uniform vec2 uVenFoul[17];', SECTION)
-        self.assertIn("for (int i = 0; i < 7; i++) wt = min(wt, venSeg(p, uVenFence[i], uVenFence[i + 1]));", SECTION)
+        self.assertIn('uniform vec2 uVenFence[16]; uniform vec2 uVenFoul[17];', SECTION)
+        self.assertIn("for (int i = 0; i < 15; i++) wt = min(wt, venSeg(p, uVenFence[i], uVenFence[i + 1]));", SECTION)
+        self.assertIn('max(dot(ba, ba), 1e-6)', SECTION)   # a repeated point is a zero-length segment, never a NaN
         self.assertIn("for (int i = 0; i < 16; i++) wt = min(wt, venSeg(p, uVenFoul[i], uVenFoul[i + 1]));", SECTION)
 
     def test_the_arena_roof_is_one_smooth_dome(self):
@@ -174,13 +175,41 @@ class Build(unittest.TestCase):
 
     def test_each_venue_wears_its_strips(self):
         st = {int(k): v for k, v in self.out['cbpStrips'].items()}
-        self.assertEqual(set(st), {0, 7})                          # the brick and the gates' atriums
+        self.assertEqual(set(st), {0, 7, 8, 9, 10})                # the brick, the club's glass, the Pattison front, the alley, the ivy
         lt = {int(k): v for k, v in self.out['lincStrips'].items()}
         self.assertEqual(set(lt), {1, 2, 6})                       # the glazed sides, the braced ends, the office block
         self.assertGreater(lt[6], 40)
         self.assertEqual({int(k) for k in self.out['arenaStrips']}, {3, 4, 5})
-        # one entry a strip in the panes' expression, eight strips
-        self.assertEqual(self.out['winGlsl'].count('vec4('), 9)
+        # one entry a strip in the panes' expression, eleven strips
+        self.assertEqual(self.out['winGlsl'].count('vec4('), 12)
+
+    # Round 217: Citizens Bank Park rebuilt
+    def test_the_ballpark_as_measured(self):
+        cb = self.out['cb']
+        self.assertEqual(cb['o'], [-1864.7, 4412.2])                       # home plate, from the OSM pitch's poles and backstop
+        self.assertAlmostEqual(cb['a'] * 180 / 3.141592653589793, 9.5, places=6)
+        self.assertEqual([round(f) for f in cb['fenceFt']], [329, 334, 374, 387, 381, 409, 401, 398, 384, 369, 343, 330])
+        self.assertEqual(cb['seat'], 0x1f3e8c)                             # sapphire blue (the Phillies' facts page)
+        self.assertEqual(cb['sink'], 7.0)                                  # the field 23 ft under the street
+        self.assertAlmostEqual(cb['y0'], 3.0 + 0.002 * 0 + 0.45 - 7.0, delta=1.5)   # (the harness's ground is near 3)
+
+    def test_the_ground_is_cut_over_the_bowl(self):
+        cb = self.out['cb']
+        ring, S = cb['ring'], cb['S']
+        cross = lambda o, a, b: (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+        signs = {cross(ring[i], ring[(i + 1) % len(ring)], ring[(i + 2) % len(ring)]) > 0 for i in range(len(ring))}
+        self.assertEqual(len(signs), 1, 'the cut is convex (outsideConvex)')
+        n = len(ring)
+        def inside(p):
+            sg = [cross(ring[i], ring[(i + 1) % n], p) for i in range(n)]
+            return all(v > 0 for v in sg) or all(v < 0 for v in sg)
+        self.assertTrue(all(inside(p) for p in S), 'every point of the sunk bowl is inside the cut')
+        self.assertGreater(self.out['hits'], 40)                           # the flight's walls (Round 214)
+        clip = SRC[SRC.index('  function elPortalClipGround(g) {'):]
+        self.assertIn('GROUND_CUTS.map(p=>({poly:p.ring', clip[:1200])
+        self.assertIn('.concat(GROUND_CUTS.map((c) => c.ring));', SRC)                  # the river's sheet
+        self.assertIn('GROUND_CUTS.length ? elPortalClipGround(mergeColored(lotSheetParts))', SRC)   # the complex's district sheet
+        self.assertIn("const CBP_ON = VENUES_ON && !/[?&]cbp=0\\b/.test(location.search);", SECTION)
 
     def test_linc_classes(self):
         self.assertEqual(self.out['classes'], ['E', 'C', 'S', 'S', 'C', 'E', 'E', 'C', 'S', 'S', 'C', 'E', 'E'])
@@ -250,12 +279,13 @@ class Art(unittest.TestCase):
 
     def test_strips_in_order(self):
         ids = [s['id'] for s in self.m['strips']]
-        self.assertEqual(ids, ['cbp-brick', 'linc-glass', 'linc-screen', 'arena-fins', 'arena-podium', 'arena-drum', 'linc-office', 'cbp-atrium'])
+        self.assertEqual(ids, ['cbp-brick', 'linc-glass', 'linc-screen', 'arena-fins', 'arena-podium', 'arena-drum', 'linc-office', 'cbp-atrium',
+                               'cbp-pattison', 'cbp-alley', 'cbp-ivy'])
         order = re.search(r'const VEN_STRIP = \{([^}]+)\}', SECTION).group(1)
-        self.assertEqual([int(x) for x in re.findall(r': (\d)', order)], list(range(8)))
+        self.assertEqual([int(x) for x in re.findall(r': (\d+)', order)], list(range(11)))
         for s in self.m['strips']:
             self.assertGreater(s['aspect'], 1.5)
-            self.assertIn(s['rows'], (1, 2, 3))
+            self.assertTrue(1 <= s['rows'] <= 5, s)   # (the Pattison front's unequal rows: 4.76 a height)
             self.assertTrue(0 <= s['lit'] <= 1)
             self.assertEqual(s['glass'] > 0, s['lit'] > 0, s['id'])   # a strip lit after dark has panes to light
 

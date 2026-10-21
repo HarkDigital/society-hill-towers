@@ -12618,3 +12618,64 @@ Becuna. Both are remodelled under the realistic look in one mesh (`olBuild`, its
   `freeTexOnUpload` uses (the atlas and the railings' canvas).
 Rendered against HEAD's page from the basin's north-east, from the river square-on, 40 m off her side and from the
 promenade by day, and from Mike's night pose and the north-east at night; the far level from 780 m.
+
+## Round 217 — Citizens Bank Park rebuilt, and score bubbles within a mile (Oct 20)
+
+Mike, with a night screenshot from Penn's Landing where a Sixers score bubble stood over the sports complex: "Also,
+Citizens Bank Park. That is not particularly close", then "Yes, but I also want Citizen's bank park to be completely
+remodeled. The current iteration is pretty bad".
+
+**Score bubbles.** Round 214's mile for the concert placards is now one constant, `EVENT_PIN_R` 1,609.34 m, and the score
+bubbles take it too (their tether and ball with them; the building-occlusion test is not asked past it). Measured with
+`scoreTest()`: the ballpark's bubble at 1,503 m shown, at 1,753 m gone, the Linc's and the arena's still up from there.
+The tap that brings back a dismissed event still reaches 14 km (`tests/test_event_dismiss.py` holds it). The first
+edit commented the `nfl` venue out of `SCORE_VENUES` (it shared a line with `mlb`): `scoreTest()` threw, caught in the
+page before the build was kept.
+
+**The research** (a research pass, `spec.md` and 20 Commons photographs in the session's scratchpad, every number with
+its source and confidence): the Phillies' facts pages (the levels over the field: main concourse 23 ft, suites 36, club
+concourse 61, Terrace concourse 81, roof 134; seats sapphire blue; walls 10 ft 6 in, the Angle 12 ft 8 in to 19 ft, centre
+6 ft, right 13 ft 3 in; poles 85 ft), Clem's Baseball and baseballparks.com (the octagonal bowl, the straight backstop,
+the Angle, rows 34, 10, 8 and 16, "The Break" 20 ft down in right), the OSM pitch (way 92483441) and outline (way
+255489463). Three corrections against the repo: the seats are sapphire blue (`south_geometry_research.json` said green),
+the steel is maroon (it said dark green), and home plate is at (-1864.7, 4412.2) with centre field 9.5 degrees east of
+north: Round 92's frame (kept by Round 195) stood 17 m south and 4.5 degrees west of the OSM pitch's poles and backstop.
+
+**The park** (`venCbp215`, in the venues' framework: the same three programs, near and far levels, the field shader):
+- The field 7 m under the street. `GROUND_CUTS` (beside `GROUND_PITS`, which would build a Wildey-style pit) holds the
+  convex hull of the sunk bowl, a little out; `elPortalClipGround` cuts it from the wide and far ground, the sports
+  complex's district lot sheet (the lots' hull ran over the field: the first render showed a grey floor at street level)
+  and, as a second hole, the river's sheet (the field sits under the water's level here: the second render was a flooded
+  bowl). The pit has its floor, its retaining wall, and a street-level slab over the rest of the hull with the bowl's
+  hole, at both levels.
+- The bowl: the foul wall 49 ft 5 in behind the plate and 51 ft off the lines, the stands offset from it with mitred
+  corners, in sections with 1.2 m aisles, every deck in stepped rows (`K.rows`: a riser, a tread and the seats' backs a row,
+  none on an aisle): the field level's 34 to the main concourse, the suites' dark glass and the 2025 LED ring, the club's
+  10, the Terrace's 8, the walkway, the 400s' 16, the glass windbreak, the flat roof over the 400s' top half (patina seams
+  over maroon trusses). The dugouts along each line.
+- Outside, by zone of the front's arc: the Pattison Avenue block round home (four storeys of the generated `cbp-pattison`
+  wall: red brick piers on tan precast, the double-height storefronts, the paired windows, the black-brick diamonds) with
+  copper-green barrel roofs at its corners; the two gates the maroon frame open over the concourses (columns, beams at the
+  floors, V bracing over the Terrace concourse, the 400s' underside lit through it), the club's glass, stair towers of
+  grey panel balconies, an entrance canopy; brick ends. The light towers are portal frames on the roof's back edge, a pair
+  over each gate, their legs carried down the face; a seventh on the right field roof and the board's own.
+- The outfield wall by its measured runs (329, 334, 374, 387, 381, 409, 401, 398, 384, 369, 343, 330 ft) and heights
+  (the out-of-town board black in right, the open rail on centre's 6 ft wall), the field's warning track from them
+  (`uVenFence` widened to 16 points; `venSeg` guards a zero-length segment). Left: the low stands, the porch, Harry the
+  K's glazed under the 2023 board (152 by 86 ft) on its frame, the red sign over it (no lettering), its light tower. Centre:
+  the batter's eye's three walls under the ivy (`cbp-ivy`, made in Round 195 and unused till now), the flags, the clock
+  on its maroon frame, the retired numbers' pavilions, Ashburn Alley at the street with its concession row (the
+  generated `cbp-alley`) and the rooftop bleachers. Right-centre: the stacked bullpens, the Liberty Bell's outline lit
+  after dark on its four-legged maroon tower, its top 102 ft over the street. Right: the stands 20 ft under the
+  grandstand's, the Pavilion and the Pavilion Deck under their own roof.
+- The flight's walls (Round 214): the grandstand's stack, the right field stands, the board and the Bell's tower.
+- The art: `fetch_stadium_art.py` made `cbp-pattison` and `cbp-alley` (gpt-image-2, high); the atlas is eleven strips
+  (the Pattison front's panes in 4.76 rows a height, so its row boundaries fall at 0.25, 0.46 and 0.67 as measured).
+- Measured in the harness: near 37,244 triangles (shell 16,574, seats 20,670), far 1,626, field 14; three draws near,
+  two far. Round 195's park was 10,611 near and 767 far. The budget test's ballpark line is 40,000.
+- Rendered: from behind home plate in the upper deck (photo 05's view), from over centre field, from the air, at the Third
+  Base Gate and on Pattison Avenue, by day and at night, and from 600 m. `?cbp=0` builds Round 195's park and leaves the
+  ground whole; `?real=0` and `?venues=0` as before. `tests/test_remodel_stadiums.py`: the measured fence, the frame,
+  the seat colour, the sink, a convex cut holding the whole bowl, the cut reaching the ground, the river and the lots.
+- Left for later: the "Phillies" script and the "Citizens Bank Park" letters (lettering is the page's rule), the
+  statues, the netting, a crowd on game days.

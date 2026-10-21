@@ -19,7 +19,7 @@ class ElevatedTracks(unittest.TestCase):
             return src[a:src.index(end, a)]
         script = r'''
 const THREE=require(THREE_PATH),groupCity=new THREE.Group();
-const GROUND_PITS=[];   // Round 139: the excavations elPortalClipGround also cuts (none in this harness)
+const GROUND_PITS=[], GROUND_CUTS=[];   // Round 139: the excavations elPortalClipGround also cuts (none in this harness)
 const freeOnUpload=()=>{},dropUploadedArray=function(){this.array=null;},step=(name,fn)=>fn(),siteY=(x,z)=>12+Math.sin(x/700)*3+Math.cos(z/800)*2;
 const pendingUpload=[];   // Round 167: the tie runs wait here to draw unculled once behind the veil
 FIT
