@@ -311,7 +311,9 @@ REAL only), the Irish Famine Memorial and its tricolour, A Man Full of Trouble (
 material, `tvMat`), the Liberty Bell in its glass chamber at the Liberty Bell Center's south end (Round 211, `?bell=0`,
 `__dbg.lbell()`: the footprint split before the core loop, `lbellSplit`), the Fishtown El stations, Girard and Berks (Round 213, `rebuilds/elst.js` on the El's
 own profile through `api.elAt`; the Frankford leg's steel light blue, `?elblue=0` the old dark), City Hall and Glory (Round
-191). `?real=0` keeps every old model. Round 203: a Round 198 cornice runs only where open air stands outside its wall at its head (`townNear`, `townOpen`), its corners decided by one walk round the outside, its coping 3 cm over the head: never lay a ledge or cap in a roof's plane. Every round's art manifest is listed in build.py's art file list, and the tests read
+191), the cruiser Olympia and the submarine Becuna beside her (Round 215, Mike: "Whatever boat this is next to the moshulu
+needs to be remodeled with the Chat GPT API"; `?olympia=0`, `?olart=0`, `__dbg.olympia()`: both bows downriver, as the
+2024 orthophoto's anchors and the Becuna's sail show). `?real=0` keeps every old model. Round 203: a Round 198 cornice runs only where open air stands outside its wall at its head (`townNear`, `townOpen`), its corners decided by one walk round the outside, its coping 3 cm over the head: never lay a ledge or cap in a roof's plane. Every round's art manifest is listed in build.py's art file list, and the tests read
 that list by membership, never by position.
 
 ## The realism pass (Round 188)

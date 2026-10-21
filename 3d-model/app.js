@@ -22562,12 +22562,590 @@ if (uNjLamp > 0.001) {
       own: S.own && S.own.bb.map((q) => +q.toFixed(1)), winFar: S.winFar, bulbPx: S.bulbMat ? S.bulbMat.size : null,
       d: S.near ? Math.round(camera.position.distanceTo(S.c)) : null, frame: S.frame && { Ld: +S.frame.Ld.toFixed(2), W: S.frame.W, a: [+S.frame.ax.toFixed(4), +S.frame.az.toFixed(4)] } };
   }
+  // ---- the cruiser Olympia remodelled (Round 215, Mike, with a night screenshot of Penn's Landing: "Whatever boat this is
+  // next to the moshulu needs to be remodeled with the Chat GPT API"). The old ship was the OSM outline extruded 8 m as one
+  // white slab with a beige box, two plain cylinders and two poles. C-6 as she lies at the Independence Seaport Museum, bow
+  // downriver (south), the submarine Becuna along her starboard side (the promenade's), both as the 2024 photographs and the city's 2024 3-inch
+  // orthophoto show them (Commons 'OLYMPIA (C-6) in Philadelphia 20240529.jpg', a near broadside from the basin, and
+  // 'OLYMPIA berthed at Penn's Landing 20240529.jpg', 'Olympia Penn's Landing PA1.jpg', 'Becuna and Olympia PA1.jpg'; NH
+  // c0605 for her 1899 fit, which the museum keeps). The layout along her from the orthophoto (fractions of her deck from
+  // the stern): the after turret 0.19 facing aft, the mainmast 0.25, the after bridge 0.29, the funnels 0.482 and 0.649,
+  // the forward bridge round the foremast 0.71, the conning tower 0.742, the forward turret 0.781, the anchors 0.93; the
+  // turrets 5.1 m across with their two sighting hoods, the funnels 4.1 m. The heights from the broadside, scaled by the
+  // funnels' breadth and the railings' 1.05 m: the white hull 8.5 m over the water amidships rising to 10.2 m at the stem,
+  // 1.6 m of red bottom showing at her museum draught, the buff superstructure one level of 3.2 m, the funnels 14.6 m over
+  // the deck with 1.7 m black caps, the foremast's two tops at 9 and 19.7 m and its truck at 38, the mainmast's top at
+  // 12.5 m and its truck at 31. The ram stem rakes forward 3 m under the water; the counter overhangs aft.
+  // Everything in her own frame (njFrame's: x forward from midships, y up from the river's sheet, z to starboard) on the
+  // New Jersey's buffer kit (njBuf, njGeometry); one program (olMaterial: a part's own paint, the generated atlas's detail
+  // over it, fetch_olympia_art.py / bake_olympia_art.py: OLYMPIA_ART), the hull's red bottom, portholes and hawse pipes drawn
+  // by the shader; near and far levels by the eye's distance from her hull's box, the railings one alpha-tested draw near,
+  // the anchor lights one Points draw after dark. The Becuna (SS-319, a Balao class boat rebuilt as a GUPPY IA in 1951) is
+  // laid in the same mesh in her own frame: the grey hull, the black casing deck and the streamlined sail 0.43 of her length
+  // from the bow (the orthophoto). ?olympia=0 keeps both old models (and ?real=0 does); ?olart=0 the remodel without its art
+  const OL_ON = REAL && !/[?&]olympia=0\b/.test(location.search);
+  const OL_ART_ON = OL_ON && typeof OLYMPIA_ART !== 'undefined' && !!OLYMPIA_ART && !!OLYMPIA_ART.img && !/[?&]olart=0\b/.test(location.search);
+  const OL_NEAR_R = isTouch ? 380 : 600, OL_HYST = 50, OL_ART_R = 1400;
+  const OL = { built: false, lod: 'both', near: null, far: null, rails: null, lights: null, mat: null, map: null, art: 'none', artOn: { value: 0 }, bytes: 0,
+    tris: {}, f: null, bf: null, Ld: 0, Lb: 0, dist: null, force: null, off: false, err: null, ms: 0, nLights: 0, becuna: false };
+  // the paint (photographed sRGB; the fourth byte the share of the night's wash a part takes)
+  const OLC = {
+    white: [226, 224, 216, 120], buff: [192, 158, 104, 90], buffD: [150, 122, 82, 30], deck: [148, 145, 138, 40], black: [30, 30, 32, 40],
+    glass: [26, 32, 38, 0], wood: [112, 84, 60, 30], boat: [232, 230, 224, 90], rail: [230, 228, 222, 0], sub: [92, 102, 112, 70], subDeck: [40, 42, 45, 30],
+    subDark: [58, 64, 70, 40], inner: [236, 234, 228, 60], steel: [70, 72, 75, 30],
+  };
+  // the kinds: 1 the hull's plating (the boot top, the ports and the hawse pipes by the shader), 2 the superstructure's
+  // walls, 3 the planked decks, 4 the buff plating (funnels, turrets, tops, the conning tower), 5 glass, 6 black paint
+  const OLK = { paint: 0, hull: 1, house: 2, deck: 3, buff: 4, glass: 5, black: 6 };
+  // her freeboard at the deck edge by the fraction of her length from the stern; the forecastle's bulwark
+  const OL_DECK = [[0, 8.0], [0.2, 8.15], [0.5, 8.45], [0.7, 8.75], [0.85, 9.35], [1, 10.2]];
+  const OL_BOOT = 1.6;   // the red bottom showing over the water
+  const OL_FUN = 14.6;   // a funnel's top over the deck amidships
+  const OL_HOUSE = 3.2;  // the superstructure's roof over the deck amidships (the broadside: its buff band 0.4 of the white hull's height)
+  // the half-breadth of an outline at stations 0.5 m apart along a frame (its oriented box's long axis, the bow +x), from
+  // the stern (s = 0) to the bow (s = L), smoothed over 3 m
+  function olBreadth(poly, f) {
+    const L = f.L, n = Math.ceil(L / 0.5) + 1, raw = new Float32Array(n), out = new Float32Array(n);
+    const P = poly.map((q) => { const dx = q[0] - f.cx, dz = q[1] - f.cz; return [dx * f.hx + dz * f.hz, dx * f.sx + dz * f.sz]; });
+    for (let i = 0; i < n; i++) {
+      const x = Math.min(L, i * 0.5) - L / 2;
+      let lo = Infinity, hi = -Infinity;
+      for (let k = 0, m = P.length - 1; k < P.length; m = k++) {
+        const a = P[m], c = P[k];
+        if ((a[0] - x) * (c[0] - x) > 0 || a[0] === c[0]) continue;
+        const z = a[1] + (c[1] - a[1]) * (x - a[0]) / (c[0] - a[0]);
+        lo = Math.min(lo, z); hi = Math.max(hi, z);
+      }
+      raw[i] = hi > lo ? (hi - lo) / 2 : 0;
+    }
+    for (let i = 0; i < n; i++) { let s = 0, w = 0; for (let j = -3; j <= 3; j++) { const k = i + j; if (k < 0 || k >= n) continue; s += raw[k]; w++; } out[i] = Math.min(raw[i] + 0.15, s / w); }
+    return (s) => { const t = clamp(s / 0.5, 0, n - 1), i = Math.min(n - 2, Math.floor(t)); return out[i] + (out[i + 1] - out[i]) * (t - i); };
+  }
+  // a frame with the bow downriver (south, +z): both boats lie that way (the orthophoto: the Olympia's anchors and her jack
+  // at the south end, the Becuna's sail blunt end forward toward it), whichever end of the outline is the pointier
+  function olFrame(poly) {
+    const f = njFrame(poly);
+    if (f.hz < 0) { f.hx = -f.hx; f.hz = -f.hz; f.sx = -f.hz; f.sz = f.hx; }
+    return f;
+  }
+  // the hull: a grid of stations, each a section from the deck edge (the bulwark's top forward) down under the water, the
+  // ram's forward rake in the lower bow and the counter's rise aft; a vertex a grid point, its normal from its neighbours;
+  // the planked deck between the edges with its camber, the forecastle's bulwark's inner face and cap
+  function olHull(b, lo, hb, Ld) {
+    const D = (s) => njTab(OL_DECK, s / Ld), bw = (s) => 1.1 * njSm(0.79, 0.83, s / Ld);
+    const S = [];
+    for (let s = 0; s < Ld; s += lo ? (s < 6 || s > Ld - 12 ? 1.5 : 6) : (s < 7 || s > Ld - 14 ? 0.5 : 1.5)) S.push(s);
+    S.push(Ld);
+    const T = lo ? [0, 0.35, 0.7, 1] : [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1];
+    const pt = (s, t) => {
+      const d = D(s), top = d + bw(s), yb = s < 7 ? -1.6 + (d - 4.4 + 1.6) * Math.pow(1 - s / 7, 1.6) : -1.6;
+      const y = top - t * (top - yb), cw = clamp(1 - s / 7.5, 0, 1) * 0.92;
+      const z = hb(s) * (1 + 0.035 * Math.sin(Math.PI * Math.min(1, t * 1.15))) * (1 - cw * t * t);
+      const ram = 3.0 * njSm(Ld - 14, Ld, s) * Math.pow(clamp((d - y) / (d + 1.6), 0, 1), 1.6);
+      return [s - Ld / 2 + ram, y, z, d];
+    };
+    for (const sd of [1, -1]) {
+      b.seed = sd > 0 ? 1 : 0;
+      const G = S.map((s) => T.map((t) => pt(s, t)));
+      const ix = G.map((row, i) => row.map((p, j) => {
+        const a = G[Math.max(0, i - 1)][j], c = G[Math.min(G.length - 1, i + 1)][j], u = G[i][Math.max(0, j - 1)], w = G[i][Math.min(T.length - 1, j + 1)];
+        const ex = c[0] - a[0], ey = c[1] - a[1], ez = (c[2] - a[2]) * sd, fx = w[0] - u[0], fy = w[1] - u[1], fz = (w[2] - u[2]) * sd;
+        let nx = ey * fz - ez * fy, ny = ez * fx - ex * fz, nz = ex * fy - ey * fx;
+        if (nz * sd < 0 || (Math.abs(nz) < 1e-6 && nx < 0)) { nx = -nx; ny = -ny; nz = -nz; }
+        const nl = Math.hypot(nx, ny, nz) || 1;
+        return b.v(p[0], p[1], p[2] * sd, nx / nl, ny / nl, nz / nl, S[i], p[3] - p[1], OLK.hull, OLC.white);
+      }));
+      for (let i = 0; i < S.length - 1; i++) for (let j = 0; j < T.length - 1; j++) {
+        const q = ix[i][j], want = [b.N[q * 3], b.N[q * 3 + 1], b.N[q * 3 + 2]];
+        b.tri(ix[i][j], ix[i + 1][j], ix[i + 1][j + 1], want); b.tri(ix[i][j], ix[i + 1][j + 1], ix[i][j + 1], want);
+      }
+    }
+    b.seed = 0;
+    // the deck: five points across each station, the camber 15 cm
+    const Z = [-1, -0.5, 0, 0.5, 1];
+    const rows = S.map((s) => Z.map((q) => { const h = Math.max(0, hb(s) - 0.05), y = D(s) + 0.15 * (1 - q * q); return b.v(s - Ld / 2, y, q * h, 0, 1, 0, s, q * h, OLK.deck, OLC.deck); }));
+    for (let i = 0; i < S.length - 1; i++) for (let j = 0; j < Z.length - 1; j++) { b.tri(rows[i][j], rows[i + 1][j], rows[i + 1][j + 1], [0, 1, 0]); b.tri(rows[i][j], rows[i + 1][j + 1], rows[i][j + 1], [0, 1, 0]); }
+    // the bulwark's inner face and its cap
+    for (const sd of [1, -1]) for (let i = 0; i < S.length - 1; i++) {
+      const s0 = S[i], s1 = S[i + 1];
+      if (bw(s1) < 0.05) continue;
+      const z0 = Math.max(0, hb(s0) - 0.14) * sd, z1 = Math.max(0, hb(s1) - 0.14) * sd, e0 = hb(s0) * sd, e1 = hb(s1) * sd;
+      b.face([[s0 - Ld / 2, D(s0), z0], [s1 - Ld / 2, D(s1), z1], [s1 - Ld / 2, D(s1) + bw(s1), z1], [s0 - Ld / 2, D(s0) + bw(s0), z0]], [0, 0, -sd], OLK.paint, OLC.white, (p) => [p[0], p[1]]);
+      b.face([[s0 - Ld / 2, D(s0) + bw(s0), z0], [s1 - Ld / 2, D(s1) + bw(s1), z1], [s1 - Ld / 2, D(s1) + bw(s1), e1], [s0 - Ld / 2, D(s0) + bw(s0), e0]], [0, 1, 0], OLK.paint, OLC.white, (p) => [p[0], p[2]]);
+    }
+    return D;
+  }
+  // a top on a mast: a buff tub (its rim, its inner wall, its floor, its flared foot)
+  function olTub(b, x, z, r, y0, h, seg) {
+    b.lathe([x, y0, z], [0, 1, 0], [[0, 0], [0, r * 0.78], [0.35, r], [h, r], [h, r - 0.07], [0.3, r - 0.07], [0.3, 0]], seg, { k: OLK.buff, col: OLC.buff });
+  }
+  // a cowl ventilator: its pipe, the elbow and the bell, buff outside and white within (the photographs' pale mouths)
+  function olVent(b, x, z, y0, h, a, r, seg) {
+    const dx = Math.cos(a), dz = Math.sin(a), top = [x, y0 + h, z];
+    b.tube([x, y0, z], top, r, r, seg, { k: OLK.paint, col: OLC.buff });
+    const p2 = [x + dx * r * 0.9, y0 + h + r * 0.9, z + dz * r * 0.9];
+    b.tube(top, p2, r, r * 1.05, seg, { k: OLK.paint, col: OLC.buff });
+    const d = [dx, 0, dz];
+    b.lathe(p2, d, [[0, r * 1.05], [r * 0.7, r * 1.45], [r * 1.7, r * 2.4], [r * 1.9, r * 2.5]], seg, { k: OLK.paint, col: OLC.buff });
+    b.lathe(p2, d, [[r * 1.9, r * 2.5], [r * 1.75, r * 2.15], [r * 0.6, r * 1.0]], seg, { k: OLK.paint, col: OLC.inner, cap: true, capCol: OLC.black });
+  }
+  // a turret: the barbette, the gunhouse, its roof and two sighting hoods, the two 8-inch guns (dir +1 forward, -1 aft)
+  function olTurret(b, x, yd, dir, lo) {
+    const seg = lo ? 10 : 28;
+    b.cyl(x, 0, 2.3, 2.3, yd - 0.2, yd + 0.55, seg, { k: OLK.buff, col: OLC.buffD });
+    b.cyl(x, 0, 2.55, 2.55, yd + 0.55, yd + 2.85, seg, { k: OLK.buff, col: OLC.buff, dome: 0.3, kt: OLK.buff, colT: OLC.buff });
+    if (!lo) for (const sz of [1, -1]) b.cyl(x - dir * 0.95, 0.95 * sz, 0.42, 0.42, yd + 3.0, yd + 3.2, 12, { k: OLK.buff, col: OLC.buff, dome: 0.26, kt: OLK.buff, colT: OLC.buff });
+    const el = 3 * Math.PI / 180, d = [dir * Math.cos(el), Math.sin(el), 0];
+    if (!lo) b.box(x + dir * 2.2 - 0.45, x + dir * 2.2 + 0.45, yd + 1.0, yd + 2.15, -1.45, 1.45, { k: OLK.buff, col: OLC.buffD, kt: OLK.buff, colT: OLC.buffD });
+    for (const sz of [1, -1]) b.lathe([x + dir * 2.45, yd + 1.55, 0.78 * sz], d, lo ? [[0, 0.3], [7.1, 0.22]] : [[0, 0.36], [0.7, 0.3], [6.5, 0.21], [6.6, 0.25], [7.1, 0.25]], lo ? 6 : 12, { k: OLK.black, col: OLC.black, cap: true });
+  }
+  // a whaleboat on chocks: white sides, the wooden inside, its sheer
+  function olBoat(b, x, z, y, L, B) {
+    const ring = [], top = [];
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a); ring.push([x + c * L / 2, z + Math.sign(s) * Math.pow(Math.abs(s), 0.7) * B / 2 * 0.72]); top.push([x + c * L / 2, z + Math.sign(s) * Math.pow(Math.abs(s), 0.7) * B / 2]); }
+    for (const dx of [-L * 0.28, L * 0.28]) b.box(x + dx - 0.15, x + dx + 0.15, y, y + 0.45, z - B * 0.4, z + B * 0.4, { k: OLK.paint, col: OLC.buffD, kt: OLK.paint, colT: OLC.buffD });
+    b.prism(ring, y + 0.4, y + 1.2, { top, k: OLK.paint, col: OLC.boat, kt: OLK.paint, colT: OLC.wood });
+  }
+  function olModel(lo, f, hb, Ld) {
+    const b = njBuf(), rails = [];
+    const X = (fr) => fr * Ld - Ld / 2;
+    const D = olHull(b, lo, hb, Ld), Dx = (fr) => D(fr * Ld);
+    const Dm = Dx(0.5), YH = Dm + OL_HOUSE;
+    // the superstructure: one level (3.2 m) from the after turret's ring to the forward bridge, chamfered at its ends; its roof
+    // the boat deck, planked
+    const H = [[0.245, 3.4], [0.265, 5.4], [0.665, 5.4], [0.69, 3.8]];
+    const ring = [...H.map(([fr, w]) => [X(fr), w]), ...H.slice().reverse().map(([fr, w]) => [X(fr), -w])];
+    b.prism(ring, Dx(0.245) - 0.05, YH, { k: OLK.house, col: OLC.buff, uv: 'level', kt: OLK.deck, colT: OLC.deck });
+    for (let i = 0; i < ring.length; i++) rails.push({ a: ring[i], c: ring[(i + 1) % ring.length], y: YH, h: 1.0 });
+    // the turrets
+    olTurret(b, X(0.781), Dx(0.781) + 0.12, 1, lo);
+    olTurret(b, X(0.19), Dx(0.19) + 0.12, -1, lo);
+    // the funnels: a collar, the buff plating, the black cap, a soot-dark mouth, the steam pipe up the after side
+    for (const fr of [0.649, 0.482]) {
+      const x = X(fr), top = Dm + OL_FUN, seg = lo ? 10 : 32;
+      b.cyl(x, 0, 2.35, 2.35, YH - 0.05, YH + 0.8, seg, { k: OLK.buff, col: OLC.buffD, kt: OLK.deck, colT: OLC.buffD });
+      b.cyl(x, 0, 2.05, 2.05, YH + 0.8, top - 1.7, seg, { k: OLK.buff, col: OLC.buff });
+      b.cyl(x, 0, 2.09, 2.09, top - 1.7, top, seg, { k: OLK.black, col: OLC.black, kt: lo ? OLK.black : -1, colT: OLC.black });
+      if (!lo) {
+        b.lathe([x, top, 0], [0, 1, 0], [[0, 2.09], [0.12, 2.16], [0.12, 1.95], [-0.6, 1.95], [-0.6, 0]], seg, { k: OLK.black, col: OLC.black });
+        b.tube([x - 2.3, YH, 0], [x - 2.3, top + 0.7, 0], 0.17, 0.17, 8, { k: OLK.paint, col: OLC.buff });
+      }
+    }
+    // the conning tower, its sighting slit and its roof
+    { const x = X(0.742), y = Dx(0.742) + 0.1, seg = lo ? 10 : 24;
+      b.cyl(x, 0, 1.55, 1.55, y, y + 3.0, seg, { k: OLK.buff, col: OLC.buff });
+      b.cyl(x, 0, 1.57, 1.57, y + 3.0, y + 3.3, seg, { k: OLK.black, col: OLC.black });
+      b.cyl(x, 0, 1.55, 1.55, y + 3.3, y + 3.55, seg, { k: OLK.buff, col: OLC.buff, dome: 0.3, kt: OLK.buff, colT: OLC.buff }); }
+    // the chart house under the forward bridge, and the bridge itself round the foremast: a planked platform the breadth of
+    // the ship and a little over, on stanchions to the deck at its wings
+    b.box(X(0.672), X(0.700), YH - 0.05, YH + 2.5, -2.3, 2.3, { k: OLK.house, col: OLC.buff, uv: 'level', kt: OLK.deck, colT: OLC.deck });
+    const bridge = (fr0, fr1, y, extra) => {
+      const x0 = X(fr0), x1 = X(fr1), w = Math.max(hb(fr0 * Ld), hb(fr1 * Ld)) + extra;
+      b.box(x0, x1, y - 0.25, y, -w, w, { k: OLK.paint, col: OLC.buffD, kt: OLK.deck, colT: OLC.deck, bot: true, colB: OLC.buffD });
+      if (!lo) for (const sz of [1, -1]) for (const x of [x0 + 0.3, x1 - 0.3]) b.tube([x, D((x + Ld / 2)) + 0.1, (w - 0.9) * sz], [x, y - 0.25, (w - 0.9) * sz], 0.07, 0.07, 6, { k: OLK.paint, col: OLC.buff });
+      rails.push({ a: [x0, -w], c: [x1, -w], y, h: 1.05 }, { a: [x1, -w], c: [x1, w], y, h: 1.05 }, { a: [x1, w], c: [x0, w], y, h: 1.05 }, { a: [x0, w], c: [x0, -w], y, h: 1.05 });
+    };
+    bridge(0.698, 0.722, Dm + 6.4, 0.6);
+    b.box(X(0.268), X(0.300), YH - 0.05, YH + 1.9, -2.1, 2.1, { k: OLK.house, col: OLC.buff, uv: 'level', kt: OLK.deck, colT: OLC.deck });
+    bridge(0.284, 0.304, Dm + 5.6, 0.5);
+    // the masts: the foremast's military tops (its lower at 9 m, its upper at 19.7 with two searchlights), the topmast, its
+    // yard and crosstrees; the mainmast's one top, its yard and its signal gaff
+    { const x = X(0.709), y0 = Dx(0.709), sg = lo ? 6 : 14, ts = lo ? 10 : 24;
+      b.tube([x, y0, 0], [x, y0 + 9.1, 0], 0.55, 0.5, sg, { k: OLK.buff, col: OLC.buff });
+      olTub(b, x, 0, 1.5, y0 + 9.0, 1.5, ts);
+      b.tube([x, y0 + 10.5, 0], [x, y0 + 19.8, 0], 0.46, 0.4, sg, { k: OLK.buff, col: OLC.buff });
+      olTub(b, x, 0, 2.0, y0 + 19.7, 1.6, ts);
+      b.tube([x, y0 + 21.0, 0], [x, y0 + 38, 0], 0.27, 0.11, sg, { k: OLK.paint, col: OLC.buff });
+      b.lathe([x, y0 + 33.5, 0], [0, 0, 1], [[-5, 0.06], [-2, 0.12], [0, 0.15], [2, 0.12], [5, 0.06]], lo ? 4 : 8, { k: OLK.paint, col: OLC.buff });
+      if (!lo) {
+        b.tube([x, y0 + 28, -1.6], [x, y0 + 28, 1.6], 0.07, 0.07, 6, { k: OLK.paint, col: OLC.buff });
+        b.tube([x - 1.2, y0 + 28, 0], [x + 1.2, y0 + 28, 0], 0.07, 0.07, 6, { k: OLK.paint, col: OLC.buff });
+        for (const sz of [1, -1]) b.lathe([x - 0.6, y0 + 21.7, 1.2 * sz], [1, 0, 0], [[0, 0.32], [0.75, 0.36], [0.8, 0.3]], 10, { k: OLK.black, col: OLC.black, cap: true, capCol: OLC.glass });
+        b.lathe([x + 0.6, y0 + 10.9, 0], [1, 0, 0], [[0, 0.28], [0.65, 0.31], [0.7, 0.26]], 10, { k: OLK.black, col: OLC.black, cap: true, capCol: OLC.glass });
+      } }
+    { const x = X(0.25), y0 = Dx(0.25), sg = lo ? 6 : 14;
+      b.tube([x, y0, 0], [x, y0 + 12.6, 0], 0.46, 0.4, sg, { k: OLK.buff, col: OLC.buff });
+      olTub(b, x, 0, 1.4, y0 + 12.5, 1.2, lo ? 10 : 22);
+      b.tube([x, y0 + 13.6, 0], [x, y0 + 31, 0], 0.27, 0.1, sg, { k: OLK.paint, col: OLC.buff });
+      b.lathe([x, y0 + 25, 0], [0, 0, 1], [[-4.3, 0.05], [0, 0.13], [4.3, 0.05]], lo ? 4 : 8, { k: OLK.paint, col: OLC.buff });
+      if (!lo) b.tube([x - 0.3, y0 + 19, 0], [x - 4.6, y0 + 21.2, 0], 0.09, 0.06, 6, { k: OLK.paint, col: OLC.buff }); }
+    if (!lo) {
+      // the boat deck: a skylight, the whaleboats, the cowl ventilators round the funnels, the two boat cranes
+      b.box(X(0.33), X(0.37), YH, YH + 0.75, -1.6, 1.6, { k: OLK.paint, col: OLC.buff, kt: OLK.glass, colT: OLC.glass });
+      for (const sz of [1, -1]) olBoat(b, X(0.385), 3.45 * sz, YH, 7.4, 2.0);
+      const V = [[0.525, 2.7, 0], [0.60, 3.3, 0], [0.43, 2.6, Math.PI], [0.695, 3.7, 0], [0.585, 4.4, Math.PI / 2]];
+      for (const [fr, zz, a] of V) for (const sz of [1, -1]) olVent(b, X(fr), zz * sz, YH, fr === 0.695 ? 2.6 : 4.0, a === Math.PI / 2 ? a * sz : a, 0.44, 14);
+      for (const sz of [1, -1]) {
+        const x = X(0.445), z = 4.55 * sz, P = [[x, YH, z], [x, YH + 6.8, z], [x, YH + 8.2, z + 0.7 * sz], [x, YH + 8.6, z + 2.0 * sz], [x, YH + 8.1, z + 3.3 * sz]];
+        for (let i = 0; i < P.length - 1; i++) b.tube(P[i], P[i + 1], i ? 0.2 : 0.26, 0.2, 8, { k: OLK.paint, col: OLC.buff });
+        b.tube(P[4], [P[4][0], P[4][1] - 2.2, P[4][2]], 0.03, 0.03, 4, { k: OLK.paint, col: OLC.steel });
+      }
+      // the 5-inch guns' sponsons down her sides, a gun in each port
+      for (const fr of [0.30, 0.42, 0.56, 0.665]) for (const sz of [1, -1]) {
+        const s = fr * Ld, x = X(fr), z = (hb(s) - 0.35) * sz, y = D(s);
+        b.lathe([x, y - 5.0, z], [0, 1, 0], [[0, 0.3], [0.4, 1.3], [2.95, 1.3], [3.25, 0.3]], 16, { k: OLK.paint, col: OLC.white });
+        b.box(x - 0.42, x + 0.42, y - 3.85, y - 3.05, z + 1.31 * sz - 0.06, z + 1.31 * sz + 0.06, { k: OLK.black, col: OLC.black, kt: -1 });
+        b.tube([x, y - 3.45, z + 1.0 * sz], [x + 0.6, y - 3.45, z + 3.9 * sz], 0.13, 0.1, 8, { k: OLK.black, col: OLC.black });
+      }
+      // the bow: the anchors on their bolsters, the fish davits, the jackstaff; the ensign staff at the stern
+      for (const sz of [1, -1]) {
+        const s = 0.932 * Ld, x = X(0.932), z = (hb(s) - 0.55) * sz, y = D(s) + 1.1;
+        b.box(x - 1.3, x + 1.3, y, y + 0.35, z - 0.35, z + 0.35, { k: OLK.black, col: OLC.steel, kt: OLK.black, colT: OLC.steel });
+        b.box(x + 0.9, x + 1.2, y, y + 0.9, z - 0.6, z + 0.6, { k: OLK.black, col: OLC.steel, kt: OLK.black, colT: OLC.steel });
+        const dx = X(0.902), dz = (hb(0.902 * Ld) - 0.6) * sz, dy = D(0.902 * Ld) + 1.1;
+        const P = [[dx, dy, dz], [dx, dy + 3.0, dz], [dx + 0.4, dy + 3.6, dz + 0.6 * sz], [dx + 0.6, dy + 3.4, dz + 1.6 * sz]];
+        for (let i = 0; i < P.length - 1; i++) b.tube(P[i], P[i + 1], 0.13, 0.12, 8, { k: OLK.paint, col: OLC.buff });
+      }
+      b.tube([Ld / 2 - 0.5, Dx(1) + 1.1, 0], [Ld / 2 - 0.3, Dx(1) + 6.2, 0], 0.07, 0.04, 6, { k: OLK.paint, col: OLC.buff });
+      b.tube([-Ld / 2 + 1.0, Dx(0) + 0.1, 0], [-Ld / 2 + 0.6, Dx(0) + 6.4, 0], 0.07, 0.04, 6, { k: OLK.paint, col: OLC.buff });
+    }
+    // the deck edge's railing, a run a side from the counter to the forecastle's bulwark
+    for (const sd of [1, -1]) {
+      let prev = null;
+      for (let s = 1.0; s <= 0.81 * Ld; s += 3) {
+        const cur = [s - Ld / 2, (hb(s) - 0.08) * sd, D(s)];
+        if (prev) rails.push({ a: [prev[0], prev[1]], c: [cur[0], cur[1]], y: prev[2], y1: cur[2], h: 1.05 });
+        prev = cur;
+      }
+    }
+    return { b, rails, YH, Dm };
+  }
+  // the Becuna in her own frame: the grey hull round its pressure hull, the black casing deck along her top, the bow's rise
+  // and the stern's fall to the water, the GUPPY sail and its masts
+  function olBecuna(b, hb, Lb, lo) {
+    const S = [];
+    for (let s = 0; s < Lb; s += lo ? (s < 8 || s > Lb - 8 ? 2 : 8) : (s < 10 || s > Lb - 10 ? 0.6 : 2)) S.push(s);
+    S.push(Lb);
+    const Dk = (s) => 1.85 + 0.75 * njSm(0.86, 1, s / Lb) - 0.9 * (1 - njSm(0, 0.14, s / Lb));
+    const sec = (s) => { const h = hb(s), c = Math.min(1.5, h * 0.42), d = Dk(s); return [[d, c], [d - 0.35, h * 0.8], [0.6, h], [-1.4, h * 0.94]]; };
+    for (const sd of [1, -1]) {
+      const G = S.map((s) => sec(s));
+      const ix = G.map((row, i) => row.map(([y, z], j) => {
+        const nz0 = j === 0 ? 0.35 : j === 1 ? 0.8 : 1, ny0 = j === 0 ? 0.95 : j === 1 ? 0.6 : 0.05, l = Math.hypot(nz0, ny0);
+        return b.v(S[i] - Lb / 2, y, z * sd, 0, ny0 / l, nz0 / l * sd, S[i], y, OLK.paint, j === 3 ? OLC.subDark : OLC.sub);
+      }));
+      for (let i = 0; i < S.length - 1; i++) for (let j = 0; j < 3; j++) { b.tri(ix[i][j], ix[i + 1][j], ix[i + 1][j + 1], [0, 0.3, sd]); b.tri(ix[i][j], ix[i + 1][j + 1], ix[i][j + 1], [0, 0.3, sd]); }
+    }
+    const rows = S.map((s) => [-1, 1].map((q) => { const c = Math.min(1.5, hb(s) * 0.42); return b.v(s - Lb / 2, Dk(s) + 0.04, q * c, 0, 1, 0, s, q * c, OLK.paint, OLC.subDeck); }));
+    for (let i = 0; i < S.length - 1; i++) { b.tri(rows[i][0], rows[i + 1][0], rows[i + 1][1], [0, 1, 0]); b.tri(rows[i][0], rows[i + 1][1], rows[i][1], [0, 1, 0]); }
+    // the sail: an airfoil in plan, blunt forward, 14 m long and 2.3 m wide, 5.4 m over the casing
+    const sc = 0.57 * Lb - Lb / 2, len = 14, ring = [], n = lo ? 10 : 24;
+    for (let i = 0; i <= n; i++) { const u = i / n, w = 1.15 * Math.sqrt(Math.sin(Math.PI / 2 * Math.min(1, u * 3.2))) * (1 - 0.82 * Math.pow(Math.max(0, (u - 0.3) / 0.7), 1.6)); ring.push([sc + len / 2 - u * len, w]); }
+    const sring = [...ring, ...ring.slice(1).reverse().map(([x, w]) => [x, -w])];
+    const y0 = Dk(0.57 * Lb);
+    b.prism(sring, y0 - 0.1, y0 + 5.4, { k: OLK.paint, col: OLC.sub, kt: OLK.paint, colT: OLC.subDark });
+    if (!lo) for (const [dx, h, r] of [[4.2, 3.4, 0.14], [3.0, 2.8, 0.12], [1.6, 2.2, 0.16], [-0.4, 1.4, 0.2]]) b.tube([sc + dx, y0 + 5.4, 0], [sc + dx, y0 + 5.4 + h, 0], r, r * 0.8, 8, { k: OLK.paint, col: OLC.subDark });
+    return { y0, sring };
+  }
+  // the second frame's buffer laid into the first's (both ships one mesh in the Olympia's frame)
+  function olAppend(b, b2, f2, f) {
+    const base = b.nv;
+    for (let i = 0; i < b2.nv; i++) {
+      const x = b2.P[i * 3], y = b2.P[i * 3 + 1], z = b2.P[i * 3 + 2];
+      const wx = f2.cx + f2.hx * x + f2.sx * z, wz = f2.cz + f2.hz * x + f2.sz * z, dx = wx - f.cx, dz = wz - f.cz;
+      const nx = b2.N[i * 3], nz = b2.N[i * 3 + 2], nwx = f2.hx * nx + f2.sx * nz, nwz = f2.hz * nx + f2.sz * nz;
+      b.P.push(dx * f.hx + dz * f.hz, y + f2.W0 - f.W0, dx * f.sx + dz * f.sz);
+      b.N.push(nwx * f.hx + nwz * f.hz, b2.N[i * 3 + 1], nwx * f.sx + nwz * f.sz);
+    }
+    for (const v of b2.T) b.T.push(v);
+    for (const v of b2.K) b.K.push(v);
+    for (const v of b2.C) b.C.push(v);
+    for (const v of b2.I) b.I.push(v + base);
+    b.nv += b2.nv;
+  }
+  // the railings: stanchions every 1.8 m with a top rail and two courses, white, one alpha-tested texture
+  function olRailTex() {
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 64;
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, 128, 64);
+    c.fillStyle = '#e6e4dc';
+    c.fillRect(0, 0, 6, 64);
+    c.fillRect(0, 0, 128, 6); c.fillRect(0, 26, 128, 4); c.fillRect(0, 46, 128, 4);
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8); t.wrapS = THREE.RepeatWrapping;
+    return freeTexOnUpload(t);
+  }
+  function olRails(list) {
+    const r = { P: [], N: [], T: [], I: [], nv: 0 };
+    for (const e of list) {
+      const a = e.a, c = e.c, L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (L < 0.2) continue;
+      const n = [-(c[1] - a[1]) / L, (c[0] - a[0]) / L], ya = e.y, yc = e.y1 == null ? e.y : e.y1, u1 = L / 1.8;
+      for (const [p, y, u, v] of [[a, ya, 0, 1], [c, yc, u1, 1], [c, yc + e.h, u1, 0], [a, ya + e.h, 0, 0]]) { r.P.push(p[0], y, p[1]); r.N.push(n[0], 0, n[1]); r.T.push(u, v); }
+      r.I.push(r.nv, r.nv + 1, r.nv + 2, r.nv, r.nv + 2, r.nv + 3); r.nv += 4;
+    }
+    return r;
+  }
+  // the program: the part's paint, the atlas's cell as detail over its own mean, the hull's red bottom, its portholes and
+  // hawse pipes; at night a wash from the promenade's lamps (a part's share of it, its colour's fourth byte, falling off up
+  // her side) and the street lamps' pools; the weather
+  function olMaterial(f) {
+    if (!OL.map) {
+      const blank = document.createElement('canvas'); blank.width = blank.height = 1;
+      OL.map = new THREE.Texture(blank); OL.map.encoding = THREE.sRGBEncoding; OL.map.anisotropy = anisoOf(8);
+    }
+    const A = OL_ART_ON ? OLYMPIA_ART : null;
+    const cells = [0, 1, 2, 3].map((k) => {
+      if (!A) return new THREE.Vector4(0, 0, 1, 1);
+      const col = k % 2, row = Math.floor(k / 2), px = A.pad[0] * 0.5, py = A.pad[1] * 0.5;
+      return new THREE.Vector4(col * 0.5 + px, 0.5 - row * 0.5 + py, 0.5 - 2 * px, 0.5 - 2 * py);
+    });
+    const U = {
+      uOlCell: { value: cells }, uOlM: { value: [0, 1, 2, 3].map((k) => new THREE.Vector2(...(A ? A.m[k] : [10, 10]))) },
+      uOlMean: { value: [0, 1, 2, 3].map((k) => new THREE.Vector3(...(A ? A.mean[k] : [0.5, 0.5, 0.5]))) },
+      uOlArt: OL.artOn, uOlW0: { value: f.W0 }, uOlLd: { value: OL.Ld }, uOlLamp: lampUniform,
+    };
+    const mat = new THREE.MeshStandardMaterial({ map: OL.map, roughness: 0.6, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    const gl2 = !!renderer.capabilities.isWebGL2;
+    mat.onBeforeCompile = (sh) => {
+      wxSurfacePatch(sh);
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute vec2 aK; attribute vec4 aCol; uniform vec4 uOlCell[4]; uniform vec2 uOlM[4]; uniform vec3 uOlMean[4]; uniform float uOlW0;
+varying vec2 vOlUv; varying vec2 vOlK; varying vec4 vOlCol; varying vec4 vOlCell; varying vec2 vOlM; varying vec3 vOlMean; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;`)
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+vOlUv = uv; vOlK = aK; vOlCol = vec4(pow(aCol.rgb, vec3(2.2)) * 0.88, aCol.a);
+int olI = int(clamp(aK.x - 1.0, 0.0, 3.0) + 0.5);
+vOlCell = uOlCell[olI]; vOlM = uOlM[olI]; vOlMean = uOlMean[olI];`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uOlW0 + 2.0;`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform float uOlArt, uOlW0, uOlLd, uOlLamp;
+varying vec2 vOlUv; varying vec2 vOlK; varying vec4 vOlCol; varying vec4 vOlCell; varying vec2 vOlM; varying vec3 vOlMean; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;
+float olK; float olGlass;
+float olH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float olVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(olH(i), olH(i + vec2(1.0, 0.0)), f.x), mix(olH(i + vec2(0.0, 1.0)), olH(i + vec2(1.0, 1.0)), f.x), f.y); }
+// a round port at c (metres along, metres down), radius r: 1 inside the glass, its rim's ring in .y
+vec2 olPort(vec2 p, vec2 c, float r, float aw) { float d = length(p - c); return vec2(1.0 - smoothstep(r - aw, r + aw, d), (1.0 - smoothstep(r + 0.07 - aw, r + 0.07 + aw, d)) * smoothstep(r - aw, r + aw, d)); }`)
+        .replace('#include <map_fragment>', [
+          'olK = floor(vOlK.x + 0.5); olGlass = 0.0;',
+          'float olHu = step(0.5, olK) * step(olK, 1.5), olHo = step(1.5, olK) * step(olK, 2.5);',
+          'vec3 olAlb = vOlCol.rgb;',
+          // the tile coordinate and its gradients where the flow is uniform: the hull's runs down from the deck edge, the
+          // superstructure's up its level (both clamped), the decks' and the buff's wrap; a wall tile mirrored by its place
+          'vec2 olT = vOlUv / max(vOlM, vec2(0.01)); vec2 olTx = dFdx(olT), olTy = dFdy(olT);',
+          'float olFx = fract(olT.x); if (olHo > 0.5 && olH(vec2(floor(olT.x), 5.17)) > 0.5) olFx = 1.0 - olFx;',
+          'float olFy = olHu > 0.5 ? clamp(1.0 - olT.y, 0.002, 0.998) : olHo > 0.5 ? clamp(vOlUv.y / 2.7, 0.002, 0.998) : fract(olT.y);',
+          'vec2 olA = vOlCell.xy + vec2(olFx, olFy) * vOlCell.zw;',
+          'if (olK > 0.5 && olK < 4.5 && uOlArt > 0.5) {',
+          '  vec3 tx = ' + (gl2 ? 'textureGrad(map, olA, olTx * vOlCell.zw, olTy * vOlCell.zw).rgb' : 'texture2D(map, olA).rgb') + ';',
+          '  vec3 r = tx / max(vOlMean, vec3(1e-3));',
+          '  float lr = dot(tx, vec3(0.2126, 0.7152, 0.0722)) / max(dot(vOlMean, vec3(0.2126, 0.7152, 0.0722)), 1e-3);',
+          '  float fp = max(max(abs(olTx.x), abs(olTy.x)) * 1024.0, max(abs(olTx.y), abs(olTy.y)) * 512.0);',
+          '  lr = mix(lr, 1.0 + (lr - 1.0) * 1.6, olHo);',
+          '  float fade = olHo > 0.5 ? 0.55 * smoothstep(24.0, 140.0, fp) : 0.7 * smoothstep(2.0, 9.0, fp);',
+          '  olAlb *= mix(vec3(1.0), clamp(mix(vec3(lr), r, olK > 2.5 && olK < 3.5 ? 0.6 : 0.25), 0.3, 2.2), 1.0 - fade);',
+          '}',
+          // the hull: the red bottom to 1.6 m over the water under a thin line of waterline grime; two rows of ports (some
+          // deadlights closed), the hawse pipes in the bow, all gone into the paint as they shrink under a pixel
+          'if (olHu > 0.5) {',
+          '  float hy = vWPos.y - uOlW0, aw = max(fwidth(hy), 1e-3);',
+          '  olAlb *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.35, hy - ' + OL_BOOT.toFixed(2) + '));',
+          '  olAlb = mix(vec3(0.255, 0.032, 0.026), olAlb, smoothstep(' + OL_BOOT.toFixed(2) + ' - aw, ' + OL_BOOT.toFixed(2) + ' + aw, hy));',
+          '  vec2 p = vOlUv; float pw = max(fwidth(p.x), fwidth(p.y)), pk = 1.0 - smoothstep(0.06, 0.16, pw);',
+          '  if (pk > 0.0 && p.x > 4.0 && p.x < uOlLd - 6.0) {',
+          '    float ia = floor(p.x / 3.0), ib = floor(p.x / 5.2 + 0.37);',
+          '    vec2 a = olPort(p, vec2((ia + 0.5) * 3.0, 3.4), 0.21, pw) * step(0.42, olH(vec2(ia, 2.0 + vOlK.y)));',
+          '    vec2 b = olPort(p, vec2((ib + 0.5 - 0.37) * 5.2, 1.45), 0.19, pw) * step(0.62, olH(vec2(ib, 7.0 + vOlK.y)));',
+          '    float g = (a.x + b.x) * pk, rim = (a.y + b.y) * pk;',
+          '    olAlb = mix(olAlb, olAlb * 0.72, rim); olAlb = mix(olAlb, vec3(0.012, 0.014, 0.017), g); olGlass = g;',
+          '  }',
+          '  vec2 hq = (p - vec2(uOlLd - 3.3, 2.1)) / vec2(0.62, 0.48); float hd = length(hq), haw = max(fwidth(hd), 1e-3);',
+          '  olAlb = mix(olAlb, vec3(0.03, 0.03, 0.03), 1.0 - smoothstep(1.0 - haw, 1.0 + haw, hd));',
+          '  olAlb *= 1.0 - 0.25 * (smoothstep(0.85, 1.0, hd) * (1.0 - smoothstep(1.0, 1.3, hd)));',
+          '}',
+          // plain paint: a touch of the weather by place; the funnels' and the turrets' buff the same
+          'if (olK < 0.5 || (olK > 3.5 && olK < 4.5)) olAlb *= 0.94 + 0.1 * olVN(vWPos.xz * 0.4 + vWPos.y * 0.7);',
+          'if (olK > 4.5 && olK < 5.5) olGlass = 1.0;',
+          'diffuseColor.rgb *= olAlb;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = olK < 0.5 ? 0.62 : olK < 1.5 ? mix(0.55, 0.12, olGlass) : olK < 2.5 ? 0.6 : olK < 3.5 ? 0.86 : olK < 4.5 ? 0.6 : olK < 5.5 ? 0.08 : 0.55;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uOlLamp > 0.001) {
+  vec3 nW = normalize(vWNorm);
+  float hw = vWPos.y - uOlW0;
+  float face = (1.0 - smoothstep(0.35, 0.8, abs(nW.y))) + 0.3 * smoothstep(0.6, 0.9, nW.y);
+  float fall = olK > 0.5 && olK < 1.5 ? mix(0.5, 0.22, smoothstep(0.0, 7.0, vOlUv.y)) : mix(0.42, 0.16, smoothstep(9.0, 30.0, hw));
+  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.93, 0.82) * vOlCol.a * face * fall * (1.0 - olGlass) * uOlLamp;
+}`);
+      lampLightPatch(sh, 'vWPos', 'wall');
+    };
+    mat.customProgramCacheKey = () => 'olympia' + (gl2 ? '2' : '1') + '|wx';
+    architecturalBloom(mat, 0.12);
+    return mat;
+  }
+  function olLoadArt() {
+    if (OL.art !== 'none' || !OL_ART_ON) return;
+    OL.art = 'loading';
+    artImage(artSrc(OLYMPIA_ART.img, OLYMPIA_ART.imgHalf)).then((im) => {
+      if (!im) { OL.art = 'failed'; return; }
+      OL.map.image = im; OL.map.needsUpdate = true; freeTexOnUpload(OL.map);
+      OL.bytes = im.width * im.height * 4 * 4 / 3;
+      OL.artOn.value = 1; OL.art = 'ready';
+    });
+  }
+  // the anchor lights at the jackstaff and the ensign staff (and the Becuna's at her sail), one Points draw after dark,
+  // sized as the New Jersey's deck lamps
+  const olLampU = { uOlBuf: { value: 800 } };
+  function olLights(f, Ld, top) {
+    const pos = [], add = (x, y, z) => { const p = njW(f, x, y, z); pos.push(p[0], p[1], p[2]); };
+    add(Ld / 2 - 0.3, top[0] + 5.2, 0); add(-Ld / 2 + 0.6, top[1] + 6.5, 0);
+    if (OL.bf && OL.bTop) { const p = njW(OL.bf, OL.bTop[0], OL.bTop[1], 0); pos.push(p[0], p[1], p[2]); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.computeBoundingSphere();
+    const m = new THREE.PointsMaterial({ color: new THREE.Color(1.0, 0.94, 0.84), transparent: true, opacity: 0, depthWrite: false, blending: POST.on ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false, sizeAttenuation: false, size: 1 });
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, olLampU);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uOlBuf;')
+        .replace('gl_PointSize = size;', 'float olPk = max(1.0, uOlBuf / 900.0); gl_PointSize = clamp(0.9 * projectionMatrix[1][1] * 0.5 * uOlBuf / max(1.0, -mvPosition.z), 2.5 * olPk, 5.5 * olPk);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= ' + (POST.on ? 'smoothstep(0.5, 0.1, length(gl_PointCoord - vec2(0.5)))' : '1.0 - smoothstep(0.3, 0.5, length(gl_PointCoord - vec2(0.5)))') + ';');
+    };
+    m.customProgramCacheKey = () => 'olympia-lamps';
+    postRaw(m);
+    architecturalBloom(m);
+    const p = new THREE.Points(g, m);
+    p.frustumCulled = false; pendingUpload.push(p); p.renderOrder = 11; p.name = 'olympia-lamps';
+    OL.nLights = pos.length / 3;
+    return p;
+  }
+  // both ships, a level each, the railings and the lights; her hull, her superstructure, her funnels and turrets and the
+  // Becuna's hull and sail noted for the flight (Round 214)
+  function olBuild(polyO, polyB) {
+    const t0 = performance.now(), f = olFrame(polyO), hb = olBreadth(polyO, f), Ld = f.L;
+    OL.f = f; OL.Ld = Ld;
+    let bf = null, hbB = null;
+    if (polyB) { bf = olFrame(polyB); hbB = olBreadth(polyB, bf); OL.bf = bf; OL.Lb = bf.L; }
+    const mat = olMaterial(f); OL.mat = mat;
+    const mk = (g, m2, nm) => {
+      freeOnUpload(g);
+      const m = new THREE.Mesh(g, m2); m.matrixAutoUpdate = false; m.frustumCulled = false; m.castShadow = m.receiveShadow = true; m.name = nm;
+      groupCity.add(m); pendingUpload.push(m);
+      return m;
+    };
+    const level = (lo) => {
+      const M = olModel(lo, f, hb, Ld);
+      if (bf) { const b2 = njBuf(), r = olBecuna(b2, hbB, bf.L, lo); OL.bTop = [0.57 * bf.L - bf.L / 2 + 4.2, r.y0 + 9.1]; OL.bSail = r; olAppend(M.b, b2, bf, f); }
+      return M;
+    };
+    const far = level(true);
+    OL.far = mk(njGeometry(far.b, f), mat, 'olympia-far'); OL.tris.far = far.b.I.length / 3;
+    if (!TIER2) {
+      const near = level(false);
+      OL.near = mk(njGeometry(near.b, f), mat, 'olympia-near'); OL.tris.near = near.b.I.length / 3;
+      OL.near.userData.occStandIn = OL.far;
+      const r = olRails(near.rails);
+      const rMat = new THREE.MeshStandardMaterial({ map: olRailTex(), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0 });
+      OL.rails = mk(njGeometry({ P: r.P, N: r.N, T: r.T, I: r.I, nv: r.nv }, f), rMat, 'olympia-rails'); OL.rails.castShadow = false; OL.tris.rails = r.I.length / 3;
+      OL.rails.userData.occStandIn = OL.far;
+    }
+    OL.lights = olLights(f, Ld, [njTab(OL_DECK, 1) + 1.1, njTab(OL_DECK, 0)]); groupCity.add(OL.lights);
+    // the flight's walls: the hull to her deck, the superstructure, the funnels and the turrets, the Becuna to her casing
+    // and her sail
+    const W = (x, z) => { const p = njW(f, x, 0, z); return [p[0], p[2]]; }, Dm = njTab(OL_DECK, 0.5);
+    hitNote(polyO, f.W0 + Dm);
+    hitNote([[0.245, -5.4], [0.69, -5.4], [0.69, 5.4], [0.245, 5.4]].map(([fr, z]) => W(fr * Ld - Ld / 2, z)), f.W0 + Dm + OL_HOUSE);
+    for (const fr of [0.649, 0.482]) { const p = W(fr * Ld - Ld / 2, 0); hitSquare(p[0], p[1], 2.1, f.W0 + Dm + OL_FUN); }
+    for (const fr of [0.781, 0.19]) { const p = W(fr * Ld - Ld / 2, 0); hitSquare(p[0], p[1], 2.5, f.W0 + njTab(OL_DECK, fr) + 3.2); }
+    if (bf && OL.bSail) {
+      hitNote(polyB, bf.W0 + 2.0);
+      hitNote(OL.bSail.sring.map(([x, z]) => { const p = njW(bf, x, 0, z); return [p[0], p[2]]; }), bf.W0 + OL.bSail.y0 + 5.4);
+    }
+    OL.becuna = !!bf;
+    if (!isTouch && !TIER2) olLoadArt();
+    OL.built = true; OL.ms = Math.round(performance.now() - t0);
+    return true;
+  }
+  function olBuildSafe(polyO, polyB) {
+    try { return olBuild(polyO, polyB); } catch (e) {
+      OL.err = String(e && e.stack || e); console.error('olympia', e);
+      for (const k of ['near', 'far', 'rails', 'lights']) {
+        const m = OL[k]; if (!m) continue;
+        groupCity.remove(m); const i = pendingUpload.indexOf(m); if (i >= 0) pendingUpload.splice(i, 1);
+        OL[k] = null;
+      }
+      OL.built = false;
+      PERF.failed.push(['Mooring the ships: the Olympia', String((e && e.message) || e)]);
+      return false;
+    }
+  }
+  // the frame's part: the level by the eye's distance from her hull's box (with hysteresis), the art on a phone's
+  // approach, the anchor lights on the photocell
+  const _olBuf = new THREE.Vector2();
+  function olStep() {
+    if (!OL.built) return;
+    const f = OL.f, p = camera.position, dx = p.x - f.cx, dz = p.z - f.cz;
+    const u = dx * f.hx + dz * f.hz, v = dx * f.sx + dz * f.sz;
+    const d = Math.hypot(Math.max(0, Math.abs(u) - OL.Ld / 2), Math.max(0, Math.abs(v - 6) - 16), Math.max(0, p.y - f.W0 - 40));
+    OL.dist = d;
+    if ((isTouch || TIER2) && d < OL_ART_R) olLoadArt();
+    let lod = OL.lod;
+    if (OL.force) lod = OL.near ? OL.force : 'far';
+    else if (!OL.near) lod = 'far';
+    else if (lod === 'both') lod = d < OL_NEAR_R ? 'near' : 'far';
+    else if (lod === 'near' && d > OL_NEAR_R + OL_HYST) lod = 'far';
+    else if (lod === 'far' && d < OL_NEAR_R) lod = 'near';
+    OL.lod = lod;
+    const nearOn = lod === 'near' && !OL.off;
+    if (OL.near) OL.near.visible = nearOn;
+    if (OL.rails) OL.rails.visible = nearOn;
+    if (OL.far) OL.far.visible = lod === 'far' && !OL.off;
+    const night = lampUniform.value;
+    if (OL.lights) {
+      OL.lights.visible = night > 0.01 && d < 5000 && !OL.off; OL.lights.material.opacity = night;
+      if (OL.lights.visible) olLampU.uOlBuf.value = renderer.getDrawingBufferSize(_olBuf).y;
+    }
+  }
+  // is a point (a tap's hit) on one of them: inside her hull's box in her frame to her trucks, or the Becuna's
+  function olAt(x, y, z) {
+    if (!OL.built || OL.off) return null;
+    const box = (f, L, B, H) => { const dx = x - f.cx, dz = z - f.cz, u = dx * f.hx + dz * f.hz, v = dx * f.sx + dz * f.sz; return Math.abs(u) < L / 2 + 3 && Math.abs(v) < B && y > f.W0 - 1 && y < f.W0 + H; };
+    if (box(OL.f, OL.Ld, 9.5, 50)) return 'olympia';
+    if (OL.bf && box(OL.bf, OL.Lb, 4.6, 14)) return 'becuna';
+    return null;
+  }
+  // a tap on either opens its own card (the museum's ships, not the Seaport Museum's parcel)
+  function olCard(which, ax, ay, az) {
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
+    pickedStop = null; pickedCivic = null; pickedNear = null;
+    pickedBldg = { x: ax, y: ay, z: az, seq: ++BPICK.seq };
+    const ol = which === 'olympia';
+    const rows = ol ? ['Protected cruiser, launched at San Francisco in 1892', "Commodore Dewey's flagship at the Battle of Manila Bay, May 1, 1898",
+      'Brought the Unknown Soldier home from France in 1921', 'The oldest steel warship afloat, at the Independence Seaport Museum']
+      : ['Balao class submarine, commissioned in 1944', 'Served in the Pacific in World War II, rebuilt as a GUPPY in 1951', 'A museum ship at the Independence Seaport Museum'];
+    vehinfoBody.innerHTML = '<span class="vroute" style="background:#5d6a74">Museum Ship</span><span class="vdest">' + (ol ? 'USS Olympia (C-6)' : 'USS Becuna (SS-319)') + '</span>' +
+      rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('');
+    vehinfoEl.hidden = false; cardUnlock();
+    return true;
+  }
+  // ?dev: __dbg.olympia() - the level, the triangles, the art, the frames; 'near', 'far', 'auto', 'off', 'on'
+  function olProbe(what) {
+    if (what === 'off' || what === 'on') OL.off = what === 'off';
+    if (what === 'near' || what === 'far' || what === 'auto') OL.force = what === 'auto' ? null : what;
+    if (what) olStep();
+    const info = (m) => (m ? { visible: m.visible } : null), f = OL.f;
+    return { on: OL_ON, artOn: OL_ART_ON, built: OL.built, lod: OL.lod, dist: OL.dist == null ? null : Math.round(OL.dist), near: info(OL.near), far: info(OL.far), rails: info(OL.rails),
+      lights: OL.lights ? { visible: OL.lights.visible, n: OL.nLights, opacity: +OL.lights.material.opacity.toFixed(3) } : null, tris: { ...OL.tris }, art: OL.art,
+      texMB: OL.bytes ? +(OL.bytes / 1048576).toFixed(2) : 0, ms: OL.ms, err: OL.err, becuna: OL.becuna, Ld: +OL.Ld.toFixed(1), Lb: +OL.Lb.toFixed(1),
+      frame: f ? { cx: +f.cx.toFixed(1), cz: +f.cz.toFixed(1), hx: +f.hx.toFixed(4), hz: +f.hz.toFixed(4), W0: +f.W0.toFixed(2) } : null };
+  }
+
   step('Mooring the ships', () => {
     const parts = [];
     const W = TERRAIN.water;
     const add = (geom, hex) => parts.push({ geom, color: new THREE.Color(hex), style: 3 });
+    // Round 215: the Olympia and the Becuna remodelled; a failure leaves the old models in their places
+    if (OL_ON) {
+      const ship = (re) => D.buildings.find((b) => b.t === 'ship' && b.poly && b.poly.length >= 3 && re.test(b.name || ''));
+      const po = ship(/olympia/i), pb = ship(/becuna/i);
+      if (po) olBuildSafe(po.poly, pb ? pb.poly : null);
+    }
     for (const b of D.buildings) {
       if (b.t !== 'ship' || !b.poly || b.poly.length < 3) continue;
+      if (OL.built && /olympia/i.test(b.name || '')) continue;
+      if (OL.built && OL.becuna && /becuna/i.test(b.name || '')) continue;
       const ob = orientedBox(b.poly);
       if (!ob) continue;
       const a = obbAxis(ob);
@@ -35655,6 +36233,7 @@ if (uNjLamp > 0.001) {
     // parcels have nothing to say; the old ship's tap opened a Philadelphia property card for a Camden point), asked
     // before the ground test so her side under 2 m answers too
     if (njAt(p[0], p[1], p[2])) { njCard(p[0], p[1] + 1, p[2]); return true; }
+    { const w = olAt(p[0], p[1], p[2]); if (w) { olCard(w, p[0], p[1] + 1, p[2]); return true; } }
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
     // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
@@ -49875,6 +50454,7 @@ float pinOccGate() {
     libStep();   // Round 195: the Liberty Places' near level, their lobbies' light and their art
     cmrStep();   // Round 195: the Comcast towers' trim, near or far
     njStep();   // Round 195: the USS New Jersey's level and her deck lamps
+    olStep();   // Round 215: the Olympia's level and her anchor lights
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -49996,7 +50576,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

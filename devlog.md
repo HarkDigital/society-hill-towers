@@ -12568,3 +12568,53 @@ page) and after at Mike's pose by night, along Market Street from 2nd Street, do
 Left as it was: the Market Street on-ramp from Front Street into the trench draws across the face of the trench's west wall
 (the same in HEAD's page), and I-95 north of the carried-on trench still rides the DEM's cross slope to the viaduct at Race
 Street.
+
+## Round 215 — the cruiser Olympia remodelled from generated art, the Becuna beside her (Oct 20)
+
+Mike, with a night screenshot of Penn's Landing: "Whatever boat this is next to the moshulu needs to be remodeled with the
+Chat GPT API." The boat was the generic branch of 'Mooring the ships', commented USS Olympia: her OSM outline extruded 8 m
+as one white slab, a beige box, two plain cylinders and two grey poles. The low black box beside her was the submarine
+Becuna. Both are remodelled under the realistic look in one mesh (`olBuild`, its own section before 'Mooring the ships').
+
+- The research (looked at, never sent): Commons 'OLYMPIA (C-6) in Philadelphia 20240529.jpg' (a near broadside from the
+  basin), 'OLYMPIA berthed at Penn's Landing 20240529.jpg', 'Olympia Penn's Landing PA1.jpg' (measured on a grid overlay),
+  'Becuna and Olympia PA1.jpg', NH 'USS Olympia;c0605.jpg' (her 1899 fit, which the museum keeps), and the city's 2024
+  3-inch orthophoto at z20 and z21 (`CityImagery_2024_3in`, roof_colors.py's source). Wikipedia: 104.9 m overall, 16 m
+  beam. The orthophoto settles which end is which, against two broadsides that seemed to disagree: the anchors on their
+  bolsters and the jack are at the south end and the ensign at the north, so her bow is downriver, as the OSM outline's
+  pointy end says. It also gives the layout along her deck as fractions from the stern: the after turret 0.19, the
+  mainmast 0.25, the after bridge 0.29, the funnels 0.482 and 0.649 (the funnel pair matched the broadside to 0.014),
+  the forward bridge and foremast 0.71, the conning tower 0.742, the forward turret 0.781; the turrets 5.1 m across with
+  two sighting hoods, the funnels 4.1 m. The heights come from the broadside, scaled by the funnels' breadth and the
+  railings' 1.05 m, which agree within 3 per cent: the white hull 8.5 m over the water amidships rising to 10.2 m at the
+  stem, 1.6 m of red bottom showing, the buff superstructure 3.2 m (0.4 of the white hull's height in the broadside),
+  the funnels 14.6 m over the deck with 1.7 m black caps, the foremast's tops at 9 and 19.7 m and its truck at 38, the
+  mainmast's top at 12.5 m and its truck at 31. No night photograph of her turned up, so she gets no invented festoons:
+  a wash from the promenade's lamps (a part's share, falling off up her side), the street lamps' pools (`lampLightPatch`)
+  and white anchor lights at the jackstaff, the ensign staff and the Becuna's sail.
+- The art: `fetch_olympia_art.py` asked gpt-image-2 for four 1536x768 straight-on surfaces (white riveted lapped hull
+  plating, one level of the buff superstructure wall with a door, two ports and a louvre, weathered grey pine deck
+  planks, the funnels' buff riveted plating). `bake_olympia_art.py` is the New Jersey's bake on them: one 2048x1024
+  atlas (232 KB, its phone half 52 KB) under `art/olympia/`, each cell read as detail over a part's own paint.
+- The model, on the New Jersey's buffer kit (`njBuf`, `njGeometry`) in her own frame (`olFrame`: `njFrame` with the bow
+  forced south for both boats): a lofted hull from the outline's half-breadths (`olBreadth`), with slight tumblehome, the
+  ram's 3 m forward rake under the water, the counter rising aft and the forecastle's bulwark; the planked deck with its
+  camber; the superstructure, the chart house and both bridges on stanchions; the turrets with their 8-inch guns; the
+  funnels with collars, caps, dark mouths and steam pipes; the conning tower; both masts with their tops, yards,
+  crosstrees, searchlights and gaff; cowl ventilators buff outside and white within; two whaleboats on chocks; the boat
+  cranes; four 5-inch sponsons a side with their guns; the anchors, the fish davits and both staffs. The shader
+  (`olMaterial`) draws the red bottom, a waterline grime line, two rows of portholes (some deadlights closed) and the
+  hawse pipes. The Becuna, in her own frame and appended to the same buffer (`olAppend`): a grey hull round the pressure
+  hull, the black casing deck, the bow's rise and the stern's fall, and the GUPPY sail as an airfoil 14 m long, blunt end
+  forward, 0.43 of her length from the bow (the orthophoto), with its masts.
+- Levels: near within 600 m of her box (380 on a phone, 50 m hysteresis), 12,661 triangles; far 1,989; the railings one
+  alpha-tested draw near (136 triangles); the lights one Points draw after dark. 26 ms to build. A phone loads the art's
+  half within 1.4 km; the recovery tier keeps the far level only.
+- Her hull to her deck, the superstructure, the funnels and turrets, and the Becuna's hull and sail are noted for the
+  flight (`hitNote`, Round 214). A tap on either opens a museum ship card (`olAt`, `olCard`, as the New Jersey's).
+- `?olympia=0` (and `?real=0`) keeps both old models; `?olart=0` the remodel without its art; `__dbg.olympia()` reports the
+  level, the triangles, the art and the frames ('near', 'far', 'auto', 'off', 'on').
+- Tests: `test_art_files` lists `olympia_art.json` and the `art/olympia/` folder; `test_memory_cuts` counts two more
+  `freeTexOnUpload` uses (the atlas and the railings' canvas).
+Rendered against HEAD's page from the basin's north-east, from the river square-on, 40 m off her side and from the
+promenade by day, and from Mike's night pose and the north-east at night; the far level from 780 m.
