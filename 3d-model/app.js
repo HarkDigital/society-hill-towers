@@ -13362,11 +13362,11 @@ vec2 wRing(vec2 rc, float tt) {
   // pixels (x + w y for an atlas w wide, one float: exact while w h is at most 2^24, which SF_PARTA and the bake hold it
   // to, the bake at 4096 wide; it was a hard-coded 4096 on both sides until the third review), its bulkhead's top, its
   // glass head and its fascia's bottom (ten more for a trade open into the evening), the classes' widths and the cells'
-  // height in the atlas. The realistic look on WebGL 2 only (every read is textureGrad), never on a phone at tier 2 (the
-  // realism pass's other art is off there too); ?sfart=0 and ?real=0 keep the paint
+  // height in the atlas. The realistic look on WebGL 2 only (every read is textureGrad), on every phone tier since Round
+  // 219 (tier 2 had kept the paint); ?sfart=0 and ?real=0 keep the paint
   const SF_CROP = 0.5;   // the most of a shopfront's glass cut at its head (a storey shorter than the art's 4.2 m), before any is squashed
   const SF_PARTA_MIN = 3.4;   // the shortest wall a painted shop floor's shopfront dresses (shorter keeps masonry and the style's sashes)
-  const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && STOREFRONT_ART.w * STOREFRONT_ART.h <= 16777216 && !/[?&]sfart=0\b/.test(location.search);
+  const SF_PARTA = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && STOREFRONT_ART.w * STOREFRONT_ART.h <= 16777216 && !/[?&]sfart=0\b/.test(location.search);
   const SF_AW = (SF_PARTA ? STOREFRONT_ART.w : 4096).toFixed(1), SF_AH = (SF_PARTA ? STOREFRONT_ART.h : 2048).toFixed(1);
   const sfPartU = (() => {
     const U = { uSfArt: { value: null }, uSfMaskA: { value: null }, uSfOn: { value: 0 }, uSfGen: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
@@ -31952,11 +31952,15 @@ if (uOlLamp > 0.001) {
   // the name, the trade, the hours, its place on the wall (records sharing a wall laid side by side) and the drawn wall's
   // outermost and innermost point over it. One InstancedMesh, one draw; WebGL 2 only (every read is textureGrad), and
   // ?real=0, ?sfart=0, WebGL 1 or art that does not arrive in time keep the old boxes, built as they always were. The
-  // same atlas dresses the facade shader's painted shop floors (style 5, SF_PARTA in the facade hook). Never on a phone at
-  // tier 2 (the review: the fronts, the furniture and the parked cars are off there, the phones that died twice)
-  const SF_ART_ON = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\b/.test(location.search);
-  const SF_SIGNS = SF_ART_ON && !TIER2 && !/[?&]signs=0\b/.test(location.search);
-  const SF_HM = SF_ART_ON ? STOREFRONT_ART.hM || 4.2 : 4.2;   // every cell is one storey of this many metres, sidewalk to the fascia's top
+  // same atlas dresses the facade shader's painted shop floors (style 5, SF_PARTA in the facade hook). Round 219 (Mike, from
+  // the app: "I am still not seeing the store fronts on mobile. We need to load those similarly", after Round 218's lamp
+  // posts): on every phone tier. Tier 2 had kept the old boxes, and a phone reaches tier 2 by dying, so the phones that had
+  // died once lost the shopfronts, their names and the painted shop floors; the art is 380 KB of bytes before its step and
+  // two half images at it, and the build now waits SF_ART_WAIT for them rather than dress the boxes
+  const SF_ART_ON = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\b/.test(location.search);
+  const SF_SIGNS = SF_ART_ON && !/[?&]signs=0\b/.test(location.search);
+  const SF_HM = SF_ART_ON ? STOREFRONT_ART.hM || 4.2 : 4.2;
+  const SF_ART_WAIT = 30000;   // Round 219: how long the step waits for the art (10 s before: a slow phone's cell connection dressed the boxes)   // every cell is one storey of this many metres, sidewalk to the fascia's top
   const SF = { state: SF_ART_ON ? 'waiting' : 'off', map: null, mask: null, mesh: null, awn: [], n: 0, near: 0, base: 0, hidden: 0, byFam: {}, byCls: {}, named: 0,
     ms: 0, list: null, names: null, slot: null, slotOf: null, at: -1e9, eye: new THREE.Vector3(1e9, 0, 0), drawn: 0, partA: false, error: null, info: false };
   // the panels' uniforms (one object, shared by the panel and awning programs): the mask and the names, the model clock
@@ -32909,13 +32913,13 @@ if (uOlLamp > 0.001) {
     }
     const onBase = (x, z) => { const a = baseCells.get(Math.floor(x / 40) + ':' + Math.floor(z / 40)); if (a) for (const o2 of a) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
     // Round 189: the generated shopfronts (sfBuild) where the realistic look, WebGL 2 and the art allow; the art was asked for
-    // at the top of the build, and waits here at most 10 s more. Anything short of that dresses the old boxes below, as ever.
+    // at the top of the build, and waits here at most SF_ART_WAIT more (Round 219: 30 s, 10 before). Anything short of that dresses the old boxes below, as ever.
     // First the Moshulu's own hull joins the ground the models own, for both (Round 195: OSM's restaurant record put a
     // shopfront flat on her port side; here, outside the old step's bytes, which test_realism_storefronts holds)
     if (MOSHULU.own) own.push([...MOSHULU.own.bb, MOSHULU.own.ring]);
     if (SF_ART_ON) {
       let late = 0;
-      const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), 10000); })]);
+      const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), SF_ART_WAIT); })]);
       clearTimeout(late);
       sfArtP = null;   // the review: the promise held both decoded images for the page's life (a phone's freeTexOnUpload lets them go)
       if (!got || !got[0] || !got[1]) { SF.state = got ? 'art failed' : 'art late'; }
@@ -49889,7 +49893,7 @@ float pinOccGate() {
       window.addEventListener('focus', bootRun);
       window.addEventListener('blur', bootClear);
     }, 20000);
-    beacon('ready', { ms: PERF.ready, fail: failures });
+    beacon('ready', { ms: PERF.ready, fail: failures, sf: SF.state });   // Round 219: whether the shopfronts were built, or why not
     setLoadingMessage(failures ? 'Ready (some detail could not be built)' : 'Ready');
     loadmsg.classList.add('done');   // the pulse stops with the wait
     btnEnter.disabled = false;

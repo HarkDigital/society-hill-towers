@@ -10,7 +10,7 @@
 - build.py inlines the sidecar and the manifest and holds the manifest to the art guards.
 
 The review (Round 189's second pass): the old boxes' step is byte for byte what it was before the round, less the new
-path (a sha pins it); the art is off at tier 2; one awning program; the decoded images let go; the names' canvas read
+path (a sha pins it); the art is on at every phone tier (Round 219); one awning program; the decoded images let go; the names' canvas read
 often and their mips rebuilt on the last copy that runs; the panels into the scene only when everything has been made;
 the parallax held inside its cell; every test made at the laid span; the painted shop floors never painted once the art
 is up.
@@ -45,9 +45,9 @@ class Page(unittest.TestCase):
         cls.step = cut(cls.s, "  step('Dressing the storefronts'", "  step('Raising the overpasses'")
 
     def test_the_gates(self):
-        self.assertIn("const SF_ART_ON = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\\b/.test(location.search);", self.block)
-        self.assertIn("const SF_SIGNS = SF_ART_ON && !TIER2 && !/[?&]signs=0\\b/.test(location.search);", self.block)
-        self.assertIn("const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined'", self.s)
+        self.assertIn("const SF_ART_ON = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\\b/.test(location.search);", self.block)
+        self.assertIn("const SF_SIGNS = SF_ART_ON && !/[?&]signs=0\\b/.test(location.search);", self.block)
+        self.assertIn("const SF_PARTA = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined'", self.s)
 
     def test_the_old_boxes_stay_as_they_were(self):
         st = self.step
@@ -62,7 +62,7 @@ class Page(unittest.TestCase):
             self.assertIn(line, legacy)
         # the new path returns only when it built; art late or failed falls through to the boxes
         newp = st[new:old]
-        self.assertIn("const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), 10000); })]);\n      clearTimeout(late);\n      sfArtP = null;", newp)
+        self.assertIn("const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), SF_ART_WAIT); })]);\n      clearTimeout(late);\n      sfArtP = null;", newp)
         # the two uploads a task each (the review: one 342 ms task), the build's own yield (a timer sleeps in a hidden tab)
         self.assertIn("try { renderer.initTexture(map); } catch (e) { }\n        await yieldNow();\n        try { renderer.initTexture(mask); } catch (e) { }\n        await yieldNow();", newp)
         # a computer decodes the art into ImageBitmaps (flipped as decoded, closed once uploaded), but not an old desktop

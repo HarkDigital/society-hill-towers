@@ -12712,3 +12712,32 @@ pick).
 
 - Not changed: why his phone dies in the build at all (Oct 16 at tier 0, tonight at tier 1). That is the real cost of the
   tiers, and it takes the far trees, traffic and roof kit off his phone for a fortnight at a time.
+
+## Round 219 — every phone tier draws the storefronts (Oct 21)
+
+Mike, from the app, after Round 218: "I am still not seeing the store fronts on mobile. We need to load those similarly."
+
+The same cause as the lamp posts. Round 189's generated shopfronts (`STOREFRONT_ART`: the photographic panels, the shop's
+OSM name on its board, and the painted shop floors the facade shader lays on style 5) were off at tier 2: `SF_ART_ON`,
+`SF_SIGNS` and `SF_PARTA` each carried `!TIER2`, so a tier 2 phone dressed the old navy slab, frame band and plank awning
+the realism pass had retired. His app has been at tier 2 since the context loss in its build at 20:07 on Oct 20 (Round
+218). None of the three reads a tier, the Graphics choice or the pace now, and nor do the art's loading or the step.
+The step also waits longer: `SF_ART_WAIT` 30 s for the art, where it waited 10 s and then fell back to the boxes, so a slow
+cell connection pays in load time rather than in the look. The ready beacon now carries the step's outcome (`sf`: built,
+boxes, art late, art failed or off), so the next report from a phone says which one it got.
+
+Measured headless with the capture skill's memory tool (740x360 at 1.25, touch, 13:00), the deployed build against this
+one at `?lite=2`: storefronts off before; 2,191 panels built after, 2,138 of them named, with the painted shop floors and
+the boards on. All 28 panels on South Street between 3rd and 6th are drawn (Philly AIDS Thrift, Cry Baby Pasta, Sushi
+Planet and the rest). The cost: GPU +14 MB at ready (354 to 368 MB: the atlas and the mask at their phone halves) and +4
+MB after the look-around (650 to 654), live heap unchanged (85 MB at ready, 88 after), the same 227 MB peak, and no failed
+step. The deployed build's tier 1 builds 1,954 panels and the desktop path 1,419, with the same 28 on South Street: those
+tiers' generated house fronts and mid-rise skins dress walls that tier 2 leaves to the panels. The capture down South
+Street at tier 2 shows the shopfronts, their interiors and their boards where the boxes stood. `tests/test_phone_storefronts.py`
+holds it: no tier gate in the switches, the shop floors, the art loading or the step; the three switches run under Node
+for every device, tier and pick; the 30 s wait; the beacon field.
+
+- Still tier 2's to drop: the generated house fronts (`FRONTS_ON`, which carry their own shopfronts on the shop, mixed-use,
+  loft and one-storey sets), the furniture, the parked cars, the roof kit, traffic, Liberty Place's and the landmarks' near
+  art, the glass art and the far trees. Each is a visible asset Mike's rule covers. Each needs measuring before it comes
+  back, since tier 2 is the build that has to fit on a phone that has died.
