@@ -34,8 +34,8 @@ class Switches(unittest.TestCase):
         s = self.s
         self.assertIn("FARSH.can = POST.on && REAL && !LITE && !/[?&]shadowwide=0\\b/.test(location.search) && gfxPick() !== 'smoother';", s)
         self.assertIn("const BLOOMW = { on: REAL && !/[?&]bloomwide=0\\b/.test(location.search),", s)
-        # timers only with ?dev, never a production frame
-        self.assertIn("GPUT.ext = POST.on && /[?&]dev\\b/.test(location.search) ? renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') : null;", s)
+        # Round 220: the timer is on in every desktop post-pipeline session that grants the extension, sampled (tests/test_gput.py); ?gput=0 the escape
+        self.assertIn("GPUT.ext = POST.on && !isTouch && !/[?&]gput=0\\b/.test(location.search) ? renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') : null;", s)
 
     def test_roles_once_the_city_stands(self):
         s = self.s

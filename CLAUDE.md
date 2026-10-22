@@ -296,6 +296,7 @@ textures), `?vart=0` (the old box vehicles), `?parked=0`, `?furniture=0`, `?carp
 texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, `keyLight(f)`, `clouds3d()`, `facade()`,
 `fronts()`, `veg()`, `water()`, `vehicles()`, `lampNear()`, `lampReal(k)`, `lampAt(x, z)`, and after the first frame
 `wxTune({...})` and `wxFx()`.
+`?gpumem=1` turns on the page's GPU-byte accounting on a computer (Round 220; every phone has it: `gb`, `gbp`, `gbw`, `gbm` on every beacon, `__dbg.gpuMem()`, a floor), `?gput=0` turns the GPU pass timer off (on by default in a desktop post-pipeline session, sampled 30 frames in 300, continuous under `?dev`; `gt` and the pass counters on the perf beacons, `__dbg.PERF.gput()`); `__dbg.beaconQuery(st)` previews a beacon's URL, `__dbg.stepExtra(name)` a step's phases, `__dbg.staged()` what is still staged for the first frame.
 `?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
 broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
 

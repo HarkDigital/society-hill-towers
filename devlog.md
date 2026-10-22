@@ -12741,3 +12741,63 @@ for every device, tier and pick; the 30 s wait; the beacon field.
   loft and one-storey sets), the furniture, the parked cars, the roof kit, traffic, Liberty Place's and the landmarks' near
   art, the glass art and the far trees. Each is a visible asset Mike's rule covers. Each needs measuring before it comes
   back, since tier 2 is the build that has to fit on a phone that has died.
+
+## Round 220 — the measurement round (Oct 22)
+
+Mike: "Look at how this app loads and come up with ways we can improve performance", then "start the measurement round".
+The plan came first: the load beacons on the VPS reduced into per-load phases (a Mac over the net: 0.84 s download and
+parse, 1.74 s boot, 15.5 s in the three far tiers, about 9.4 s in the other 44 steps, ready at 26.9 s, then 30 fps GPU-bound
+at full resolution; the iPhone app: ready at 12.9 s on tier 1, 10.5 s on tier 0 and 10.8 s on tier 2, so the crash tiers buy
+memory, not time), seven readers over the load path, five proposers, three verifiers per proposal: 32 proposals, every gain
+inferred but two, which is why this round measures before anything is built. The plan is in the session notes
+(philly3d-performance-plan.md) and its baseline in the project memory.
+
+Four pieces, each a patch of its own in a worktree, reviewed adversarially and merged here; nothing drawn, uploaded or
+compiled changes, and the suite grew from 1,099 to 1,140 tests.
+
+- The beacons (p07). Every checkpoint carries the navigation timing (`tx`, `enc`, `dec`, `net`, `di`, `fcp`), and `hc` means
+  a validated 304 now (the old test, transferSize 0, never fired in 1,642 logged beacons). A `boot` checkpoint before build()
+  with `ms` since app.js's first line and `cl`, the cloud volumes bake. The ready beacon carries `sp`, every step's ms in
+  order (a computer beaconed four steps before, now eight: the four phased steps below report from a Mac too), `prg`
+  programs, `fl` / `flms` / `flp` the flush renders behind the veil (count, ms, programs before and after), `pu` / `pub`
+  what is still staged for the first frame, `tsk`, `sfw` the storefront art's wait and `sfb` whether sfArtPrefetch's fetch
+  resolved to a Blob (p01's open question; the app's answer comes from this build). The enter beacon: `fn`, `f1` the first
+  frame's ms, `tap` the click's queueing latency, the mirror's warm (`mw`, `mwp`, `mwn`). The perf beacons: `dc1` the first
+  rung change's ms after Enter, `dcn`, `poc` the pins' capture causes, `pos` the synchronous pin reads (count:ms).
+  `beaconQuery` previews any checkpoint's URL without sending (`__dbg.beaconQuery`).
+- GPU bytes in the page (p25): the headless hook's wraps ported into app.js (`GPUMEM`, on every phone and under `?gpumem=1`),
+  installed before the first context, each sized format charged its own bytes; `gb`, `gbp` (the peak), `gbw` (where it
+  stood: the loading message, or 'Ready +Ns') and `gbm` (the reversed-Z target's own) on every beacon, and `,gb<MB>` on the
+  5 s running crumb, so the next load's `pc` names the last reading before a death. Checked against the hook on the headless
+  phone path: buffers agree to the megabyte (481.4 against 481 at ready, 491.6 against 492 after the look); textures read
+  35 MB under the hook's 198, because the hook charges 4 bytes a pixel to every immutable texture (the 9 MB single-channel
+  street-name atlas is 37 MB there) while the page charges each format its own and a depth texture its 4; both are floors.
+- The GPU pass timer (p27): on in every desktop session the post pipeline runs in and whose context grants
+  EXT_disjoint_timer_query_webgl2, sampled 30 frames in every 300 (continuous under `?dev`, `?gput=0` off), `GPUT.fid`
+  stamped at the frame's start so a pass before the scene render lands in its own frame, labels round the mirror, the pins'
+  images, the lamp maps, the car map and the city probe bake, the shadow and far-shadow draws counted; `gt` (each pass's
+  mean ms) and the counters on the perf, settled and late beacons. The pins' synchronous reads are counted at the read
+  (`PIN_OCC.syncN`, `syncMs`). The iPhone has no timer extension and gains nothing.
+- The build's sub-timers: `PERF.far` (decode, the record loop, the five far-ground strips, the flush, the roads, the areas),
+  `PERF.wide`, `PERF.fit` (with schEdges' calls meanwhile), `PERF.sch` and `PERF.triNear` (call counts only: 2.7 M and 2.6 M
+  a load on the phone path, so never a timer inside), `PERF.roofKitNote` (one call in 16 timed and scaled),
+  `PERF.streetLabels` (decode, bands, texture, fit), `PERF.traffic` (sample, link, fleet), `TSKIN.msParts` (wait, lay,
+  flush); `PERF.stepExtra(name)` puts them on each step's beacon as short fields (`fd fl fn fg ff fr fa rk rkn`, `wd wl wj
+  wf`, `sm sp sf sc`, `ld lb lt lf`, `ts tl tf`, `cw cl cf`).
+
+Each patch's reviewer passed it (no must-fix); the should-fixes taken: the enter and run facts and the pass timer's
+beacon share each guarded so a throw cannot cost the beacon; the disjoint flag read only when a timer result is there to
+consume (each read is a round trip to the GPU process); the outer step's beacon drops `wj` (the junction pass runs in
+'Fitting streets', whose beacon carries it); two derived figures clamped at 0; the 3D textures counted (the cloud volumes'
+storage, a computer's) and keyed by their own bindings. Noted, not changed: `flms` is the flush's whole CPU submission,
+packResident's walk included; `ts` carries two performance.now() reads a way (29,749 ways, about 1 to 2% of the step on a
+phone); `mw`, `mwp` and `mwn` read 0 when Enter is tapped before the second frame behind the veil.
+
+Verified headless on the phone path (740x360 at 1.25, touch) and the desktop path, the page served as philly3d.com through a
+host rule so ON_SITE held and the real beacons went out: 52 beacons a phone load (boot, 48 steps, ready, enter, perf), the
+longest 627 bytes against nginx's 8 KB line, every field composing; the desktop's `gt` reads `cityenv, scene, shadow, ao,
+bloom, comp, shadowFar` (swiftshader's numbers mean nothing, the plumbing does). The first real numbers come from Mike's
+Mac and iPhone over the next week of ordinary loads. Nothing on the VPS changed: /b is a 404 nginx logs in full.
+
+- The headless harness that serves a build as philly3d.com and records its beacons is `probe_measure.mjs` in this session's
+  scratchpad; it belongs in the capture skill with the beacon reduction, a follow-up.

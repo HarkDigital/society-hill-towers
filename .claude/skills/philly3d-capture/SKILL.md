@@ -192,6 +192,19 @@ The tools in `scripts/memory/` (Node 18+, Google Chrome installed; they launch t
 Compare against a build from git that is known to work on the phone (`git show <sha>:3d-model/society-hill-towers.html`):
 Round 158's reference is Sep 17's e90c765, 981 MB of GPU plus copies after the first frames, 162 MB peak live heap.
 
+### 7c2. The real devices' timings, and the beacons a build would send (Round 220)
+
+The page's own load beacons on the VPS are the only timings from Mike's Mac and iPhone: `scripts/beacons.py` reduces the
+nginx `/b` log (fetch it with the ssh line in its docstring) into per-load phases (download and parse, boot, the build, the
+Enter gap) with medians per device and tier, and `--all` prints every Round 220 field (the step phases, the GPU bytes, the
+pass timer's means). Round 220's baseline: Mac over the net ready 26.9 s (far tiers 15.5), iPhone app 12.9 s.
+
+To see what a NEW build's beacons carry before it ships, `scripts/memory/beacons_headless.mjs <dir> <page> <query> <label>
+<port> <phone|desk> [waitPerfSeconds]` serves the page AS philly3d.com (a Chrome host rule maps the name to this machine
+and a plain http server on port+600 serves the directory), so `ON_SITE` holds and the page sends its real beacons, which it
+records from the network log (the /b answers are 501s the page ignores); it also reads the `PERF` probes at Ready and
+compares the page's GPU-byte accounting with gpuhook's. Its JSON lands beside it as `measure-<label>.json`.
+
 ### 7d. Parity sets: main against a new build, pixel for pixel (Round 192)
 
 When the acceptance test is "the page looks the same" (a depth change, a renderer change), render every pose in four

@@ -7278,33 +7278,70 @@ RB.add({
   }
   const beaconSeen = new Set();
   let beaconErrs = 0;
+  // Round 220 (the measurement round): beaconQuery composes a checkpoint's query and returns its URL without sending, counting
+  // or deduplicating it (PERF.beaconQuery: a dev page previews any beacon), null where there is no beacon. It is beacon() itself
+  // with the send held back, asked for through a third argument, because the composition has to stay inside beacon(): the TDZ
+  // test (tests/test_recovery.py) and tests/test_zbuf.py cut beacon() by its signature and run it on its own
+  function beaconQuery(st, extra) { return beacon(st, extra, true); }
   function beacon(st, extra) {
-    if (!BEACON) return;
-    if (st === 'err') { if (++beaconErrs > 3) return; }
-    else if (beaconSeen.has(st)) return;
-    else beaconSeen.add(st);
+    const dry = arguments[2] === true;
+    if (!BEACON) return null;
+    if (!dry) {
+      if (st === 'err') { if (++beaconErrs > 3) return null; }
+      else if (beaconSeen.has(st)) return null;
+      else beaconSeen.add(st);
+    }
     // the recovery round: every read of a later let or const goes through `safe`, because reading one before its line has run
     // throws (the TDZ; `typeof` does not help), and the error handler above can beacon that early. Besides the old fields:
     // tier and lr, the tier this load builds and why (see LITE_WHY); sa, the home-screen app or the app; nav, the navigation
-    // type's initial (n, r, b); hc, 1 when the page came from the HTTP cache (no bytes over the wire, a body all the same:
-    // WebKit's crash reload and a session restore take the cached copy; sw says the worker answered, whose sizes a browser may
-    // report differently); rd, the render pixel ratio (dpr is the display's,
+    // type's initial (n, r, b); hc, 1 when the page's body came from the HTTP cache: a validated 304 (Round 220: a header-sized
+    // transfer of 1 to 1,999 bytes with a body over 100 KB, which is what a repeat visit to the site is) or no bytes over the
+    // wire at all (the old test, transferSize 0 with a body, which never fired once in 1,642 logged beacons and stays for the
+    // fresh hit it describes); sw says the worker answered, whose sizes a browser may report differently. Round 220, the
+    // delivery: tx, enc and dec, the page's transfer, encoded body and decoded body bytes; net, the response's end less the
+    // request's start, ms; di, domInteractive, ms; fcp, first-contentful-paint, ms; each '' where the browser reports none.
+    // rd, the render pixel ratio (dpr is the display's,
     // always 3.00 on an iPhone); pv, the step the last load's crumb names, which is where a dead load died. Nothing personal
     const safe = (f, d) => { try { return f(); } catch (e) { return d; } };
     const nav = safe(() => performance.getEntriesByType('navigation')[0] || null, null);
+    const nv = (k) => (nav && typeof nav[k] === 'number' ? Math.round(nav[k]) : '');
     const q = { st, t: Math.round(performance.now()), tch: safe(() => (isTouch ? 1 : 0), ''), dpr: (window.devicePixelRatio || 1).toFixed(2),
       cores: navigator.hardwareConcurrency || 0, mem: navigator.deviceMemory || 0,
       gl2: safe(() => (renderer && renderer.capabilities && renderer.capabilities.isWebGL2 ? 1 : 0), 0), b: document.lastModified,
       tier: safe(() => TIER, ''), lr: safe(() => LITE_WHY, ''),
       sa: safe(() => (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches ? 1 : 0), ''),
-      nav: nav && nav.type ? String(nav.type)[0] : '', hc: nav && nav.transferSize === 0 && nav.decodedBodySize > 0 ? 1 : 0, sw: nav && nav.workerStart > 0 ? 1 : 0,
+      nav: nav && nav.type ? String(nav.type)[0] : '', hc: nav && ((nav.transferSize > 0 && nav.transferSize < 2000 && nav.decodedBodySize > 100000) || (nav.transferSize === 0 && nav.decodedBodySize > 0)) ? 1 : 0, sw: nav && nav.workerStart > 0 ? 1 : 0,
+      tx: nv('transferSize'), enc: nv('encodedBodySize'), dec: nv('decodedBodySize'), di: nv('domInteractive'),
+      net: nav && typeof nav.responseEnd === 'number' && typeof nav.requestStart === 'number' ? Math.round(nav.responseEnd - nav.requestStart) : '',
+      fcp: safe(() => { const p = performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint'); return p ? Math.round(p.startTime) : ''; }, ''),
       rd: safe(() => DPR.cur.toFixed(2), ''), pv: safe(() => (bootPrev && bootPrev.step ? String(bootPrev.step).slice(0, 24) : ''), ''),
       pc: safe(() => (bootPrev && bootPrev.ctx ? String(bootPrev.ctx).replace(/[^\w.,:-]/g, '').slice(0, 80) : ''), ''),   // Round 167: what the last session was doing when its crumb was last written
-      zc: safe(() => zcField(), '') };   // Round 192: the depth mode, its probe's answers and the blit that ran (zcField)
+      zc: safe(() => zcField(), ''),   // Round 192: the depth mode, its probe's answers and the blit that ran (zcField)
+      ...safe(() => gpuMemField(), {}) };   // Round 220: the GPU bytes held (gb, gbp, gbw, gbm) on every checkpoint, a phone's and ?gpumem=1's
+    if (st === 'ready') Object.assign(q, safe(() => readyFacts(safe), {}));   // Round 220: the build's facts ride the ready checkpoint (the call keeps its three fields, which a test pins)
     if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
     const url = BEACON + '?' + new URLSearchParams(q).toString();
+    if (dry) return url;
     try { fetch(url, { method: 'POST', keepalive: true, referrerPolicy: 'no-referrer', cache: 'no-store' }).catch(() => {}); }
     catch (e) { try { if (navigator.sendBeacon) navigator.sendBeacon(url); } catch (e2) { /* nothing to do */ } }
+    return url;
+  }
+  PERF.beaconQuery = beaconQuery;
+  // Round 220: the build's facts for the ready checkpoint (beacon composes them in, so the ready call keeps its three fields).
+  // sp, every step's ms in buildSteps' order, which the summary scripts index (never 48 URL-encoded names: nginx logs an 8 KB
+  // request line; about 340 bytes); prg, the programs compiled by then; fl, flms and flp, the flush renders behind the veil,
+  // their summed ms and the programs before the first and after the last (PERF.flush); pu and pub, the meshes still staged for
+  // the first frame to upload and the CPU megabytes they hold (PERF.staged); tsk, the tower skins' ms (TSKIN.ms, a number or
+  // an object with a total); sfw, the ms the storefront step waited on the art race (SF.waitMs); sfb, 1 when a phone's prefetch
+  // resolved to a Blob, 0 when it did not, '' where it never ran (SF.preBlob, p01's open question). Every read goes through
+  // safe: a failed step can leave any of these unmade
+  function readyFacts(safe) {
+    const num = (v) => (typeof v === 'number' ? Math.round(v) : '');
+    return { sp: PERF.steps.map((s) => s[1]).join(','), prg: safe(() => renderer.info.programs.length, ''),
+      fl: safe(() => PERF.flush.n, ''), flms: safe(() => Math.round(PERF.flush.ms), ''), flp: safe(() => PERF.flush.p0 + ':' + PERF.flush.p1, ''),
+      pu: safe(() => pendingUpload.length, ''), pub: safe(() => PERF.staged().mb, ''),
+      tsk: safe(() => num(typeof TSKIN.ms === 'number' ? TSKIN.ms : TSKIN.ms && TSKIN.ms.total), ''),
+      sfw: safe(() => num(SF.waitMs), ''), sfb: safe(() => num(SF.preBlob), '') };
   }
   document.addEventListener('visibilitychange', () => {
     const lm = document.getElementById('loadmsg');
@@ -7550,6 +7587,149 @@ RB.add({
   if ('serviceWorker' in navigator && ON_SITE && location.protocol === 'https:') {   // Round 154: the site only (never inside the app, never a dev server)
     try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* no worker */ }
   }
+
+  // ---- Round 220, the measurement round (p25): GPU-byte accounting in the page itself. Every memory figure the project had
+  // was headless Chrome's (the capture skill's gpuhook.js, whose wraps these are): no real device had ever reported its bytes,
+  // a phone's death was read from a crumb that named only the step, and the phone tiers' cuts were sized without a number.
+  // On a phone (and on a computer behind ?gpumem=1) the page wraps the upload calls of both context prototypes BEFORE the
+  // first context exists (the reversed-Z probe's throwaway context below is the first), so everything the probe and the real
+  // renderer allocate is counted: bufferData, texImage2D, texStorage2D, generateMipmap, renderbufferStorage and
+  // renderbufferStorageMultisample add what they allocate, deleteBuffer, deleteTexture and deleteRenderbuffer take it back,
+  // and the peak remembers the loading message it stood under (gpuMemWhere; after Ready, the seconds since). The figure is a
+  // FLOOR: the canvas's own backbuffer, the MSAA resolve tiles, the driver's padding (ANGLE Metal's copies of a misaligned
+  // stream among them, Round 158) and compressed or 3D formats are not counted, and generateMipmap's third is an estimate.
+  // The sizes live in WeakMaps keyed on the GL object, so a context that goes holds nothing after it, and the binding read on
+  // each call is client-side state in both engines. gb, gbp, gbw and gbm ride every beacon (gpuMemField), bootCtx's 5 s crumb
+  // carries the last reading before a death (the next load's pc), and __dbg.PERF.gpuMem() reads it live (never __dbg.gpu,
+  // which is the timer probe the capture skill reads)
+  const GPUMEM = { on: isTouch || /[?&]gpumem=1\b/.test(location.search), buf: 0, tex: 0, rb: 0, peak: 0, peakAt: '', zrev: 0 };
+  function gpuMemInstall(G, classes, where) {
+    // bytes a pixel of a sized internal format, for texStorage2D and the renderbuffers (an unknown format counts 4): RGBA8,
+    // SRGB8_ALPHA8, RGB8, R8, RG8, R16F, R32F, RG16F, RG32F, RGBA16F, RGBA32F, R11F_G11F_B10F, RGB10_A2, RGBA4, RGB5_A1,
+    // RGB565, DEPTH_COMPONENT16, DEPTH_COMPONENT24, DEPTH_COMPONENT32F, DEPTH24_STENCIL8, DEPTH_STENCIL, DEPTH32F_STENCIL8,
+    // STENCIL_INDEX8
+    const IFMT = { 0x8058: 4, 0x8C43: 4, 0x8051: 3, 0x8229: 1, 0x822B: 2, 0x822D: 2, 0x822E: 4, 0x822F: 4, 0x8230: 8, 0x881A: 8, 0x8814: 16, 0x8C3A: 4, 0x8059: 4,
+      0x8056: 2, 0x8057: 2, 0x8D62: 2, 0x81A5: 2, 0x81A6: 4, 0x8CAC: 4, 0x88F0: 4, 0x84F9: 4, 0x8CAD: 8, 0x8D48: 1 };
+    // bytes a pixel of texImage2D's format and type pair: a packed type is the whole pixel (5_6_5, 4_4_4_4, 5_5_5_1, 24_8,
+    // 32F_24_8_REV, 10F_11F_11F_REV, 5_9_9_9_REV, 2_10_10_10_REV), else the channels (RGBA and RGBA_INTEGER 4, RGB and
+    // RGB_INTEGER 3, RG, RG_INTEGER and LUMINANCE_ALPHA 2, the rest 1) by the type's bytes (FLOAT, INT and UNSIGNED_INT 4,
+    // the half floats, SHORT and UNSIGNED_SHORT 2, a byte 1)
+    const pixel = (fmt, type) => {
+      if (type === 0x8363 || type === 0x8033 || type === 0x8034) return 2;
+      if (type === 0x84FA || type === 0x8C3B || type === 0x8C3E || type === 0x8368) return 4;
+      if (type === 0x8DAD) return 8;
+      const b = type === 0x1406 || type === 0x1405 || type === 0x1404 ? 4 : type === 0x140B || type === 0x8D61 || type === 0x1403 || type === 0x1402 ? 2 : 1;
+      return b * (fmt === 0x1908 || fmt === 0x8D99 ? 4 : fmt === 0x1907 || fmt === 0x8D98 ? 3 : fmt === 0x8227 || fmt === 0x8228 || fmt === 0x190A ? 2 : 1);
+    };
+    // the binding of the buffer target actually written: since Round 167 the pins' pixel pack buffer is one, and read as the
+    // array buffer's binding it overwrote whatever vertex buffer was bound with its own size (the headless hook's lesson)
+    const bufBind = (t) => t === 0x8893 ? 0x8895 : t === 0x88EB ? 0x88ED : t === 0x88EC ? 0x88EF : t === 0x8A11 ? 0x8A28 : t === 0x8F36 || t === 0x8F37 ? t : t === 0x8C8E ? 0x8C8F : 0x8894;
+    const texBind = (t) => t === 0x0DE1 ? 0x8069 : t === 0x806F ? 0x806A : t === 0x8C1A ? 0x8C1D : 0x8514;   // TEXTURE_2D's binding, the 3D texture's, the 2D array's, else the cube map's (a face target or the map)
+    // bufferData's bytes: a size, a buffer or a view, or WebGL 2's view with an element offset and count (0 to the end)
+    const bufBytes = (a) => {
+      const d = a[1];
+      if (typeof d === 'number') return d;
+      if (!d) return 0;
+      if (a.length >= 4 && d.BYTES_PER_ELEMENT) return ((a.length >= 5 && a[4] > 0 ? a[4] : d.length - (a[3] || 0)) * d.BYTES_PER_ELEMENT);
+      return d.byteLength || 0;
+    };
+    const bsz = new WeakMap(), tsz = new WeakMap(), rsz = new WeakMap();
+    const bump = () => { const t = G.buf + G.tex + G.rb; if (t > G.peak) { G.peak = t; G.peakAt = where(); } };
+    const texMap = (t) => { let m = tsz.get(t); if (!m) tsz.set(t, m = {}); return m; };
+    for (const C of classes) {
+      if (!C || !C.prototype || !C.prototype.bufferData) continue;
+      const P = C.prototype;
+      const bd = P.bufferData;
+      P.bufferData = function (target) {
+        const b = this.getParameter(bufBind(target));
+        if (b) { const n = bufBytes(arguments); G.buf += n - (bsz.get(b) || 0); bsz.set(b, n); bump(); }
+        return bd.apply(this, arguments);
+      };
+      const db = P.deleteBuffer;
+      P.deleteBuffer = function (b) { if (b && bsz.has(b)) { G.buf -= bsz.get(b); bsz.delete(b); } return db.apply(this, arguments); };
+      // texImage2D keys each face and level of the bound texture by target:level; the WebGL 1 six-argument form reads its
+      // source's size, the long forms the width and height they carry (the row of a 3D or compressed upload is not counted)
+      const ti = P.texImage2D;
+      P.texImage2D = function (target, level) {
+        const a = arguments, t = this.getParameter(texBind(target));
+        if (t) {
+          let n = 0;
+          if (a.length >= 8 && typeof a[3] === 'number') n = a[3] * a[4] * pixel(a[6], a[7]);
+          else if (a.length === 6 && a[5]) n = (a[5].width || a[5].videoWidth || 0) * (a[5].height || a[5].videoHeight || 0) * pixel(a[3], a[4]);
+          const m = texMap(t), k = target + ':' + level;
+          G.tex += n - (m[k] || 0); m[k] = n; bump();
+        }
+        return ti.apply(this, a);
+      };
+      if (P.texStorage2D) {   // the immutable storage r149 takes on WebGL 2: every level at once (a cube map's six faces), the mips a third
+        const ts = P.texStorage2D;
+        P.texStorage2D = function (target, levels, ifmt, w, h) {
+          const t = this.getParameter(texBind(target));
+          if (t) { const n = Math.round(w * h * (IFMT[ifmt] || 4) * (target === 0x8513 ? 6 : 1) * (levels > 1 ? 1.33 : 1)), m = texMap(t); G.tex += n - (m.s || 0); m.s = n; bump(); }
+          return ts.apply(this, arguments);
+        };
+      }
+      if (P.texStorage3D) {   // the review: the cloud volumes (a computer's 128 and 64 cubed) and any 2D array are 3D storage
+        const ts3 = P.texStorage3D;
+        P.texStorage3D = function (target, levels, ifmt, w, h, d) {
+          const t = this.getParameter(texBind(target));
+          if (t) { const n = Math.round(w * h * d * (IFMT[ifmt] || 4) * (levels > 1 ? 1.33 : 1)), m = texMap(t); G.tex += n - (m.s || 0); m.s = n; bump(); }
+          return ts3.apply(this, arguments);
+        };
+      }
+      if (P.texImage3D) {
+        const ti3 = P.texImage3D;
+        P.texImage3D = function (target, level) {
+          const a = arguments, t = this.getParameter(texBind(target));
+          if (t && a.length >= 10 && typeof a[3] === 'number') { const n = a[3] * a[4] * a[5] * pixel(a[7], a[8]), m = texMap(t), k = target + ':' + level; G.tex += n - (m[k] || 0); m[k] = n; bump(); }
+          return ti3.apply(this, a);
+        };
+      }
+      const gm = P.generateMipmap;   // a third over the level-0 bytes texImage2D laid (an immutable texture's mips are already in its storage)
+      P.generateMipmap = function (target) {
+        const t = this.getParameter(texBind(target));
+        if (t) { const m = texMap(t); let base = 0; for (const k in m) if (k.length > 3 && k.slice(-2) === ':0') base += m[k]; const add = Math.round(base * 0.33); G.tex += add - (m.mip || 0); m.mip = add; bump(); }
+        return gm.apply(this, arguments);
+      };
+      const dt = P.deleteTexture;
+      P.deleteTexture = function (t) { const m = t && tsz.get(t); if (m) { for (const k in m) G.tex -= m[k]; tsz.delete(t); } return dt.apply(this, arguments); };
+      const rs = P.renderbufferStorage;
+      P.renderbufferStorage = function (target, fmt, w, h) {
+        const r = this.getParameter(0x8CA7);   // RENDERBUFFER_BINDING
+        if (r) { const n = w * h * (IFMT[fmt] || 4); G.rb += n - (rsz.get(r) || 0); rsz.set(r, n); bump(); }
+        return rs.apply(this, arguments);
+      };
+      if (P.renderbufferStorageMultisample) {   // every sample is stored: the phone's 4x target is four times its pixels
+        const rm = P.renderbufferStorageMultisample;
+        P.renderbufferStorageMultisample = function (target, samples, fmt, w, h) {
+          const r = this.getParameter(0x8CA7);
+          if (r) { const n = w * h * (IFMT[fmt] || 4) * Math.max(1, samples | 0); G.rb += n - (rsz.get(r) || 0); rsz.set(r, n); bump(); }
+          return rm.apply(this, arguments);
+        };
+      }
+      const dr = P.deleteRenderbuffer;
+      P.deleteRenderbuffer = function (r) { if (r && rsz.has(r)) { G.rb -= rsz.get(r); rsz.delete(r); } return dr.apply(this, arguments); };
+    }
+  }
+  function gpuMemWhere() {   // the loading message under the peak, its first 24 characters; after Ready, the seconds since
+    const s = loadmsg ? String(loadmsg.textContent || '').slice(0, 24) : '';
+    return PERF.ready ? s.slice(0, 16) + ' +' + Math.round((performance.now() - PERF.t0 - PERF.ready) / 1000) + 's' : s;
+  }
+  if (GPUMEM.on) gpuMemInstall(GPUMEM, [window.WebGLRenderingContext, window.WebGL2RenderingContext], gpuMemWhere);
+  // the beacon fields, spread into every beacon's base query: gb the bytes held now and gbp the peak, both in whole MB, gbw the
+  // loading message under the peak, gbm the phone's reversed-Z target alone (its 4x RGBA8 and DEPTH32F_STENCIL8 renderbuffers,
+  // 12 bytes a sample, counted in gb too; '' where there is none). Nothing when the accounting is off, and nothing before
+  // GPUMEM's own line has run (the error beacon can fire that early: the TDZ)
+  function gpuMemField() {
+    try {
+      if (!GPUMEM.on) return {};
+      return { gb: Math.round((GPUMEM.buf + GPUMEM.tex + GPUMEM.rb) / 1048576), gbp: Math.round(GPUMEM.peak / 1048576), gbw: GPUMEM.peakAt, gbm: GPUMEM.zrev ? Math.round(GPUMEM.zrev / 1048576) : '' };
+    } catch (e) { return {}; }
+  }
+  PERF.gpuMem = () => {   // __dbg.PERF.gpuMem(): the sums in MB to a tenth, the peak and where it stood, the reversed-Z target's own
+    const MB = (b) => Math.round(b / 104857.6) / 10;
+    return { on: GPUMEM.on, buf: MB(GPUMEM.buf), tex: MB(GPUMEM.tex), rb: MB(GPUMEM.rb), total: MB(GPUMEM.buf + GPUMEM.tex + GPUMEM.rb), peak: MB(GPUMEM.peak), peakAt: GPUMEM.peakAt, zrev: MB(GPUMEM.zrev) };
+  };
 
   let renderer;
   // ---- the depth mode (Round 192, Mike: hold about 60 fps). Reversed-Z float depth is the default wherever it can be had:
@@ -7799,6 +7979,7 @@ RB.add({
       ZREV.samples = Math.min(4, renderer.capabilities.maxSamples || 4);
       gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rbC); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ZREV.samples, gl.RGBA8, w, h);
       gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rbD); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ZREV.samples, gl.DEPTH32F_STENCIL8, w, h);
+      GPUMEM.zrev = w * h * ZREV.samples * 12;   // Round 220: the target's own bytes for the gbm beacon field (RGBA8 4 and DEPTH32F_STENCIL8 8 a sample)
       if (ZREV.rrb) { gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rrb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h); }
       gl.bindRenderbuffer(gl.RENDERBUFFER, null);
       const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
@@ -8026,7 +8207,7 @@ RB.add({
     DPR.live = false;                          // judged from Enter on: the build behind the veil is not the city's frame time
   }
   dprInit();
-  function dprGo(k) { DPR.k = k; applyDPR(DPR.levels[k]); DPR.low = Math.min(DPR.low, DPR.cur); DPR.nch = (DPR.nch || 0) + 1; DPR.chT = performance.now(); }
+  function dprGo(k) { DPR.k = k; applyDPR(DPR.levels[k]); DPR.low = Math.min(DPR.low, DPR.cur); DPR.nch = (DPR.nch || 0) + 1; DPR.chT = performance.now(); if (DPR.live && !DPR.ch1) DPR.ch1 = DPR.chT; }   // Round 220: ch1, the first change after Enter (Enter clears it after its own re-seat; dc1 on the perf beacons)
   function dprGap(now) {   // the app went to the background, or a stall: the windows no longer describe this moment
     const t = DPR.trial;
     if (t && DPR.k !== t.from) dprGo(t.from);   // abandoned without a verdict or a hold
@@ -8118,7 +8299,8 @@ RB.add({
     const now = performance.now(), D = DPR, p = PERF.rn ? perfStats() : null;
     return 's' + (PERF.enterT ? Math.round((now - PERF.enterT) / 1000) : -1) + ',r' + D.cur.toFixed(2) + ',t' + (D.trial ? (D.trial.dn ? 'd' : 'u') : '-') +
       ',n' + (D.nch || 0) + ',c' + (D.chT ? Math.round((now - D.chT) / 1000) : -1) + ',v' + (D.vs ? D.vs.toFixed(0) : 0) +
-      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1) + ',g' + GFX_LETTER[gfxPick()] + ',i' + (PACE.on && performance.now() - PACE.lastInput >= PACE_IDLE_AFTER && performance.now() - PACE.moved >= PACE_IDLE_AFTER ? 1 : 0);   // Round 168: the choice, and whether it sat idle
+      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1) + ',g' + GFX_LETTER[gfxPick()] + ',i' + (PACE.on && performance.now() - PACE.lastInput >= PACE_IDLE_AFTER && performance.now() - PACE.moved >= PACE_IDLE_AFTER ? 1 : 0) +   // Round 168: the choice, and whether it sat idle
+      (GPUMEM.on ? ',gb' + Math.round((GPUMEM.buf + GPUMEM.tex + GPUMEM.rb) / 1048576) : '');   // Round 220: the GPU bytes held, in MB, the last reading before a death
   }
   function dprBeacon() {   // Round 166: what the controller did on this device, for the perf beacons
     const D = DPR;
@@ -8355,27 +8537,41 @@ RB.add({
   // with a 9-tap tent, the levels weighted 0.6 (the old tight halo), 0.22, 0.12 and 0.06, so the glow's energy is the old
   // one, spread wider. Desktop only (the post pipeline is); ?bloomwide=0, ?real=0 and Smoother keep the old halo
   const BLOOMW = { on: REAL && !/[?&]bloomwide=0\b/.test(location.search), mats: null, d: [], u: [], w: [0.6, 0.22, 0.12, 0.06] };
-  // ---- GPU pass timings (gap 12, "desktop has no frame budget for the new realism passes"): with ?dev on a desktop that has
+  // ---- GPU pass timings (gap 12, "desktop has no frame budget for the new realism passes"): on a desktop that has
   // EXT_disjoint_timer_query_webgl2, the frame's passes are timed one after another (WebGL 2 allows one timer at a time):
   // the shadow maps (near and far apart, through a wrapper on three's shadow pass), the scene, the occlusion, the bloom and
-  // the composite. Results land a frame or more later; __dbg.gpu() and __dbg.perf().gpu read the running means
-  const GPUT = { ext: null, on: false, cur: null, pend: [], ms: {}, fid: 0, accF: -1, acc: {} };
-  GPUT.ext = POST.on && /[?&]dev\b/.test(location.search) ? renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') : null;
+  // the composite. Results land a frame or more later; __dbg.gpu() and __dbg.perf().gpu read the running means.
+  // Round 220 (the measurement round): the timer was ?dev's alone and reached no beacon, so the 24-core Mac's 33 ms frame
+  // (1.6 to 7.7 ms of it in JS) was 20 ms of GPU or vsync wait that nothing split by pass. It is on now in every desktop
+  // session the post pipeline runs in and whose context grants the extension (?gput=0 the escape), SAMPLED: a window of
+  // GPUT_ON consecutive frames in every GPUT_EVERY (a tenth), the means from the sampled frames only, so the poll is bounded
+  // (nothing in flight, no GL call) and whatever an ANGLE / Metal encoder split costs is paid a tenth of the time; ?dev keeps
+  // it continuous, so __dbg.gpu() reads as it did. The passes outside the scene's query carry their own labels (mirror,
+  // pins and pinsnear, lampnear and lampfar, carmap, cityenv), the frame id is stamped at the top of frame() (gpuFrame) so a
+  // pass drawn before the scene lands in its own frame's total, not the one before's, and gputBeacon() hands the perf,
+  // settled and late beacons the labels' means since Enter with the counters that never left the page (the pins' captures,
+  // the mirror's and the car map's draws, the near and far shadow maps' draws). A phone has no timer extension in WebKit
+  // and no post pipeline: untouched by construction
+  const GPUT_ON = 30, GPUT_EVERY = 300;   // Round 220: the sampled schedule, GPUT_ON consecutive frames of every GPUT_EVERY
+  const gpuSampled = (fid, dev) => !!dev || fid % GPUT_EVERY < GPUT_ON;   // whether frame `fid` runs the timer (continuous under ?dev)
+  const GPUT = { ext: null, on: false, dev: /[?&]dev\b/.test(location.search), live: false, cur: null, pend: [], free: [], ms: {}, fid: 0, accF: -1, acc: {},
+    sampled: 0, sdn: 0, sfd: 0, entered: false, base: { pr: 0, prn: 0, rf: 0, cm: 0, sdn: 0, sfd: 0, ln: 0, lf: 0 } };   // sdn / sfd: the near and far shadow maps' draws; base: the counters at Enter
+  GPUT.ext = POST.on && !isTouch && !/[?&]gput=0\b/.test(location.search) ? renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') : null;
   GPUT.on = !!GPUT.ext;
   function gpuT(label) {
     if (!GPUT.on) return;
     const gl = renderer.getContext();
     if (GPUT.cur) { gl.endQuery(GPUT.ext.TIME_ELAPSED_EXT); GPUT.cur = null; }
-    if (!label) return;
-    const q = gl.createQuery();
+    if (!label || !GPUT.live) return;   // Round 220: a frame outside the sampled window ends what was open and starts nothing
+    const q = GPUT.free.pop() || gl.createQuery();   // a query whose result was read serves again (the same target: WebGL 2 allows it)
     gl.beginQuery(GPUT.ext.TIME_ELAPSED_EXT, q);
     GPUT.cur = q; GPUT.pend.push([q, label, GPUT.fid]);
   }
   const gpuNow = () => (GPUT.cur && GPUT.pend.length ? GPUT.pend[GPUT.pend.length - 1][1] : null);
   function gpuRecord(label, ms) {
-    const m = GPUT.ms[label] || (GPUT.ms[label] = { last: 0, mean: 0, max: 0, n: 0, ring: [] });
-    m.last = ms; m.n++; m.mean += (ms - m.mean) / Math.min(m.n, 60); m.max = Math.max(m.max * 0.995, ms);
-    m.ring.push(+ms.toFixed(2)); if (m.ring.length > 32) m.ring.shift();   // the last 32 one by one: a rare pass's first draw (its programs, its target) apart from the rest
+    const m = GPUT.ms[label] || (GPUT.ms[label] = { last: 0, mean: 0, max: 0, n: 0, sum: 0, cnt: 0, ring: [] });   // sum / cnt: since Enter, for the beacons (gputEnter zeroes them)
+    m.last = ms; m.n++; m.mean += (ms - m.mean) / Math.min(m.n, 60); m.max = Math.max(m.max * 0.995, ms); m.sum += ms; m.cnt++;
+    m.ring.push(Math.round(ms * 100) / 100); if (m.ring.length > 32) m.ring.shift();   // the last 32 one by one: a rare pass's first draw (its programs, its target) apart from the rest
   }
   function gpuCommit() {   // a frame's segments summed (the scene pass is cut in two around a shadow pass)
     let t = 0;
@@ -8383,10 +8579,20 @@ RB.add({
     if (t > 0) gpuRecord('total', t);
     GPUT.acc = {};
   }
-  function gpuPoll() {
+  // Round 220: at the top of every drawn frame (frame(), right after frameNo), before any pass queues GL work: the frame id every
+  // query of the frame carries, and whether this frame is in the sampled window. gpuPoll used to stamp it at the start of
+  // renderPost, so the pins' capture, the lamp maps and the car map, drawn before the scene, landed in the frame before's total
+  function gpuFrame() {
     if (!GPUT.on) return;
     GPUT.fid++;
+    GPUT.live = gpuSampled(GPUT.fid, GPUT.dev);
+    if (GPUT.live) GPUT.sampled++;
+    if (!GPUT.entered && DPR.live) gputEnter();   // the first drawn frame after Enter: the beacons' counts and means start here
+  }
+  function gpuPoll() {
+    if (!GPUT.on || !GPUT.pend.length) return;   // Round 220: nothing in flight, no GL call (a window's queries land within a few frames of it)
     const gl = renderer.getContext();
+    if (GPUT.pend[0][0] === GPUT.cur || !gl.getQueryParameter(GPUT.pend[0][0], gl.QUERY_RESULT_AVAILABLE)) return;   // the review: the disjoint flag is read only when a result is there to consume (each read is a round trip to the GPU process)
     if (gl.getParameter(GPUT.ext.GPU_DISJOINT_EXT)) {   // the clock jumped: nothing measured meanwhile can be trusted
       for (const [q] of GPUT.pend) if (q !== GPUT.cur) gl.deleteQuery(q);
       GPUT.pend = GPUT.pend.filter(([q]) => q === GPUT.cur); GPUT.acc = {}; GPUT.accF = -1;
@@ -8395,14 +8601,39 @@ RB.add({
     while (GPUT.pend.length && GPUT.pend[0][0] !== GPUT.cur && gl.getQueryParameter(GPUT.pend[0][0], gl.QUERY_RESULT_AVAILABLE)) {
       const [q, label, fid] = GPUT.pend.shift();
       const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
-      gl.deleteQuery(q);
+      GPUT.free.push(q);
       if (fid !== GPUT.accF) { gpuCommit(); GPUT.accF = fid; }
       GPUT.acc[label] = (GPUT.acc[label] || 0) + ms;
     }
+    // Round 220: the window's last frame is committed once nothing of it is in flight and the frame has moved on (before, it
+    // waited for the next window's first query, GPUT_EVERY frames later), so a beacon never reads a frame short
+    if (!GPUT.pend.length && GPUT.accF >= 0 && GPUT.accF !== GPUT.fid) { gpuCommit(); GPUT.accF = -1; }
     if (GPUT.pend.length > 400) { for (const [q] of GPUT.pend.splice(0, 200)) if (q !== GPUT.cur) gl.deleteQuery(q); }
   }
   // __dbg.gpu(true) adds each pass's last 32 timings, oldest first
   const gpuStats = (all) => { const o = {}; for (const k in GPUT.ms) { const m = GPUT.ms[k]; o[k] = { last: +m.last.toFixed(2), mean: +m.mean.toFixed(2), max: +m.max.toFixed(2), n: m.n }; if (all === true) o[k].ring = m.ring.slice(); } return o; };
+  // Round 220: Enter (DPR.live, seen by gpuFrame): the beacons count from here. The counters stay as they are (other probes read
+  // them); their values now are the base gputBeacon subtracts, and every label's sum and count start again
+  function gputEnter() {
+    const B = GPUT.base;
+    B.pr = PIN_OCC.renders; B.prn = PIN_OCC.rendersNear; B.rf = REFL.n; B.cm = CARMAP.renders; B.sdn = GPUT.sdn; B.sfd = GPUT.sfd; B.ln = LAMPNEAR.renders; B.lf = LAMPMAP.renders;
+    for (const k in GPUT.ms) { GPUT.ms[k].sum = 0; GPUT.ms[k].cnt = 0; }
+    GPUT.entered = true;
+  }
+  // Round 220: the timer's share of the perf, settled and late beacons (spread in beside dprBeacon's), {} when it is off: gt the
+  // labels' mean GPU ms per frame they ran in since Enter as label:ms (one decimal, the CPU-side shadow records left out), gtn
+  // the sampled frames in the means, and the counts since Enter of what never left the page: pr the pins' captures and prn the
+  // near ones among them, rf the mirror's draws and rfm its eased CPU ms a draw, cm the car map's draws, sdn and sfd the near
+  // and far shadow maps' draws, ln and lf the near and far lamp maps' draws
+  const GPUT_CPU_LAB = /Cpu$|Calls$/;
+  function gputBeacon() {
+    if (!GPUT.on) return {};
+    const B = GPUT.base, gt = [];
+    for (const k in GPUT.ms) { const m = GPUT.ms[k]; if (!m.cnt || GPUT_CPU_LAB.test(k)) continue; gt.push(k + ':' + (m.sum / m.cnt).toFixed(1)); }
+    return { gt: gt.join(','), gtn: GPUT.ms.total ? GPUT.ms.total.cnt : 0, pr: PIN_OCC.renders - B.pr, prn: PIN_OCC.rendersNear - B.prn, rf: REFL.n - B.rf, rfm: Math.round(REFL.ms),
+      cm: CARMAP.renders - B.cm, sdn: GPUT.sdn - B.sdn, sfd: GPUT.sfd - B.sfd, ln: LAMPNEAR.renders - B.ln, lf: LAMPMAP.renders - B.lf };
+  }
+  PERF.gput = gputBeacon; PERF.gputState = GPUT;   // __dbg.PERF.gput() the beacon's fields, __dbg.PERF.gputState the timer's state (on, live, sampled, the base)
   // the CPU's side of each shadow pass too, with its draw calls (shadowCpu / shadowFarCpu, shadowCalls / shadowFarCalls): the
   // review's open question, a frame that draws the far map over Center City from 600 m stood 24 to 106 ms on the CPU
   // headless against 5 for the frames around it, and 1 to 2 over South Philly from 90 m
@@ -8411,6 +8642,7 @@ RB.add({
     sm.render = function (lights, sc, cam) {
       if (!this.enabled || (!this.autoUpdate && !this.needsUpdate) || !lights.length) return r0.call(this, lights, sc, cam);
       const prev = gpuNow(), lab = FARSH.pending ? 'shadowFar' : 'shadow', c0 = renderer.info.render.calls, t0 = performance.now();
+      if (FARSH.pending) GPUT.sfd++; else GPUT.sdn++;   // Round 220: the maps' draws, for the beacons (sdn, sfd)
       gpuT(lab); r0.call(this, lights, sc, cam); gpuT(prev);
       gpuRecord(lab + 'Cpu', performance.now() - t0); gpuRecord(lab + 'Calls', renderer.info.render.calls - c0);
     };
@@ -9267,6 +9499,12 @@ RB.add({
   // school one house deep is not a row of houses)
   const ROOF_KIT_STRIDE = 11, RK_NU = 8, RK_NV = 6;
   const ROOF_KIT = { buf: new Float32Array(ROOF_KIT_STRIDE * 65536), n: 0, partial: 0, empty: 0, hist: new Uint32Array(7) };   // hist: roofs by cells on, in eighths of 48
+  // Round 220 (the measurement round): what the ring loops spend noting roofs. Every call is counted; one call in sixteen
+  // is timed round roofKitNoteRaw and scaled by sixteen (a timer pair round every call would be hundreds of thousands of
+  // reads a load, more than the work), which stays unbiased on a clock that answers in whole milliseconds (WebKit's):
+  // what sums is how many sampled calls crossed a tick, not the ticks' size. ms is the scaled estimate, rounded. It is
+  // PERF.roofKitNote, registered beside STEP_EXTRA: this span goes into a Node script with no PERF (tests/test_roof_light_bands.py)
+  const RK_STAT = { calls: 0, sampled: 0, acc: 0, ms: 0 };
   function roofKitMask(ob, ax, poly, holes) {
     const ux = ax.ax, uz = ax.az, px = -uz, pz = ux, hl = ax.hl, hs = ax.hs;
     const on = (u, v) => {
@@ -9287,6 +9525,12 @@ RB.add({
     return [lo, hi];
   }
   function roofKitNote(ob, ax, top, area, seed, poly, holes, row = 0) {
+    if ((RK_STAT.calls++ & 15) !== 0) { roofKitNoteRaw(ob, ax, top, area, seed, poly, holes, row); return; }   // Round 220: see RK_STAT
+    const tk = performance.now();
+    roofKitNoteRaw(ob, ax, top, area, seed, poly, holes, row);
+    RK_STAT.acc += (performance.now() - tk) * 16; RK_STAT.ms = Math.round(RK_STAT.acc); RK_STAT.sampled++;
+  }
+  function roofKitNoteRaw(ob, ax, top, area, seed, poly, holes, row = 0) {
     if (area < 25 || area > 40000) return;
     const S = ROOF_KIT_STRIDE;
     if (ROOF_KIT.n * S + S > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
@@ -10597,6 +10841,8 @@ RB.add({
   // position, so the caller derives its attributes from it.
   const ROAD_STATS = { draped: 0, flat: 0, fans: 0, flatFans: 0, tris: 0, ms: 0 };
   PERF.roads = ROAD_STATS;   // __dbg.roads()
+  const TRI_NEAR = { calls: 0 };   // Round 220: streetTriNear's calls (2.9 M a load), counted and never timed; __dbg.PERF.triNear
+  PERF.triNear = TRI_NEAR;
   // At a tier/cut boundary both adjacent triangles count. Their sampled DEMs
   // can disagree, so a shared road edge must clear the higher of the two.
   function roadGroundEdgeY(x, z) {
@@ -10892,6 +11138,7 @@ RB.add({
   // The box is a centimetre generous on every side, so a no here is exactly the no the full
   // walk would have reached (the full walk rounds to float first and can only see fewer cells)
   function streetTriNear(ax,az,bx,bz,cx,cz) {
+    TRI_NEAR.calls++;   // Round 220: counted, never timed
     const x0=Math.min(ax,bx,cx)-0.01,x1=Math.max(ax,bx,cx)+0.01,z0=Math.min(az,bz,cz)-0.01,z1=Math.max(az,bz,cz)+0.01;
     if(terrainRoadGrid)
       for(let x=Math.floor(x0/TERRAIN_PATCH_CELL);x<=Math.floor(x1/TERRAIN_PATCH_CELL);x++)
@@ -12649,6 +12896,10 @@ RB.add({
   // side near the edge from a 40 m grid of the edges themselves (20 m before Round 88).
   const SCH_POLYS = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.polys && SCHUYLKILL_DATA.polys.length) ? SCHUYLKILL_DATA.polys : null;
   let schRaster = null, schEdges = null;
+  // Round 220: schEdges is asked about 2.8 M times a load (every road vertex and every ground node near the river), so it is
+  // counted and never timed; a step reads the count before and after (PERF.fit.sch). __dbg.PERF.sch
+  const SCH_STAT = { calls: 0 };
+  PERF.sch = SCH_STAT;
   if (SCH_POLYS) {
     // EC 40 with a ±2-cell search reads a distance to 80 m (Round 88). At 20 the read capped at 40,
     // and Round 87's BANK_BLEND band (40 to 70 m) in groundMeshLandY, which was to ease a bank
@@ -12690,6 +12941,7 @@ RB.add({
     }
     // [distance to the nearest edge within 40 m (else 40), +1 outside / -1 inside by that edge]
     schEdges = (x, z) => {
+      SCH_STAT.calls++;   // Round 220: counted, never timed
       let best = 6400, side = 0;   // 80 m, the reach of the ±2-cell search below
       const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
       for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) {
@@ -15539,7 +15791,9 @@ vec2 wRing(vec2 rc, float tt) {
       if (!REFL.noReach) reflReach(C.position, REFL.far || REFL_FAR); else REFL.nCut = 0;
       if (ZREV.on && !MIRZ.off) mirzSwap(C);   // the sprites' twins (MIRZ; __dbg.mirz(false) draws the originals, the A/B)
       r.setRenderTarget(REFL.rt); r.setClearColor(0x000000, 0); r.clear(true, true, true);
+      const gprev = gpuNow(); gpuT('mirror');   // Round 220: the mirror's own GPU time (the timer's 'mirror' label), only on a frame that draws it
       r.render(sc, C);
+      gpuT(gprev);
       REFL.calls = r.info.render.calls; REFL.tris = r.info.render.triangles;
     } finally {
       mirzBack();
@@ -19605,6 +19859,10 @@ vec2 wRing(vec2 rc, float tt) {
     else if (CITYENV.pending && performance.now() - CITYENV.at >= CITYENV_GAP) cityEnvBake(0);
     else if (CITYENV.lumAt > 0) CITYENV.u.uCityEnvK.value = Math.min(1, cityEnvLum() / CITYENV.lumAt);
   }
+  // Round 220: the bake under the GPU timer's 'cityenv' label (the frames a probe is baked, nothing else), wrapped from outside
+  // as three's shadow pass is: the bake's own text is the glass calibration's fingerprint (glass_calibrate.py) and the tick's
+  // call is pinned (tests/test_glass_towers.py), so neither changes. A function declaration's binding takes the wrapper
+  { const bake0 = cityEnvBake; cityEnvBake = function (only) { const gprev = gpuNow(); gpuT('cityenv'); try { bake0(only); } finally { gpuT(gprev); } }; }
 
   // the curtain wall's fragment work. The procedural frame (no art: a tier-2 phone, ?glassart=0, or before the frames land)
   // draws the system's own vision band and mullions, each axis box filtered by its own footprint
@@ -33484,12 +33742,33 @@ if (uOlLamp > 0.001) {
     // a tiled mesh's tiles count once toward the dozen (review, Round 167): the far ring's 48 road and area tiles, staged just
     // after uploadRing's own flush, set off a whole-scene render in the towns loop at once, one more than the merged meshes took
     if (!pendingUpload.length || (!all && pendingUpload.reduce((n, m, i, a) => n + (m.userData.tileSet && i > 0 && a[i - 1].userData.tileSet === m.userData.tileSet ? 0 : 1), 0) < 12)) return;
+    const F = PERF.flush, tf = performance.now();   // Round 220: this flush's count, ms and programs (fl, flms and flp on the ready beacon)
+    if (F.p0 < 0) F.p0 = renderer.info.programs.length;
     packResident(groupCity);   // everything this render uploads goes up packed (see packResident)
     // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
     // into the float target so every program compiles once, in the variant the frames use
     if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
+    F.n++; F.ms += performance.now() - tf; F.p1 = renderer.info.programs.length;
+  };
+  // Round 220 (the measurement round): the flushes behind the veil, n renders and their summed ms, with the programs before the
+  // first and after the last (p0 and p1: what the flushes themselves compiled; -1 until one has run), and PERF.staged, what
+  // pendingUpload still holds on the CPU for the first frame to upload: every attribute's and index's array byteLength still
+  // here, an interleaved buffer once per geometry, an array freed at upload nothing. Both ride the ready beacon (readyFacts)
+  // and __dbg.PERF has them; the timer runs only on a flush that renders, never on the early return every chunk makes
+  PERF.flush = { n: 0, ms: 0, p0: -1, p1: -1 };
+  PERF.staged = () => {
+    let n = 0, bytes = 0;
+    for (const m of pendingUpload) {
+      const g = m.geometry;
+      if (!g) continue;
+      n++;
+      const seen = new Set();
+      for (const k in g.attributes) { const a = g.attributes[k], o = a.isInterleavedBufferAttribute ? a.data : a; if (!o || seen.has(o)) continue; seen.add(o); if (o.array) bytes += o.array.byteLength; }
+      if (g.index && g.index.array) bytes += g.index.array.byteLength;
+    }
+    return { n, bytes, mb: +(bytes / 1048576).toFixed(1) };
   };
   // Round 167: a city-wide merged mesh goes into the scene as its tiles (tileMesh), each staged like a chunk: drawn unculled
   // once behind the veil, so it uploads and frees its arrays (gotcha 12), by the next flushUploads or, for what the steps
@@ -33570,8 +33849,13 @@ if (uOlLamp > 0.001) {
   const wideSurfaceTasks = [];
   step('Raising the outer districts', async () => {
     if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
+    const tWD = performance.now();   // Round 220 (the measurement round): the step's phases, PERF.wide, on its beacon through PERF.stepExtra
     const bin = unb64(WIDE_B64, 'WIDE');
     WIDE_B64 = null;   // the 5 MB base64 string has served its purpose
+    // dec: the base64 decode; loop: the record loop's wall time, yld the part of it spent in its every-4096th flush and yield;
+    // junc: the junction pass, which runs from 'Fitting streets to the terrain' (wideSurfaceTasks), so the outer step's own
+    // beacon reads it 0 and the fit step's carries it; flush: the glass and fabric chunks' upload. Integer ms
+    const WMS = PERF.wide = { dec: Math.round(performance.now() - tWD), loop: 0, yld: 0, junc: 0, flush: 0 };
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
     const hasAttr = hdr[0] === 0x5348545A || hdr[0] === 0x5348545D;
@@ -34175,6 +34459,7 @@ if (uOlLamp > 0.001) {
       else ch.idx.push(i0, i0 + 2, i0 + 1, i0, i0 + 3, i0 + 2);
     };
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
+    const tWL = performance.now();   // Round 220: the record loop
     for (let i = 0; i < nb; i++) {
       const n = body[k++]; let h = body[k++] / 5; const mh = body[k++] / 5, t = body[k++];
       const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
@@ -34396,7 +34681,7 @@ if (uOlLamp > 0.001) {
             venueBar(P(0,hTop+.15),P(len,hTop+.15),.25,0x89989e);
           }
         }
-        if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
+        if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); const ty = performance.now(); flushUploads(); await yieldNow(); WMS.yld += performance.now() - ty; }
         continue;
       }
       if (t === 10 && !own) { // glass tower parts: reflective material, no painted windows
@@ -34411,7 +34696,7 @@ if (uOlLamp > 0.001) {
         if (low === 'winter') { CMRW.winter++; if (GLASS_ON) lowFh = glassFh(5); }
         else if (low === 'podium') { CMRW.podium++; if (GLASS_ON) { glassTowerBody(CMRW.ctc, c); lowFh = glassFh(1); } }
         appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, 3, base, null, lowFh);   // hTop, not h: a researched crown's datum cuts this section too (Round 81: BNY Mellon's lattice stood inside its shaft)
-        if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
+        if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); const ty = performance.now(); flushUploads(); await yieldNow(); WMS.yld += performance.now() - ty; }
         continue;
       }
       const chk = getChunk(cx, cz);
@@ -34466,8 +34751,9 @@ if (uOlLamp > 0.001) {
           chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
         }
       }
-      if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
+      if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); const ty = performance.now(); flushUploads(); await yieldNow(); WMS.yld += performance.now() - ty; }
     }
+    WMS.loop = Math.round(performance.now() - tWL); WMS.yld = Math.round(WMS.yld);   // Round 220
     if (TOWN_ON) townMass(crownTrim, venueParts, appendBuilding, getChunk, (poly, g0, y1, name, bx, bz) => {
       // a body the packer lost (wide.b64 kept only a part where OSM maps one, Eight Penn's penthouse), raised in its glass system
       const sp = TOWER_SPECS.find((q) => q.name === name), st = sp ? landmarkFacadeStyle(sp) : 20, sys = GLASS_ON ? glassSysOfSpec(sp, st) : -1, col = new THREE.Color();
@@ -34966,6 +35252,7 @@ if (uOlLamp > 0.001) {
       const tJ = performance.now();
       const JX = REAL ? streetJunctions(wideRoadRecs, STREET_JOINS, STREET_JOINS, (a, q) => !ovpOwned(a[0], a[1], q[0], q[1])) : null;
       if (JX) { const P = PERF.junctions || (PERF.junctions = {}); P.wide = JX.reduce((n, l) => n + l.length / 2, 0); P.wideMs = Math.round(performance.now() - tJ); }
+      WMS.junc = Math.round(performance.now() - tJ);   // Round 220: the junction pass (0 without REAL), on the fit step's beacon as wj
       for (let ri = 0; ri < wideRoadRecs.length; ri++) {
         const { w, t, i } = wideRoadRecs[ri], jl = JX && JX[ri];
         const pts = jl && jl.length ? splitAtS(wideRoadRecs[ri].pts, junctionCuts(jl)) : wideRoadRecs[ri].pts;
@@ -35828,6 +36115,7 @@ if (uOlLamp > 0.001) {
     if (njPoly && NJ_ON && !njBuildSafe(njPoly) && njOld) njOld();
     setLoadingMessage('Raising the outer districts, uploading');
     await yieldNow();
+    const tWF = performance.now();   // Round 220: the flush, the glass chunks' and the fabric's
     for (const ch of glassChunks.values()) {
       const g = ch.geometry(true);   // aStyle, aBase and aTint: geometry(false) silently dropped every curtain-wall variant (Round 54)
       if (!outerGlassMat) {
@@ -35952,6 +36240,7 @@ if (uOlLamp > 0.001) {
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
     flushUploads(true);
     await yieldNow();
+    WMS.flush = Math.round(performance.now() - tWF);   // Round 220
     wideSurfaceTasks.push(() => {
       if (rc.n) {
         const g = new THREE.BufferGeometry();
@@ -37955,7 +38244,7 @@ if (uOlLamp > 0.001) {
     return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
       dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), skewed: FRONTS.skewed || 0, noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
-      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, error: TSKIN.error, late: skinLateU.value.toArray().map((v) => +v.toFixed(3)) },
+      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, msParts: TSKIN.msParts || null, error: TSKIN.error, late: skinLateU.value.toArray().map((v) => +v.toFixed(3)) },
       storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, shopOn: frShopOn.value, bases: { ...TSKIN.bases }, fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
   }
   // the realism pass's measure of the fit (critic gap 0): over every honest side, the offset of the wall's line from the
@@ -38075,6 +38364,10 @@ if (uOlLamp > 0.001) {
     // buildings (merged block strips + solo talls/churches)
     const nb = hdr[1];
     const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -12200, -21900, 28900, 31800, 30);
+    // Round 220 (the measurement round): the ring's phases, returned as R.ms and copied into PERF.far by the far step: loop,
+    // the record loop's wall time; yld, the part of it in its every-4096th flush and yield; n, the records raised (the
+    // skipped ones are not); rdec and adec, the roads' and the areas' decode. uploadRing adds flush, roads and areas. Integer ms
+    const RMS = { loop: 0, yld: 0, n: 0, rdec: 0, adec: 0 }, tRL = performance.now();
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
       const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
@@ -38083,7 +38376,7 @@ if (uOlLamp > 0.001) {
       const [cx, cz] = polyCentroid(poly);
       if (keepAt && !keepAt(cx, cz)) continue;
       if (boathouseAt(cx,cz)) continue;
-      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { setLoadingMessage(label + ', ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); } continue; }
+      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { setLoadingMessage(label + ', ' + Math.round(i / nb * 100) + '%'); const ty = performance.now(); flushUploads(); await yieldNow(); RMS.yld += performance.now() - ty; } continue; }
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;   // nothing floats mid-river
       let base = siteY(cx, cz, 'ground');
       if (inP(cx, cz)) {
@@ -38123,6 +38416,7 @@ if (uOlLamp > 0.001) {
       if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style, c);
       if (MID_SKIN && wideSeam && !mh && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
         midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + h, style, i + 0.53, c, t, fa);   // Round 185   // the far ring's houses (Round 181; a phone's stop at the outer districts)
+      RMS.n++;   // Round 220: a record raised
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
       else {
         appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
@@ -38139,8 +38433,9 @@ if (uOlLamp > 0.001) {
         // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
         chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
       }
-      if ((i & 4095) === 4095) { setLoadingMessage(label + ', ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
+      if ((i & 4095) === 4095) { setLoadingMessage(label + ', ' + Math.round(i / nb * 100) + '%'); const ty = performance.now(); flushUploads(); await yieldNow(); RMS.yld += performance.now() - ty; }
     }
+    RMS.loop = Math.round(performance.now() - tRL); RMS.yld = Math.round(RMS.yld); const tRD = performance.now();   // Round 220
     // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
     // bend fans, bridge decks over the river corridors
     // the far ring skips aLane on phones (its lines are under a pixel at phone distances,
@@ -38191,6 +38486,7 @@ if (uOlLamp > 0.001) {
       }
     }
     const endShared = (e) => (endN.get(Math.round(e[0] * 2) + ':' + Math.round(e[1] * 2)) || 0) > 1;
+    RMS.rdec = Math.round(performance.now() - tRD);   // Round 220: the roads decoded (paved at upload, see paveRoads)
     const paveRoads = async () => {
       // the realism pass (see the wide set's): the junctions where the ring carries aLane (a computer), each street's age
       const tJ = performance.now();
@@ -38272,6 +38568,7 @@ if (uOlLamp > 0.001) {
     // far areas (water splits out onto the animated river material). The parks and the
     // aprons are only COLLECTED here: they conform to the far ground (conformDrape), and the
     // far strips are built after this pass, so uploadRing builds them (ringAreaParts)
+    const tRA = performance.now();   // Round 220: the areas' decode
     const areaPolys = [], waterAreaParts = [];
     const nwParks = [], nwWaters = [];   // patch-intersecting polys steer the 50 m ground
     for (let i = 0; i < hdr[3]; i++) {
@@ -38301,7 +38598,8 @@ if (uOlLamp > 0.001) {
         else { noSow(poly); areaPolys.push({ poly, kind, i }); }
       } catch (e) { /* degenerate */ }
     }
-    return { chunks, rc, paveRoads, areaPolys, waterAreaParts, nwParks, nwWaters, label };
+    RMS.adec = Math.round(performance.now() - tRA);
+    return { chunks, rc, paveRoads, areaPolys, waterAreaParts, nwParks, nwWaters, label, ms: RMS };
   }
   // the far ring's parks (kind 0) and aprons (kind 2) as sheets on the drawn far ground: built
   // at upload, when the far strips and the NW patch exist in the ground registry (the far step
@@ -38324,11 +38622,13 @@ if (uOlLamp > 0.001) {
   }
   async function uploadRing(R) {
     const { chunks, rc, waterAreaParts } = R;
+    const M = R.ms || (R.ms = {}), tUF = performance.now();   // Round 220: flush (the chunks' upload) and roads (paveRoads and the road mesh) onto R.ms; the far step takes what is left of this call as areas
     raisedFlush();   // realism, water: the ring's basins and reservoirs (waterRing)
     await yieldNow();
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
     flushUploads(true);
     await yieldNow();
+    M.flush = Math.round(performance.now() - tUF); const tUR = performance.now();
     if (R.paveRoads) await R.paveRoads();   // the streets read the drawn far ground, registered by now
     if (rc.n) {
       const g = new THREE.BufferGeometry();
@@ -38345,16 +38645,26 @@ if (uOlLamp > 0.001) {
       rc.pos = rc.col = rc.idx = rc.lane = rc.raised = null;
       occFlatTiles(addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'ring roads'));   // Round 167: tiled, culled per tile
     }
+    M.roads = Math.round(performance.now() - tUR);
     const areaParts = ringAreaParts(R);
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); occFlatTiles(addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas')); }   // Round 168: flat for the pins' capture
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
   }
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
+    // Round 220 (the measurement round): the step's phases for __dbg.perf() and its beacon (PERF.stepExtra): dec, the base64
+    // decode; the ring's own marks copied in from R.ms (raiseRing: loop, yld, n, rdec, adec; uploadRing: flush, roads, areas);
+    // ground, the five far strips together, and grounds, each one's ms. The clock's own quantum is read once first
+    // (PERF.clockUs: WebKit answers performance.now() in whole milliseconds, Chrome in tenths), so a sampled figure such as
+    // PERF.roofKitNote.ms can be weighed against it; 0 means finer than a microsecond
+    { let a = performance.now(), q = 0, n = 0; for (let i = 0; i < 200000 && n < 3; i++) { const b = performance.now(); if (b > a) { if (!q || b - a < q) q = b - a; a = b; n++; } } PERF.clockUs = Math.round(q * 1000); }
+    const tFD = performance.now();
     const bin = unb64(CITY_B64, 'CITY');
     CITY_B64 = null;   // 7 MB of base64 freed
+    const FMS = PERF.far = { dec: Math.round(performance.now() - tFD), loop: 0, yld: 0, n: 0, rdec: 0, adec: 0, ground: 0, grounds: [], flush: 0, roads: 0, areas: 0 };
     const R = await raiseRing(bin, 0.7, 'Raising the rest of Philadelphia', true, LITE ? ((x, z) => x * x + z * z < LITE_R * LITE_R) : null, true);   // a lite build keeps the far ring's buildings near the centre (Round 124)
     if (!R) return;
+    Object.assign(FMS, R.ms);   // Round 220: the loop's marks, before the strips
     const { nwParks, nwWaters, waterAreaParts } = R;
     const W = RING_W;
     // far ground: 100 m strips around the wide box, down to the riverbed over
@@ -38492,11 +38802,13 @@ if (uOlLamp > 0.001) {
       const j0 = Math.ceil((P.z0 - sz0) / chz), j1 = Math.floor((P.z1 - sz0) / chz);
       if (i1 - i0 > 1 && j1 - j0 > 1) nwHole = { x0: sx0 + i0 * cw, x1: sx0 + i1 * cw, z0: sz0 + j0 * chz, z1: sz0 + j1 * chz };
     }
+    const tFG = performance.now();   // Round 220: the strips timed one by one (PERF.far.grounds) and together (PERF.far.ground)
     for (const [x0, x1, z0, z1] of [
       [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
       [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
-    ]) mkFarGround(x0, x1, z0, z1, FAR_CELL, nwHole, true, false);
-    if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true, true);
+    ]) { const tS = performance.now(); mkFarGround(x0, x1, z0, z1, FAR_CELL, nwHole, true, false); FMS.grounds.push(Math.round(performance.now() - tS)); }
+    if (nwHole) { const tS = performance.now(); mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true, true); FMS.grounds.push(Math.round(performance.now() - tS)); }
+    FMS.ground = Math.round(performance.now() - tFG);
     // the apron: dark ground from the world's edge out to 60 km, well under the
     // river beds so nothing fights it. From altitude the city used to end in a
     // hard diagonal against the sky dome's below-horizon band; now it ends in
@@ -38529,7 +38841,9 @@ if (uOlLamp > 0.001) {
     // level over the apron, so the river runs on to the fog past the world the camera can reach
     for (const w of DEL_BEYOND) { try { R.waterAreaParts.push({ geom: flatShorePoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.02, 1), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
     setLoadingMessage('Raising the rest of Philadelphia, uploading');
+    const tUp = performance.now();
     await uploadRing(R);
+    Object.assign(FMS, R.ms); FMS.areas = Math.max(0, Math.round(performance.now() - tUp) - FMS.flush - FMS.roads);   // Round 220: flush and roads from uploadRing, areas what is left of it (the sheets and the water)
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
     // clear air is clear (Mike): the haze starts 8 km out and closes at 40 km, past the world's
@@ -38662,11 +38976,34 @@ if (uOlLamp > 0.001) {
   // overlapping pair keeps at least the 1.5 cm a lot keeps over a yard
   const PAVED_UP = { 1: 0.055, 2: 0.025, 3: 0.04, 4: 0.04 };   // a lot over a yard keeps 1.5 cm (5 mm shimmered from 500 m); all under the parks at 0.06
   const PAVED_KIND = { 1: 'lots', 2: 'yards', 3: 'rail yards', 4: 'aprons' };
+  // Round 220 (the measurement round): the phase timers a step's beacon carries beside its ms, short integer fields (build()
+  // spreads PERF.stepExtra(s.msg) into the step beacon); {} for a step with none, and a field that was never measured is left
+  // out. Every figure is milliseconds but the counts: fn (records raised), rkn (roofKitNote's calls), sc (schEdges' calls
+  // during the fit step) and cq (the clock's quantum in microseconds, 0 under a microsecond)
+  PERF.roofKitNote = RK_STAT;   // __dbg.PERF.roofKitNote (declared with ROOF_KIT); the far step's beacon carries rk (ms) and rkn (calls)
+  const STEP_EXTRA = {
+    'Raising the outer districts': () => { const W = PERF.wide || {}; return { wd: W.dec, wl: W.loop, wy: W.yld, wf: W.flush }; },   // the junction pass runs in 'Fitting streets', whose beacon carries wj
+    'Raising the rest of Philadelphia': () => { const F = PERF.far || {}, K = PERF.roofKitNote || {}; return { fd: F.dec, fl: F.loop, fy: F.yld, fn: F.n, fg: F.ground, ff: F.flush, fr: F.roads, fa: F.areas, rk: K.ms, rkn: K.calls, cq: PERF.clockUs }; },
+    'Fitting streets to the terrain': () => { const F = PERF.fit || {}, W = PERF.wide || {}; return { sm: F.ms, sp: F.pave, sf: F.fit, sc: F.sch, wj: W.junc }; },
+    'Lettering the streets': () => { const L = (PERF.streetLabels && PERF.streetLabels.ms) || {}; return { ld: L.decode, lb: L.bands, lt: L.tex, lf: L.fit }; },
+    'Setting the traffic flowing': () => { const T = PERF.traffic || {}; return { ts: T.sample, tw: T.loop, tl: T.link, tf: T.fleet }; },
+    'Cladding the towers': () => { const C = TSKIN.msParts || {}; return { cw: C.wait, cl: C.lay, co: C.other, cf: C.flush }; },
+  };
+  PERF.stepExtra = (msg) => {
+    const f = STEP_EXTRA[msg];
+    if (!f) return {};
+    const o = f(), out = {};
+    for (const k in o) if (o[k] != null && Number.isFinite(o[k])) out[k] = Math.round(o[k]);
+    return out;
+  };
   step('Fitting streets to the terrain', async () => {
+    const tFit = performance.now(), sch0 = SCH_STAT.calls;   // Round 220: PERF.fit: ms the step, pave the wide streets' tasks (the junction pass among them), fit the terrain patches', sch schEdges' calls meanwhile
     for(const pave of wideSurfaceTasks){pave();await yieldNow();}
     wideSurfaceTasks.length=0;
+    const tPatch = performance.now();
     for(const fit of terrainOverlayTasks)fit();
     terrainOverlayTasks.length=0;
+    PERF.fit = { ms: Math.round(performance.now() - tFit), pave: Math.round(tPatch - tFit), fit: Math.round(performance.now() - tPatch), sch: SCH_STAT.calls - sch0 };
   });
   // Round 158 (the phones' memory): the ground registry's normals (the far strips' arrays, about 6 MB, kept alive past
   // freeOnUpload through G.nrm) are read only by groundPlaneN inside conformDrape, and this step makes the last
@@ -39169,6 +39506,7 @@ if (uOlLamp > 0.001) {
     const A = STOREFRONT_ART;
     const get = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
     sfArtPre = [get(artSrc(A.img, A.imgHalf)), get(artSrc(A.mask, A.maskHalf))];
+    sfArtPre[0].then((b) => { SF.preBlob = typeof Blob !== 'undefined' && b instanceof Blob ? 1 : 0; });   // Round 220: whether this device's fetch handed back a Blob (p01's open question; sfb on the ready beacon)
   }
   function sfArtLoad() {
     if (sfArtP) return sfArtP;
@@ -40069,9 +40407,11 @@ if (uOlLamp > 0.001) {
     if (MOSHULU.own) own.push([...MOSHULU.own.bb, MOSHULU.own.ring]);
     if (SF_ART_ON) {
       let late = 0;
+      const waitT0 = performance.now();   // Round 220: how long the step waits on the art race (sfw on the ready beacon)
       const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), SF_ART_WAIT); })]);
       clearTimeout(late);
       sfArtP = null;   // the review: the promise held both decoded images for the page's life (a phone's freeTexOnUpload lets them go)
+      SF.waitMs = Math.round(performance.now() - waitT0);
       if (!got || !got[0] || !got[1]) { SF.state = got ? 'art failed' : 'art late'; }
       else {
         const [map, mask] = sfTextures(got[0], got[1]);
@@ -44795,12 +45135,15 @@ float pinOccGate() {
     let AW = 4096, AH = 2048, FS = 27, RH = 34;
     const PAD = 9;
     let tex = null, rects = null, sdfMode = false;
+    const LMS = { decode: 0, bands: 0, tex: 0, fit: 0 };   // Round 220 (the measurement round): the step's phases, PERF.streetLabels.ms: the atlas image's decode, its bands into lum, the texture's upload (the canvas atlas, on the fallback), the label loop. Integer ms
     if (typeof ST_SDF !== 'undefined' && ST_SDF && ST_SDF.png) {
       sdfMode = true;
       AW = ST_SDF.w; AH = ST_SDF.h; RH = ST_SDF.rowH; FS = ST_SDF.fs;
       rects = ST_SDF.rects;
       let img = new Image();
+      const tDec = performance.now();
       await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/png;base64,' + ST_SDF.png; });
+      LMS.decode = Math.round(performance.now() - tDec);
       ST_SDF = null;   // the atlas PNG lives in the texture now
       // R channel in 256-row bands: one getImageData of the whole atlas was a
       // 36.8 MB RGBA spike on top of the decoded image, the kind phones die on.
@@ -44809,6 +45152,7 @@ float pinOccGate() {
       // band lands on transparent pixels as the whole image did. Canvas row r of band y is image row y + r, which is the
       // row the old getImageData(0, y, ...) read from the full canvas, so lum is the same array byte for byte
       const BAND = 256;
+      const tBand = performance.now();
       const cv = document.createElement('canvas');
       cv.width = AW; cv.height = Math.min(BAND, AH);
       const g = cv.getContext('2d');
@@ -44822,6 +45166,7 @@ float pinOccGate() {
       }
       cv.width = cv.height = 0;   // release the canvas backing store
       img.onload = img.onerror = null; img.removeAttribute('src'); img = null;   // and the decoded image with its 1.5 MB data: URL
+      LMS.bands = Math.round(performance.now() - tBand); const tTex = performance.now();
       tex = new THREE.DataTexture(lum, AW, AH, THREE.RedFormat, THREE.UnsignedByteType);  // R8: WebGL2 mipmappable (LUMINANCE is not)
       tex.magFilter = THREE.LinearFilter;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -44833,7 +45178,9 @@ float pinOccGate() {
       // upload instead of holding it through every later step and for good (nothing flags this texture again)
       freeTexOnUpload(tex);
       renderer.initTexture(tex);
+      LMS.tex = Math.round(performance.now() - tTex);
     } else {
+      const tTex = performance.now();
       try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
       const cv = document.createElement('canvas');
       cv.width = AW; cv.height = AH;
@@ -44855,8 +45202,10 @@ float pinOccGate() {
       tex = new THREE.CanvasTexture(cv);
       tex.encoding = THREE.sRGBEncoding;
       tex.anisotropy = anisoOf(16);
+      LMS.tex = Math.round(performance.now() - tTex);
     }
     const L2 = ST_LABELS.l;
+    const tFit = performance.now();   // Round 220: the label loop
     const pos = [], uv = [], idx = [];
     const stats={placements:L2.length/5,drawn:0,buried:0,missingAtlas:0,triangles:0,warped:0,onDeck:0,warpedAt:[]};
     for (let i = 0; i + 4 < L2.length; i += 5) {
@@ -44895,6 +45244,7 @@ float pinOccGate() {
       for(const k of mesh.index)idx.push(first+k);
       stats.drawn++;stats.triangles+=mesh.index.length/3;
     }
+    LMS.fit = Math.round(performance.now() - tFit); stats.ms = LMS;   // Round 220
     PERF.streetLabels=stats;
     streetSurfaceIndex=null;streetFootprints=[]; // release build-only road intersections
     const geo = new THREE.BufferGeometry();
@@ -49713,7 +50063,9 @@ float pinOccGate() {
     const r = renderer, prevRT = r.getRenderTarget(), prevA = r.getClearAlpha(), prevAuto = r.autoClear;
     r.getClearColor(_cmClear);
     r.setRenderTarget(CARMAP.rt); r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    const gprev = gpuNow(); gpuT('carmap');   // Round 220: the timer's 'carmap' label, the frames it draws
     r.autoClear = false; r.render(CARMAP.scene, CARMAP.cam); r.autoClear = prevAuto;
+    gpuT(gprev);
     r.setRenderTarget(prevRT); r.setClearColor(_cmClear, prevA);
     CARMAP.renders++;
   }
@@ -50382,6 +50734,10 @@ float pinOccGate() {
     if (hdr[0] !== 0x53485454) return;
     const body = new Int16Array(bin.buffer, 16);
     let k = 0;
+    // Round 220 (the measurement round): the height sampling's share of the way loop (PERF.traffic.sample, a timer pair a
+    // way, 29,749 ways), the loop itself, then the linker and the fleet. The decode body runs under Node in
+    // tests/test_traffic_link.py, so nothing here names PERF before trafficPrepareGraph
+    let tSample = 0; const tWays = performance.now();
     for (let wI = 0; wI < hdr[1]; wI++) {
       const n = body[k++], flags = body[k++], aadt = body[k++] * 10;
       const unit = (hdr[3] || 200) / 1000;
@@ -50393,6 +50749,7 @@ float pinOccGate() {
       // viaducts, sunken carriageways — split into sub-runs at dead water
       let cur = null;
       const runs = [];
+      const tS = performance.now();   // Round 220
       for (let j = 0; j < pts.length; j++) {
         const x = pts[j][0], z = pts[j][1];
         const jn = pts[Math.min(j + 1, pts.length - 1)], jp = pts[Math.max(j - 1, 0)];
@@ -50431,6 +50788,7 @@ float pinOccGate() {
         cur.xs.push(x); cur.zs.push(z); cur.ys.push(y + lift);
       }
       if (cur && cur.xs.length > 1) runs.push(cur);
+      tSample += performance.now() - tS;   // Round 220
       for (const r of runs) {
         const m = r.xs.length;
         const cum = new Float32Array(m);
@@ -50461,8 +50819,11 @@ float pinOccGate() {
         }
       }
     }
+    const tLink = performance.now();   // Round 220: the way loop is done; the linker, then the fleet
     trafficPrepareGraph(trafficRuns);
+    const tFleet = performance.now();
     trafficCreateFleet();
+    PERF.traffic = { sample: Math.round(tSample), loop: Math.round(tLink - tWays), link: Math.round(tFleet - tLink), fleet: Math.round(performance.now() - tFleet), ways: hdr[1] };   // Round 220: integer ms, and the ways
     trafficReady = true;
     if (CLOSE_TRAFFIC && CLOSURES.recs.length) closureTraffic();   // a closures file that landed first (Round 207)
   });
@@ -51517,6 +51878,10 @@ float pinOccGate() {
     // Round 198: the own facades' atlas asked for with the tiles (a phone takes the half copies)
     const townGot = TOWN_ON && TOWN.cands.length ? Promise.all([artImage(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artImage(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))]) : null;
     const t0 = performance.now();
+    // Round 220 (the measurement round): where the step's time goes, TSKIN.msParts: wait, the tiles' files awaited; lay, the
+    // kinds' geometry and materials (the loop's wall time less the waits); other, the street floors' and the town's own lay
+    // (skinBasesLay and townLay, their own waits inside); flush, the upload. TSKIN.ms stays the step's total, a number
+    const CMS = TSKIN.msParts = { wait: 0, lay: 0, other: 0, flush: 0 };
     try {
       const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
       // Round 184: a phone takes the bake's half file (the mask is already small), so it uploads the image as it comes
@@ -51532,9 +51897,12 @@ float pinOccGate() {
       // every kind's files asked for at once (one at a time cost the build 4.3 s of round trips), each awaited in turn
       const got = new Map([...byKind.keys()].map((kind) => { const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
       const baseGot = SKIN_BASES ? skinBasesFetch() : null;   // the street floors' files asked for with the tiles'
+      const tKinds = performance.now();   // Round 220
       for (const [kind, list] of byKind) {
         const T = FRONTS_DATA.tiles[kind];
+        const tWait = performance.now();
         const [im, mk] = await got.get(kind);
+        CMS.wait += performance.now() - tWait;
         if (!im || !mk) { TSKIN.error = 'tile ' + kind + ' did not load'; continue; }   // its towers keep the procedural facade
         const map = tex(im, !!T.imgHalf); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
         const mask = tex(mk, true);
@@ -51683,9 +52051,12 @@ float pinOccGate() {
         groupCity.add(m);
         TSKIN.meshes.push(m);
       }
+      CMS.wait = Math.round(CMS.wait); CMS.lay = Math.max(0, Math.round(performance.now() - tKinds) - CMS.wait); const tOther = performance.now();   // Round 220
       if (SKIN_BASES) await skinBasesLay(tex, aniso, baseGot);
       if (townGot) await townLay(aniso, townGot);   // Round 198: the buildings round City Hall in their own facades
+      CMS.other = Math.round(performance.now() - tOther); const tFlush = performance.now();
       flushUploads(true);
+      CMS.flush = Math.round(performance.now() - tFlush);
     } catch (err) {
       TSKIN.error = String((err && err.message) || err);
       PERF.failed.push(['Cladding the towers', TSKIN.error]);
@@ -54814,7 +55185,9 @@ float pinOccGate() {
     const r = renderer, prevRT = r.getRenderTarget(), prevA = r.getClearAlpha(), prevAuto = r.autoClear;
     r.getClearColor(_lmCol);
     r.setRenderTarget(LAMPMAP.rt); r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    const gprev = gpuNow(); gpuT('lampfar');   // Round 220: the timer's 'lampfar' label, the frames the far map is drawn
     r.autoClear = false; r.render(LAMPMAP.scene, LAMPMAP.cam); r.autoClear = prevAuto;
+    gpuT(gprev);
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
     LAMPMAP.cx = cx; LAMPMAP.cz = cz; LAMPMAP.renders++;
     lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);
@@ -54879,7 +55252,9 @@ float pinOccGate() {
     mu.uNear.value = 1; mu.uPxPerM.value = N.size / S; mu.uStore.value = N.store; mu.uDither.value = N.half ? 0 : 1 / 255;
     r.getClearColor(_lmCol);
     r.setRenderTarget(N.rt); r.setClearColor(0x000000, 0); r.clear(true, false, false);
+    const gprev = gpuNow(); gpuT('lampnear');   // Round 220: the timer's 'lampnear' label, the frames the near map is drawn
     r.autoClear = false; r.render(LAMPMAP.scene, N.cam); r.autoClear = prevAuto;
+    gpuT(gprev);
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
     mu.uNear.value = 0; mu.uPxPerM.value = LAMPMAP.size / LAMPMAP.span; mu.uStore.value = LAMPMAP.store; mu.uDither.value = 0;
     N.cx = cx; N.cz = cz; N.renders++; N.at = now;
@@ -56970,7 +57345,8 @@ float pinOccGate() {
   if (btnLocate) btnLocate.addEventListener('click', locateMe);
 
   // ---------------------------------------------------------------- build & loop
-  const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Raising the towns across the line', 'Planting the street trees']);
+  const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Raising the towns across the line', 'Planting the street trees',
+    'Fitting streets to the terrain', 'Lettering the streets', 'Setting the traffic flowing', 'Cladding the towers']);   // Round 220: the four steps with phases of their own (PERF.stepExtra) report from a computer too
   // ---- the recovery gate (the recovery round). WebKit reloads a page killed for memory once, and when that reload dies
   // within 30 s of finishing its load, iOS gives up with "A problem repeatedly occurred" and the page never says a word. A
   // touch load that finds a death (BOOT_GATE) therefore builds nothing until a tap: the reload is only the parsed page, so it
@@ -57023,7 +57399,7 @@ float pinOccGate() {
       try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); try { flushUploads(true); } catch (e2) { /* nothing staged */ } }
       PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
       // the recovery round: a phone reports every step, so the step after its last report is the one that killed it
-      if (isTouch || BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
+      if (isTouch || BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1], ...PERF.stepExtra(s.msg) });   // Round 220: the step's phases ride its beacon
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
     PERF.ready = Math.round(performance.now() - PERF.t0);
@@ -57051,15 +57427,38 @@ float pinOccGate() {
     document.getElementById('loadProgress').value = 100;
   }
 
+  // Round 220 (the measurement round): the first frames' facts for the enter beacon. fn, the frames drawn behind the veil by
+  // the tap; f1, the first frame's ms (PERF.frame1Ms, which frame sets); tap, the ms the tap waited in the event queue before
+  // its handler ran (PERF.tapT, from the one-line listener before the handler: the handler keeps its own signature, which the
+  // tests cut), '' when the browser's timeStamp is not on performance.now's clock; mw, mwp and mwn, the mirror's sprite twins'
+  // warm (mirzWarm, at the second frame: its ms, the programs it compiled and the twins it drew, 0 until it has run)
+  function enterFacts() {
+    try {
+      const tap = PERF.tapT ? Math.round(performance.now() - PERF.tapT) : -1;
+      return { fn: frameNo, f1: PERF.frame1Ms || '', tap: tap >= 0 && tap < 60000 ? tap : '', mw: MIRZ.warmMs || 0, mwp: MIRZ.warmP || 0, mwn: MIRZ.warmN || 0 };
+    } catch (e) { return {}; }   // the review: a fact that throws must not cost the beacon
+  }
+  // Round 220: what the resolution ladder and the pin images did since Enter, for the perf, settled and late beacons. dc1, the
+  // ms from Enter to the first rung change after Enter's own re-seat (DPR.ch1, which dprGo sets; -1 while there has been none);
+  // dcn, the changes since the load (DPR.nch); poc, why each pin image was drawn (PIN_OCC.cause as k:v); pos, the synchronous
+  // readbacks' count and ms (PIN_OCC.syncN and syncMs, which the pins' code keeps; 0 where it does not)
+  function runFacts() {
+    try {
+      const C = PIN_OCC.cause || {};
+      return { dc1: DPR.ch1 && PERF.enterT ? Math.round(DPR.ch1 - PERF.enterT) : -1, dcn: DPR.nch || 0,
+        poc: Object.keys(C).map((k) => k + ':' + C[k]).join(','), pos: (PIN_OCC.syncN || 0) + ':' + Math.round(PIN_OCC.syncMs || 0) };
+    } catch (e) { return {}; }   // the review: a fact that throws must not cost the beacon
+  }
+  btnEnter.addEventListener('click', (e) => { PERF.tapT = e.timeStamp; });   // Round 220: when the tap happened, for enterFacts' tap (registered first, so it runs first)
   btnEnter.addEventListener('click', () => {
     btnEnter.blur();   // #veil.hidden is opacity only; a focused Enter button would swallow every key
     if (gateGo) { gateGo(); return; }   // the recovery gate's tap starts the build (bootGate)
-    beacon('enter', { ms: Math.round(performance.now()) });
+    beacon('enter', { ms: Math.round(performance.now()), ...enterFacts() });   // Round 220: the first frames' facts (enterFacts)
     PERF.enterT = performance.now();
-    DPR.live = true; dprMode(); PACE.lastInput = performance.now(); DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here
-    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 60000);
-    setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 180000);
-    setTimeout(() => { const p = perfStats(); beacon('late', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 600000);   // Round 168: ten minutes in, where a phone's heat shows   // Round 166: where it settled
+    DPR.live = true; dprMode(); DPR.ch1 = 0; PACE.lastInput = performance.now(); DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here (Round 220: ch1 cleared after the re-seat, so dc1 is the first trial's change)
+    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 60000);
+    setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 180000);
+    setTimeout(() => { const p = perfStats(); beacon('late', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 600000);   // Round 168: ten minutes in, where a phone's heat shows   // Round 166: where it settled
     veil.classList.add('hidden');
     veil.inert = true;
     document.getElementById('appUI').inert = false;
@@ -57306,6 +57705,7 @@ float pinOccGate() {
     every: isTouch ? 10 : 5, moveEvery: PIN_OCC_MOVE_EVERY, fullEvery: PIN_OCC_FULL_EVERY,
     near: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 }, full: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 },
     n: 0, renders: 0, rendersNear: 0, cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 }, hid: 0, want: -99, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false, lastRead: -1e9, fresh: false, reach: 0, reachTip: 0,
+    syncN: 0, syncMs: 0, landN: 0, landMs: 0,   // Round 220: every synchronous read the pins make (count, summed ms: the readPixels of a first image, a jump or the forced mode, and a fence's landing), and the landings (getBufferSubData) among them
     lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9, pvPos: new THREE.Vector3(1e9, 0, 0), pvQuat: new THREE.Quaternion() };
   const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
     new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, colorWrite: false }));
@@ -57354,7 +57754,7 @@ float pinOccGate() {
     const s = ch.slots[k], c = pinOccCam(reach), nf = occFlatsOff();
     // Round 168 (Mike: "Only buildings hide pins"): the capture leaves out every instanced mesh (the trees, the cars, the tie runs,
     // the rooftop units), as the building tap's render always has; trees were the largest part of a capture three times a second in flight
-    occRender(s.rt, W, H, ch.cpu.buf, true, c, now ? null : pinOccNoRead, nf);
+    occRender(s.rt, W, H, ch.cpu.buf, true, c, now ? null : pinOccNoRead, nf);   // Round 220: timed there by the GPU timer ('pins', 'pinsnear'), its synchronous read counted there (syncN)
     s.view.copy(c.matrixWorldInverse); s.viewInv.copy(c.matrixWorld); s.proj.copy(c.projectionMatrix); s.frame = frameNo; s.read = now || !gl2; s.noFlats = nf; s.reach = c.far;
     s.eye.copy(camera.position); s.quat.copy(camera.quaternion);
     ch.gate = k; ch.last = frameNo;
@@ -57417,7 +57817,9 @@ float pinOccGate() {
       return true;
     } catch (e) {
       A.off = true; pinOccDrop();
+      const t0 = performance.now();   // Round 220: the fallback is a synchronous read too (PIN_OCC.syncN / syncMs)
       try { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); r.readRenderTargetPixels(s.rt, 0, 0, PIN_OCC.w, PIN_OCC.h, dst); } catch (e2) { /* a lost context: nothing is drawn again */ }
+      PIN_OCC.syncN++; PIN_OCC.syncMs += performance.now() - t0;
       return false;
     }
   }
@@ -57441,7 +57843,10 @@ float pinOccGate() {
       }
       gl.deleteSync(A.sync); A.sync = null;
       gl.bindBuffer(gl.PIXEL_PACK_BUFFER, A.pbo);
+      const t0 = performance.now();   // Round 220: the landing waits on the GPU process (4 to 5 ms headless): counted with the pins' other synchronous reads (syncN / syncMs) and on its own (landN / landMs)
       try { gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, ch.cpu.buf); } finally { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }
+      const tl = performance.now() - t0;
+      PIN_OCC.syncN++; PIN_OCC.syncMs += tl; PIN_OCC.landN++; PIN_OCC.landMs += tl;
     } catch (e) { pinOccDrop(); A.off = true; return; }
     const s = ch && ch.slots[A.slot];
     A.chan = null; A.slot = -1;
@@ -57510,9 +57915,18 @@ float pinOccGate() {
     scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
     r.setRenderTarget(rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
     if (noFlats) for (const m of OCC_ONLY) m.visible = true;   // the raised street triangles the skipped tiles held (occRaisedMesh)
+    // Round 220: the pins' capture (known by its buffer; never the building tap's) carries the GPU timer's 'pins' or 'pinsnear'
+    // label round its render, and its synchronous read, when it makes one (a first image, a jump, the forced mode), is counted
+    // and timed, PIN_OCC.syncN / syncMs. The pins' block runs under Node without the timer (tests/test_cull.py), so neither
+    // call is made from pinOccCapture
+    const pinLab = buf === PIN_OCC.full.cpu.buf ? 'pins' : buf === PIN_OCC.near.cpu.buf ? 'pinsnear' : null, gprev = pinLab ? gpuNow() : null;
+    if (pinLab) gpuT(pinLab);
     try { r.render(scene, cam); } finally { if (noFlats) for (const m of OCC_ONLY) m.visible = false; }
+    if (pinLab) gpuT(gprev);
     let out = false;
+    const t0 = performance.now();
     if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+    if (pinLab && !read) { PIN_OCC.syncN++; PIN_OCC.syncMs += performance.now() - t0; }
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
     scene.overrideMaterial = prevOver; scene.background = prevBg;
     r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed;
@@ -57893,6 +58307,7 @@ float pinOccGate() {
     const dt = Math.min(rawMs / 1000, PACE.on ? 0.1 : 0.05);   // an idle phone's 12 frames a second still move the city at its own speed
     last = now;
     frameNo++;
+    gpuFrame();   // Round 220: the GPU timer's frame id and its sampled window, stamped before any pass of this frame queues GL work
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
@@ -58059,6 +58474,7 @@ float pinOccGate() {
     // districts' streets, the lots and yards, the overpass decks, the towns' roads and areas) was drawn unculled in this
     // frame, behind the veil, as the merged meshes they replace were: uploaded and freed now, and culled from here on
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
+    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body (the wx programs compile in it), for the enter beacon
   }
 
   setHint();
@@ -58089,6 +58505,10 @@ float pinOccGate() {
     syncLayerBtns();
     refreshTimeUI();
   }
+  // Round 220 (the measurement round): the boot checkpoint, the ms from app.js's first line to the build's start, which is the
+  // module-level boot the steps never held (a computer's ready beacon starts at its first step), with the cloud volumes bake's
+  // ms where there was one (cl: CLOUD3D.ms, '' on a phone or after a refused bake)
+  beacon('boot', { ms: Math.round(performance.now() - PERF.t0), cl: (() => { try { return typeof CLOUD3D.ms === 'number' ? CLOUD3D.ms : ''; } catch (e) { return ''; } })() });
   build().then(() => {
     // weather-surface pass. The materials already compiled during build (flushUploads renders
     // the scene behind the veil); the hooks assigned here land through the first frame's
@@ -58141,7 +58561,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
