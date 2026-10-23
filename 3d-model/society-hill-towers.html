@@ -44865,8 +44865,13 @@ float pinOccGate() {
   // screen as the eye came on, fifteen times its far size at 20 m. The first cut eased it down to 0.6 of its far size close
   // in, and Mike: "The pins now get way too small when you get very close to them. Their minimum size should be how they look
   // at a half mile away." So a pin holds its half-mile size on the screen (distance / 135, the size it has at NEAR_R) all the
-  // way in, growing smaller in the world as the eye comes on and never on the screen; the caps still let the far ones go
-  function pinScaleAt(d, cap) { return Math.min(Math.max(d, 1) / 135, cap); }
+  // way in, growing smaller in the world as the eye comes on and never on the screen; the caps still let the far ones go.
+  // Round 221 (Mike: "The pins need to be 2x as large on mobile. They get too small when near them now"): a phone draws every
+  // pin at PIN_TOUCH_K times the computer's size at every distance, the caps' knees where they were. A pin's tip is its
+  // instance's origin, so it still stands on its anchor and the anchor depth, the gate, the occlusion images and the pick
+  // test the same point; only the badge above it is bigger, and the pick ray meets the bigger badge
+  const PIN_TOUCH_K = isTouch ? 2 : 1;
+  function pinScaleAt(d, cap) { return PIN_TOUCH_K * Math.min(Math.max(d, 1) / 135, cap); }
   function pinSweep(now) { if (now < pinSweepAt) return; pinSweepAt = now + 5000; for (const [k, e] of pinBorn) if (now - e[1] > 30000) pinBorn.delete(k); }
   const glyphDrum = (g) => {   // a drum: the pale barrel with two dark bands on a base
     g.fillStyle = '#fdfbf6';

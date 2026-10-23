@@ -12801,3 +12801,32 @@ Mac and iPhone over the next week of ordinary loads. Nothing on the VPS changed:
 
 - The headless harness that serves a build as philly3d.com and records its beacons is `probe_measure.mjs` in this session's
   scratchpad; it belongs in the capture skill with the beacon reduction, a follow-up.
+
+## Round 221 — a phone's pins twice the size (Oct 23)
+
+Mike: "The pins need to be 2x as large on mobile. They get too small when near them now."
+
+Since Round 190's coda every pin holds its half-mile size on the screen all the way in (distance / 135 under its cap), the
+same on a computer and a phone. On a phone's small screen that is a badge about 14 px tall at any distance. `pinScaleAt` is
+the one rule every pin takes (the SEPTA and Indego badges, the aircraft, the ship anchors and the ferry, Amtrak and PATCO,
+the closures, the markers and the art, the bus stops and stations, the libraries and rec centres: eleven call sites), so the
+factor goes there and nowhere else: `PIN_TOUCH_K` is 2 under `isTouch` and 1 otherwise, multiplied outside the min, so the
+caps' knees (1,890 m and 25.65 km) stay where they were and a far pin is twice the size too. Mike's Round 190 rule stands: a
+pin never grows smaller on the screen as the eye comes on; a phone's is twice the size, at every distance.
+
+What depends on the size, checked: a pin's tip is its instance's origin and every badge is a plane lifted wholly above it, so
+scaling grows the badge upward from the tip and it still stands on its anchor. The anchor depth (Round 126), the gate in the
+vertex shader (Round 169), the CPU's occlusion state and `pinTipOf` for the pick all read that origin, so a doubled pin is
+judged at the same point and is still hidden whole by a building in front of its tip. The pick ray meets the instance under
+its own matrix, so the bigger badge is a bigger target under the finger. `pinRise` multiplies the scale, unchanged. The
+SEPTA badge's bob (`0.5 * min(s, 2)` m) doubles with the badge close in and keeps its 1 m ceiling. The concert placards and
+score bubbles are DOM labels of fixed pixel size, not pins, and the search mark is its own cone; neither is touched.
+
+Captured headless as a phone (the capture skill's `render.mjs --touch --w 740 --h 360`, 13:00), the deployed build against
+this one, each pose's badge measured from its instance matrix and the camera: the Langstroth marker at 30 m, the moored
+`shipTest` tanker's anchor at 30 and 300 m, and the live bus nearest the towers followed from above at 30 and 300 m (both builds in the
+same minute, so the same bus at the same corner): 13.8 px before, 27.5 to 27.7 px after, every one visible. From 300 m east of
+the Langstroth marker the deck over I-95 stands in front of its tip, and both builds hide it whole. `tests/test_pin_scale.py` runs
+the rule under node for a computer and a phone (the half-mile size at every distance at each one's own size, exactly twice
+on the phone, the knees unmoved), finds the factor nowhere but `pinScaleAt`, and holds every badge plane above its tip and
+the anchor, gate and pick on the instance's origin.
