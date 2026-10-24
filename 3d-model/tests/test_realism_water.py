@@ -253,6 +253,7 @@ const delawareAt = () => false;
 const P = { x0: -10600, x1: -2600, z0: -15600, z1: -6600 };
 const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
 let siteY = (x, z) => 20;   // a level plateau 27 m over the water
+const bankGround = (x, z) => siteY(x, z, 'ground');   // the realism round two (R1): off the Schuylkill's bank a ring reads siteY
 """ + BBOX + cut_function(self.s, 'pointInPoly') + '\n' + cut_function(self.s, 'polyCentroid') + '\n' + cut_function(self.s, 'signedArea') + '\n' + jets + consts + gate + """
 const ribbon = [];   // a creek 12 m wide winding 1.5 km east, its ground falling 30 m along it
 for (let i = 0; i <= 60; i++) ribbon.push([5000 + i * 25, 3000 + Math.sin(i / 6) * 80]);
@@ -310,6 +311,7 @@ console.log(JSON.stringify(r));
         js = """
 const THREE = require('./three.min.js');
 const siteY = (x, z) => 30 - x * 0.02;   // falling 4 m across the ring's 200 m
+const bankGround = (x, z) => siteY(x, z, 'ground');   // R1: off the Schuylkill's bank, siteY
 """ + cut_function(self.s, 'signedArea') + '\n' + cut_function(self.s, 'bankWall') + """
 const ring = [[0, 0], [200, 0], [200, 200], [0, 200]], top = 28.5;
 const r = { cw: null, ccw: null };

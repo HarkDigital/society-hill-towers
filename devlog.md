@@ -12830,3 +12830,43 @@ the Langstroth marker the deck over I-95 stands in front of its tip, and both bu
 the rule under node for a computer and a phone (the half-mile size at every distance at each one's own size, exactly twice
 on the phone, the knees unmoved), finds the factor nowhere but `pinScaleAt`, and holds every badge plane above its tip and
 the anchor, gate and pick on the instance's origin.
+
+## Round 222 — the Schuylkill's banks: trees, lamps and benches out of the river (Oct 24)
+
+Mike chose this first from the realism survey's plan (the survey: 140 captures, ten readers, five proposers, five
+verifiers, `philly3d-realism-plan.md` in the session notes, item R1). Along Schuylkill Banks, Kelly Drive and the Water
+Works trees, lamp standards, a bench and cars seemed to stand in the water. The verifier's offline model of the bank (it
+reproduced the probe's fourteen points within 0.05 m) found two causes and not the one first proposed: `riverCarve` pulled
+the land within 60 m of the outline under the DELAWARE's one big water quad (-7.84; the Schuylkill's sheet is -7.34), so
+0.135 km2 of bank in the wide box drew as water, 91% of the first 5 m; and the trees and poles stood on the 150 m DEM,
+floating up to 5 m over the carved slope, which from a low eye reads as wading. 99 trees and 217 poles stood inside the
+outline itself, 93 of the trees at the Water Works, where `bake_schuylkill.py`'s 60 m gap ribbon was the outline.
+
+The fix moves no drawn ground, so Round 89's invariant cannot change (`__dbg.riverCheck()` reads as it did: one sample
+4 cm over the sheet at Manayunk's island, identical before):
+- The Delaware's quad has a hole over the Schuylkill's corridor (`quad_hole` in `schuylkill.json`, one simple ring kept 51
+  to 68 m off the outline and clear of the Delaware, with nine kept patches over the outline's islands and piers), and
+  the outer districts' 25 m strips floor the carve at `TERRAIN.water + 0.05` (the far ring's 50 m cells keep the old floor:
+  there the clamp pushed 46 samples just inside the outline over the sheet).
+- Within 80 m of the outline every tree, wood, pole, marker post, plinth, stop and dock stands on the drawn ground by the
+  furniture's rule (`bankPlace`), in the water only on a deck, taken out to the bank from within 3 m or left out; the
+  water rings on the bank read the drawn ground (`bankGround`). `siteY` is untouched (its shore test would erase the
+  Schuylkill's soft shoreline).
+- At the Water Works the gap ribbon is cut back to OSM's own Fairmount pool bank, the land mask re-baked.
+
+`__dbg.bankCheck()` before (`?banks=0`) and after: the bank drawn as water 20,030 samples to 0; trees off the drawn
+ground 2,517 to 0, in the river 83 to 0; poles 1,178 and 147 to 0 and 0; bus stops 28 to 0, marker posts 2 to 0, docks 4
+to 0. Every tier and device alike (build-time); page +7.6 KB gzip, the phone's GPU unchanged within 20 KB.
+`tests/test_r1.py` runs the page's own Schuylkill code under Node against a Python twin of the outer districts' ground.
+The captures (30th Street, the Water Works, Kelly Drive, Boathouse Row, the phone) show the trees on the bank and the
+Water Works lawn as land again.
+
+Also R3, the plan's doc drift: CLAUDE.md's Rocky stands on the upper landing's pedestal (Round 113 moved him there at
+Mike's request), and `CAR_MIN_LIFE` is 16 s in the code, not Round 89's 4 s.
+
+- Left for Mike (the plan's step 4): the bank's height. Kelly Drive stands on the DEM 5 to 7 m over the carved slope,
+  and a pole beside a road within 40 m of the outline now stands on that slope below the road.
+- Left for later: the gap ribbon still runs past OSM's pool bank at East Falls, the Girard reach and Boathouse Row's
+  north edge (83 trees there are now left out or moved); 486 samples just inside the far ring's outline stand over the
+  sheet, identical before this round.
+

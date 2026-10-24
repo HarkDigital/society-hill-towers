@@ -1245,6 +1245,10 @@
   // depth (AO) and a filmic grade in the composite; on every device a quieter lawn and a city's warm bounce by night
   const REAL = !/[?&]real=0\b/.test(location.search);
   const STREET_PUSH = !/[?&]streetpush=0\b/.test(location.search);
+  // the realism round two (R1, Round 55 coda 2's complaint again: "the Schuylkill River Trail is under water, trees and
+  // lampposts in the river"): ?banks=0 keeps the old bank, the Delaware's quad over the Schuylkill's corridor, riverCarve's
+  // old floor and every free-standing thing on siteY (bankBand, bankPlace)
+  const BANKS = !/[?&]banks=0\b/.test(location.search);
   const BUS_YIELD = !/[?&]busyield=0\b/.test(location.search);   // Round 207: the buses keep their lane and the cars stop behind them (?busyield=0: neither)   // Round 205: the trees and poles on a drawn street go to its kerb (streetPush)
   // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
   // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
@@ -5745,7 +5749,7 @@
   // scanline raster of the polygon (rows against edges once, at start), the distance and the
   // side near the edge from a 40 m grid of the edges themselves (20 m before Round 88).
   const SCH_POLYS = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.polys && SCHUYLKILL_DATA.polys.length) ? SCHUYLKILL_DATA.polys : null;
-  let schRaster = null, schEdges = null;
+  let schRaster = null, schEdges = null, schNear = null;
   // Round 220: schEdges is asked about 2.8 M times a load (every road vertex and every ground node near the river), so it is
   // counted and never timed; a step reads the count before and after (PERF.fit.sch). __dbg.PERF.sch
   const SCH_STAT = { calls: 0 };
@@ -5805,9 +5809,18 @@
       }
       return [Math.sqrt(best), side];
     };
+    // the realism round two (R1): schEdges' own reach as a 40 m bitmap (any edge cell within two), so bankBand asks
+    // schEdges only where it can find an edge: 150,000 trees and 200,000 poles a load, most of them nowhere near the river
+    const ex0 = Math.floor(x0 / EC) - 3, ez0 = Math.floor(z0 / EC) - 3, enx = Math.floor(x1 / EC) - ex0 + 4, enz = Math.floor(z1 / EC) - ez0 + 4;
+    const nearM = new Uint8Array(enx * enz);
+    for (const key of egrid.keys()) {
+      const c = key.indexOf(':'), gx = +key.slice(0, c) - ex0, gz = +key.slice(c + 1) - ez0;
+      for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) { const i = gx + a, j = gz + b2; if (i >= 0 && j >= 0 && i < enx && j < enz) nearM[j * enx + i] = 1; }
+    }
+    schNear = (x, z) => { const i = Math.floor(x / EC) - ex0, j = Math.floor(z / EC) - ez0; return i >= 0 && j >= 0 && i < enx && j < enz && nearM[j * enx + i] === 1; };
   }
-  // the ground height under and beside the river: yy is the builder's height so far
-  function riverCarve(x, z, yy) {
+  // the ground height under and beside the river: yy is the builder's height so far; floor: the land's floor (R1, below)
+  function riverCarve(x, z, yy, floor) {
     if (!schRaster) { const kc = schuylkillCut(x, z); return kc > 0 ? Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc) : yy; }
     const e = schEdges(x, z);
     const inside = e[0] < 8 ? e[1] < 0 : schRaster(x, z);
@@ -5818,9 +5831,165 @@
     // has every corner pulled well down and the surface interpolated between them cannot break
     // the water. A floor of water + 0.3 left only 0.2 m of headroom and one 10 m peak still
     // came through, on the centreline past Manayunk where the channel is narrow.
-    if (e[0] < 60) return Math.min(yy, TERRAIN.water - 0.5 + (yy - TERRAIN.water + 0.5) * smooth(0, 60, e[0]));
+    // The realism round two (R1): on the outer districts' 25 m strips (floor) the land's floor is never under the Delaware's
+    // level, water + 0.05, 0.45 m under the sheet (never over the builder's own height), so the slope meets the sheet's
+    // clear edge rather than a ledge 1 m down. Not on the far strips' 50 m cells: there it lifted 46 more samples just inside
+    // the outline over the sheet (__dbg.bankCheck's inside walk; the centreline stayed clear), Round 89's narrow reaches
+    if (e[0] < 60) { const y = Math.min(yy, TERRAIN.water - 0.5 + (yy - TERRAIN.water + 0.5) * smooth(0, 60, e[0])); return BANKS && floor ? Math.min(yy, Math.max(TERRAIN.water + 0.05, y)) : y; }
     return yy;
   }
+  // The realism round two (R1). riverCarve takes the bank within 60 m of the outline down 5 to 8 m, and everything that
+  // stands there read siteY, the DEM over it: 856 of the 857 PPR trees within 80 m of the outline in the wide box stood on
+  // the DEM, 425 of them more than 0.5 m over the drawn slope (240 over 2 m), and 99 trees and 217 poles stood inside the
+  // outline itself, 93 of the trees on the Water Works' lawn, where the bake's ribbon WAS the outline. Within BANK_R of the
+  // outline a free-standing thing stands on the drawn ground by the furniture's rule (furnY: groundMeshY ?? siteY), and in
+  // the river only on a deck. siteY itself never changes: flatShorePoly's shore test, drapeY, waterRingGate's levels, the
+  // bank walls, the fly floor and walkY all read it, and the carved bank would erase the Schuylkill's shallows everywhere
+  const BANK_R = 80;   // schEdges' reach
+  const BANK_STAT = { trees: 0, woods: 0, poles: 0, posts: 0, stops: 0, docks: 0, basins: 0, pushed: 0 };   // what the river kept off its water (__dbg.PERF.banks; basins: the water rings on the bank on the drawn ground; pushed: things taken out to the bank, bankOut)
+  PERF.banks = BANK_STAT;
+  // 0 off the band, 1 on the bank (outside the outline within BANK_R), 2 in the river (riverCarve's own inside test); the
+  // probe's classifier, whatever ?banks says
+  function schBand(x, z) {
+    if (!schEdges) return 0;
+    if (!schNear(x, z)) return schRaster(x, z) ? 2 : 0;
+    const e = schEdges(x, z);
+    if (e[0] < 8 ? e[1] < 0 : schRaster(x, z)) return 2;
+    return e[0] < BANK_R ? 1 : 0;
+  }
+  function bankBand(x, z) { return BANKS ? schBand(x, z) : 0; }
+  // in the water: in the river, or in a patch the Delaware's quad keeps round an island or a pier (SCH_QUAD_KEEP) where
+  // the drawn ground is under it (a pier's hole is smaller than a ground cell and its ground is the bed's)
+  function bankWet(x, z, b) {
+    if (b === 2) return true;
+    if (b !== 1 || !SCH_QUAD_KEEP.length) return false;
+    const g = groundMeshY(x, z);
+    return g !== null && g < TERRAIN.water && SCH_QUAD_KEEP.some((r) => pointInPoly(x, z, r));
+  }
+  // a thing within BANK_PUSH inside the outline (the outline's and the surveys' own accuracy: the Schuylkill Banks trail's
+  // lamps stand along the bulkhead, which is the outline, and half of them land inside it) is taken out to the bank, 1 m
+  // past the edge, against the edge distance's own gradient; anything deeper, or that does not come out on dry bank, is not
+  const BANK_PUSH = 3;
+  function bankOut(x, z) {
+    const e = schEdges(x, z);
+    if (!(e[0] < BANK_PUSH && e[1] < 0)) return null;
+    const h = 0.5, gx = schEdges(x + h, z)[0] - schEdges(x - h, z)[0], gz = schEdges(x, z + h)[0] - schEdges(x, z - h)[0], L = Math.hypot(gx, gz);
+    if (L < 1e-6) return null;
+    const ox = x - gx / L * (e[0] + 1), oz = z - gz / L * (e[0] + 1), b = schBand(ox, oz);
+    return b === 1 && !bankWet(ox, oz, b) ? [ox, oz] : null;
+  }
+  // where a free-standing thing stands, [x, z, y] (a scratch array: read it at once), or null in the water off a deck (the
+  // caller leaves it out): siteY off the band, the drawn ground on the bank, a deck's top in the water (deck false: a thing
+  // no deck carries, a tree), else the bank bankOut finds within BANK_PUSH
+  const _bp = [0, 0, 0];
+  function bankPlace(x, z, deck) {
+    const b = bankBand(x, z);
+    _bp[0] = x; _bp[1] = z;
+    if (b === 0) { _bp[2] = siteY(x, z, 'ground'); return _bp; }
+    if (!bankWet(x, z, b)) { _bp[2] = groundMeshY(x, z) ?? siteY(x, z, 'ground'); return _bp; }
+    const dk = deck === false ? null : ovpDeckY(x, z, undefined, undefined, true);
+    if (dk !== null) { _bp[2] = dk; return _bp; }
+    const o = bankOut(x, z);
+    if (!o) return null;
+    BANK_STAT.pushed++;
+    _bp[0] = o[0]; _bp[1] = o[1]; _bp[2] = groundMeshY(o[0], o[1]) ?? siteY(o[0], o[1], 'ground');
+    return _bp;
+  }
+  // __dbg.bankCheck(step, detail) (R1): every outer ring of the outline walked at `step` m (10) and stepped out along its
+  // outward normal: drowned counts the bank samples (outside, within 60 m) whose drawn ground is under the Delaware's level
+  // where the quad still lies (outside its hole; reported apart: kept, in a patch it keeps round an island or a pier, and
+  // tidal, the Delaware's own bank where the Schuylkill's polygon runs on into the Delaware past the Navy Yard); then what
+  // the build placed within BANK_R (the trees' treeInv.gy, the poles' GY, the posts', plinths', stops' and docks' records),
+  // each more than 0.5 m off the drawn surface there (off; and over 2 and 5 m), and each drawn in the water off a deck
+  // (river); and inside, stepping in from the outline, any drawn bed within 0.3 m of the sheet (the river's invariant over
+  // the whole outline, highest relative to the sheet, the worst km). Whatever ?banks says: under ?banks=0 it measures the
+  // old placement. riverCheck stays the river's own. detail: the poles drawn in the water and the nearest deck to each
+  function bankCheck(step, detail) {
+    if (!SCH_POLYS || !schEdges) return null;
+    const W0 = TERRAIN.water, st = step || 10, OFFS = [2, 5, 10, 15, 20, 25, 40, 55];
+    const inKeep = (x, z) => SCH_QUAD_KEEP.some((r) => pointInPoly(x, z, r));
+    const quadAt = (x, z) => x > RING_W.x0 && x < RING_W.x1 && z > RING_W.z0 && z < RING_W.z1 && (!SCH_QUAD_HOLE || !pointInPoly(x, z, SCH_QUAD_HOLE) || inKeep(x, z));
+    const nearDel = (x, z) => { if (delawareAt(x, z)) return true; for (let a = 0; a < 16; a++) for (const r of [15, 30, 45, 60]) if (delawareAt(x + r * Math.cos(a * Math.PI / 8), z + r * Math.sin(a * Math.PI / 8))) return true; return false; };
+    let samples = 0, drowned = 0, kept = 0, tidal = 0, inSamples = 0, inNear = 0, inOver = 0, inHi = -Infinity;
+    const inCells = new Map();   // the near samples by the km (x:z), the worst first
+    const at = [], inAt = [], IN_OFFS = [1, 3, 6, 10, 15, 25, 40];
+    for (const pg of SCH_POLYS) {
+      const r = pg.ring, n = r.length;
+      let ar = 0; for (let k = 0; k < n; k++) ar += r[k][0] * r[(k + 1) % n][1] - r[(k + 1) % n][0] * r[k][1];
+      const sg = ar > 0 ? 1 : -1;   // schEdges' own sign: the normal to the ring's outside
+      for (let k = 0; k < n; k++) {
+        const a = r[k], b = r[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+        if (L < 0.05) continue;
+        const nx = dz / L * sg, nz = -dx / L * sg, m = Math.max(1, Math.round(L / st));
+        for (let q = 0; q < m; q++) for (const d of IN_OFFS) {   // and in: the drawn river bed, never within 0.3 m of the sheet (Round 89's rule, the whole outline and not only the centreline)
+          const x = a[0] + dx * q / m - nx * d, z = a[1] + dz * q / m - nz * d;
+          if (schBand(x, z) !== 2) continue;
+          const g = groundMeshY(x, z);
+          if (g === null) continue;
+          inSamples++;
+          if (g > W0 + 0.5 - 0.3) { inNear++; if (g > W0 + 0.5) inOver++; const ck = Math.round(x / 1000) + ':' + Math.round(z / 1000); inCells.set(ck, (inCells.get(ck) || 0) + 1); if (inAt.length < 12) inAt.push([Math.round(x), Math.round(z), +(g - W0 - 0.5).toFixed(2)]); }
+          if (g > inHi) inHi = g;
+        }
+        for (let q = 0; q < m; q++) for (const d of OFFS) {
+          const x = a[0] + dx * q / m + nx * d, z = a[1] + dz * q / m + nz * d;
+          if (schBand(x, z) !== 1 || schEdges(x, z)[0] >= 60) continue;
+          const g = groundMeshY(x, z);
+          if (g === null) continue;
+          samples++;
+          if (g < W0 && quadAt(x, z)) {
+            if (inKeep(x, z)) kept++;
+            else if (x > -2400 || z > 7440 || nearDel(x, z)) tidal++;   // the bake's DEL_X, its z cut and the Delaware's own 60 m: the Delaware's bank, not the Schuylkill's
+            else { drowned++; if (at.length < 20) at.push([Math.round(x), Math.round(z), +(g - W0).toFixed(2)]); }
+          }
+        }
+      }
+    }
+    const surf = (x, z) => { const g = groundMeshY(x, z); return g === null ? null : quadAt(x, z) ? Math.max(g, W0) : g; };
+    const tally = () => ({ bank: 0, off: 0, off2: 0, off5: 0, river: 0, at: [] });
+    const look = (o, x, z, y) => {
+      const b = schBand(x, z);
+      if (!b) return;
+      if (bankWet(x, z, b)) { if (ovpDeckY(x, z, undefined, undefined, true) === null) { o.river++; if (o.at.length < 12) o.at.push([Math.round(x), Math.round(z), 'river']); } return; }
+      const s0 = surf(x, z);
+      if (s0 === null) return;
+      o.bank++;
+      const e = Math.abs(y - s0);
+      if (e > 0.5) { o.off++; if (o.at.length < 12) o.at.push([Math.round(x), Math.round(z), +(y - s0).toFixed(2)]); }
+      if (e > 2) o.off2++;
+      if (e > 5) o.off5++;
+    };
+    const trees = tally(), poles = tally(), posts = tally(), stops = tally(), docks = tally();
+    if (treeInv) for (let i = 0; i < treeInv.n; i++) look(trees, treeInv.x[i], treeInv.z[i], treeInv.gy[i]);
+    const PV = poleInv;   // (poleReconcile is the inventory's one reader in the build: a probe reads it through a local, as streetCheck does)
+    if (PV) for (let i = 0; i < PV.nPoles; i++) if (PV.X[i] !== 0 || PV.Z[i] !== 0) look(poles, PV.X[i], PV.Z[i], PV.GY[i]);
+    for (const r of markerRecs) if (r.type <= 1 && !r.river) look(posts, r.x, r.z, r.gy);
+    for (const r of artRecs) if (!r.river) look(posts, r.x, r.z, r.gy);
+    for (const r of STOPS.bus.concat(STOPS.rail)) if (!r.river) look(stops, r.x, r.z, r.gy);
+    for (const d of indegoSt.values()) if (!d.river) look(docks, d.x, d.z, d.y);
+    if (detail) {   // the nearest deck to each pole drawn in the water: [x, z, its y, the sheet's, the deck's distance past its half width, the deck's y]
+      poles.list = [];
+      if (PV) for (let i = 0; i < PV.nPoles; i++) {
+        const x = PV.X[i], z = PV.Z[i];
+        if ((x === 0 && z === 0) || !bankWet(x, z, schBand(x, z))) continue;
+        let bd = Infinity, by = null;
+        for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) for (const sg of ovpGrid.get((Math.floor(x / OVP_CELL) + a) + ':' + (Math.floor(z / OVP_CELL) + b2)) || []) {
+          const ax = ovpSegs[sg], az = ovpSegs[sg + 1], dx = ovpSegs[sg + 2] - ax, dz = ovpSegs[sg + 3] - az, t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1e-9), 0, 1);
+          const d = Math.hypot(ax + dx * t - x, az + dz * t - z) - ovpSegs[sg + 6];
+          if (d < bd) { bd = d; by = ovpSegs[sg + 4] + (ovpSegs[sg + 5] - ovpSegs[sg + 4]) * t; }
+        }
+        poles.list.push([Math.round(x), Math.round(z), +PV.GY[i].toFixed(1), +(W0 + 0.5).toFixed(1), isFinite(bd) ? +bd.toFixed(1) : null, by === null ? null : +by.toFixed(1)]);
+      }
+    }
+    return { banks: BANKS, hole: !!SCH_QUAD_HOLE, keep: SCH_QUAD_KEEP.length, samples, drowned, kept, tidal, drownedAt: at, inside: { samples: inSamples, nearSheet: inNear, overSheet: inOver, highest: +(inHi - W0 - 0.5).toFixed(2), at: inAt, km: [...inCells].sort((a, b) => b[1] - a[1]).slice(0, 12) }, trees, poles, posts, stops, docks, stat: { ...BANK_STAT } };
+  }
+  // the ground a level water ring reads (waterRingGate's levels, a basin's coping, bankWall): the drawn slope on the bank
+  // (the Water Works' octagon stood its coping on the DEM 4.5 m over a slope carved to -5.21), siteY everywhere else
+  function bankGround(x, z) { return bankBand(x, z) === 1 ? (groundMeshY(x, z) ?? siteY(x, z, 'ground')) : siteY(x, z, 'ground'); }
+  // the hole 'Laying out the ground' cuts in the Delaware's one water quad over the Schuylkill's corridor, and the patches it
+  // keeps round the river's islands and piers (bake_schuylkill.py quad_hole, quad_keep): the quad's only work there was to
+  // flood the bank the carve takes under it, 0.135 km2 of the wide box drawn as water up to 25 m in from the outline
+  const SCH_QUAD_HOLE = BANKS && SCH_POLYS && SCHUYLKILL_DATA.quad_hole && SCHUYLKILL_DATA.quad_hole.length > 2 ? SCHUYLKILL_DATA.quad_hole : null;
+  const SCH_QUAD_KEEP = SCH_QUAD_HOLE ? (SCHUYLKILL_DATA.quad_keep || []).filter((r) => r.length > 2) : [];
   function schuylkillCut(x, z) {
     if (z > -2250 || z < -6600) return 0;
     let best = Infinity;
@@ -8782,7 +8951,7 @@ vec2 wRing(vec2 rc, float tt) {
     if (n < 3) return no('degenerate');
     // the river path's own rings first (most of them), on the vertices alone as before
     let gMin = Infinity;
-    for (const q of poly) gMin = Math.min(gMin, siteY(q[0], q[1], 'ground'));
+    for (const q of poly) gMin = Math.min(gMin, bankGround(q[0], q[1]));   // R1: the drawn slope on the Schuylkill's bank (bankGround)
     if (!(gMin > TERRAIN.water + 1.5)) return no('low');
     const bb = bboxOf(poly);
     if (!wide && hitsP(bb)) return no('nw');
@@ -8796,11 +8965,11 @@ vec2 wRing(vec2 rc, float tt) {
     let gMax = -Infinity;
     for (let i = 0; i < n; i++) {
       const a = poly[i], b = poly[(i + 1) % n], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 10));
-      for (let s = 0; s < k; s++) { const g = siteY(a[0] + (b[0] - a[0]) * s / k, a[1] + (b[1] - a[1]) * s / k, 'ground'); if (g < gMin) gMin = g; if (g > gMax) gMax = g; }
+      for (let s = 0; s < k; s++) { const g = bankGround(a[0] + (b[0] - a[0]) * s / k, a[1] + (b[1] - a[1]) * s / k); if (g < gMin) gMin = g; if (g > gMax) gMax = g; }
     }
     if (!(gMin > TERRAIN.water + 1.5)) return no('low');
     const ys = [];
-    for (let x = bb[0] + 10; x < bb[1]; x += 20) for (let z = bb[2] + 10; z < bb[3]; z += 20) if (pointInPoly(x, z, poly)) ys.push(siteY(x, z, 'ground'));
+    for (let x = bb[0] + 10; x < bb[1]; x += 20) for (let z = bb[2] + 10; z < bb[3]; z += 20) if (pointInPoly(x, z, poly)) ys.push(bankGround(x, z));
     let lo = gMin, hi = gMax;
     for (const g of ys) { if (g < lo) lo = g; if (g > hi) hi = g; }
     const relief = hi - lo, basin = pa < WR_BASIN_AREA;
@@ -8822,7 +8991,7 @@ vec2 wRing(vec2 rc, float tt) {
   // 10 m along, facing out; nothing where the ground stands over the water (it hides the sheet's edge itself)
   function bankWall(poly, top) {
     const n = poly.length, sg = signedArea(poly) > 0 ? 1 : -1, pos = [], nor = [];
-    const gAt = (x, z) => siteY(x, z, 'ground');
+    const gAt = bankGround;   // R1
     for (let i = 0; i < n; i++) {
       const a = poly[i], b = poly[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
       if (L < 0.05) continue;
@@ -8854,6 +9023,7 @@ vec2 wRing(vec2 rc, float tt) {
     if (RAISED.log && !off) { const c = polyCentroid(poly); RAISED.log.push(G ? [Math.round(c[0]), Math.round(c[1]), Math.round(G.pa), +G.compact.toFixed(3), +G.relief.toFixed(1), G.coping || G.J ? 'basin' : G.basin ? 'pond' : 'lake'] : [Math.round(c[0]), Math.round(c[1]), Math.round(Math.abs(signedArea(poly))), waterRingGate.why, waterRingGate.relief]); }
     if (!G) { if (!off) RAISED.kept++; return false; }
     const { c, J } = G;
+    if (bankBand(c[0], c[1]) === 1) BANK_STAT.basins++;   // R1: a ring on the Schuylkill's bank, on the drawn slope
     if (G.coping || J) {
       const flush = !!(J && J.flush);
       const rim = G.gMax + (flush ? 0.05 : 0.45), top = flush ? rim : rim - 0.12;
@@ -10216,7 +10386,7 @@ vec2 wRing(vec2 rc, float tt) {
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
           let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05;
-          yy = riverCarve(x, z, yy);   // the Schuylkill's channel
+          yy = riverCarve(x, z, yy, true);   // the Schuylkill's channel (R1: and the bank's floor)
           // NED reads a made-land shelf across the Delaware at the Walt Whitman
           // crossing (~3 m above water mid-river) — those cells rendered as a flat
           // gray band under the deck; between the banks, send them to the bed
@@ -10433,7 +10603,8 @@ vec2 wRing(vec2 rc, float tt) {
     // edge (the strip along the south edge, then the east, Round 55 codas)
     const dipHole = trenchDipHole();   // Round 207: no river over the dipped I-95 trench
     const sheetHoles = (dipHole ? [dipHole] : []).concat(GROUND_CUTS.map((c) => c.ring));   // Round 217: nor over the ballpark's sunk bowl, under the river's level
-    const sheetG = new THREE.ShapeGeometry(shapeFromPoly([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], sheetHoles.length ? sheetHoles : null));
+    if (SCH_QUAD_HOLE) sheetHoles.push(SCH_QUAD_HOLE);   // the realism round two (R1): nor over the Schuylkill's banks
+    const sheetG = new THREE.ShapeGeometry([shapeFromPoly([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], sheetHoles.length ? sheetHoles : null)].concat(SCH_QUAD_KEEP.map((r) => shapeFromPoly(r, null))));
     sheetG.rotateX(-Math.PI / 2); sheetG.translate(0, TERRAIN.water, 0);
     const water = new THREE.Mesh(sheetG, waterMat);
     PERF.waterHole = dipHole && dipHole.map((q) => q.map((v) => Math.round(v)));
@@ -34619,15 +34790,18 @@ if (uOlLamp > 0.001) {
     const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
     const keepTree = (x, z, dbh, ni, core, outer) => {
       if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut or PATCO's, nor on a rebuilt landmark's ground (Round 161)
+      let gy;   // the realism round two (R1): on the Schuylkill's bank a tree stands on the drawn slope, and none in the river (bankPlace)
+      if (core) gy = siteY(x, z, 'ground');
+      else { const q = bankPlace(x, z, false); if (!q) { BANK_STAT.trees++; return; } x = q[0]; z = q[1]; gy = q[2]; }
       const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
       const st = TREE_STYLE[g] || TREE_STYLE[0];
       if (REBUILD_OCC.length) {   // Round 161: nor with its crown over a rebuilt landmark: the drawn crown, as the instance
         // matrix below scales it (CR x st[3] across, CR x st[4] tall, centred at CY) and the canopy shader grows it to 1.21
-        const cr = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5), cy = siteY(x, z, 'ground') + boleH(dbh) * 0.75 + cr * st[4] * 0.72;
+        const cr = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5), cy = gy + boleH(dbh) * 0.75 + cr * st[4] * 0.72;
         if (rebuildCrownAt(x, z, cr * st[3] * 1.21, cy - cr * st[4] * 1.21)) return;
       }
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0; OUT[n] = outer ? 1 : 0;
-      GY[n] = siteY(x, z, 'ground');
+      GY[n] = gy;
       CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
       CY[n] = GY[n] + boleH(dbh) * 0.75 + CR[n] * st[4] * 0.72;
       const k = Math.floor(x / TREE_CELL) + ':' + Math.floor(z / TREE_CELL);
@@ -35454,8 +35628,10 @@ if (uOlLamp > 0.001) {
         const h3 = hash01(gx * 7.7 + gz * 1.3 + 0.25);
         if (h3 > smooth(0.4, 0.85, g) * 0.92) continue;
         if (inWater(x, z) > -2 || septaSnapRoad(x, z, 7)) continue;
+        const wq = bankPlace(x, z, false);   // the realism round two (R1): on the Schuylkill's bank on the drawn slope, none in the river
+        if (!wq) { BANK_STAT.woods++; continue; }
         const H = 12 + 13 * hash01(gx * 2.3 + gz * 9.1 + 0.7), D = H * (0.55 + 0.2 * h1);
-        _wm.compose(_wv.set(x, siteY(x, z, 'ground'), z), _wq.identity(), _ws.set(H, H, D));
+        _wm.compose(_wv.set(wq[0], wq[2], wq[1]), _wq.identity(), _ws.set(H, H, D));
         im.setMatrixAt(W.k, _wm);
         const lk = m[1] > 0.25 ? W.wet[Math.floor(h2 * W.wet.length) % W.wet.length] : W.looks[Math.floor(h3 * 997) % W.looks.length];
         W.ls.array[W.k * 2] = lk; W.ls.array[W.k * 2 + 1] = -0.001 - 0.998 * hash01(gx * 5.1 + gz * 3.7 + 0.9);   // negative: a wood's tree
@@ -40100,12 +40276,14 @@ float pinOccGate() {
       if (!st && indegoTile.has(id) && indegoSt.size < INDEGO_CAP.st) { st = indegoTile.get(id); indegoSt.set(id, st); }
       if (!st) {
         if (indegoSt.size >= INDEGO_CAP.st || indegoList.length >= 512) continue;
-        const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+        let x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
         if (!isFinite(x) || !isFinite(z)) continue;
         // orientation only from the road grid — the surveyed position is right,
         // the dock just wants to sit parallel to its street
         const sn = septaSnapRoad(x, z, 30);
-        st = { id, x, z, y: siteY(x, z, 'ground'), dx: sn ? sn[2] : 1, dz: sn ? sn[3] : 0, tile: indegoList.length };
+        const dq = bankPlace(x, z);   // the realism round two (R1): the drawn slope on the Schuylkill's bank, a deck's top in the river, else not drawn
+        if (dq) { x = dq[0]; z = dq[1]; } else BANK_STAT.docks++;
+        st = { id, x, z, y: dq ? dq[2] : siteY(x, z, 'ground'), river: !dq, dx: sn ? sn[2] : 1, dz: sn ? sn[3] : 0, tile: indegoList.length };
         indegoList.push(st);
         indegoTile.set(id, st);
         indegoSt.set(id, st);
@@ -40184,7 +40362,7 @@ float pinOccGate() {
     indegoLive = [];
     let si = 0, ki = 0;
     for (const st of indegoList) {
-      if (!indegoSt.has(st.id) || si >= INDEGO_CAP.st) continue;
+      if (!indegoSt.has(st.id) || si >= INDEGO_CAP.st || st.river) continue;   // R1: none in the river off a deck
       if (!nearCam(st.x, st.y, st.z)) continue;   // the half-mile rule (Round 82)
       const rackL = clamp((st.docks || 12) * 0.42, 4, 20);
       st.rackL = rackL;
@@ -44331,7 +44509,16 @@ float pinOccGate() {
       if (STREET_PUSH) { const p = streetPush(x, z, 0.5, Infinity); if (p) { x = p[0]; z = p[1]; polesMoved++; } }   // Round 205: a pole on the drawn asphalt stands at its kerb
       if(inCapSite(x,z) || rebuildAt(x, z, 1)) { pos[i*3+1]=-1000; continue; }   // Round 161: none on a rebuilt landmark's ground
       const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1, fam = famOf ? (famOf[i >> 2] >> ((i & 3) * 2)) & 3 : 0;
-      const gy = siteY(x, z, 'ground');
+      // the realism round two (R1): on the Schuylkill's bank a pole stands on the drawn slope; in the river only where a deck
+      // carries it, and then as it always stood (the DEM, which deckOver weighs against the deck, Round 144), or taken out to
+      // the bank from within BANK_PUSH of it (bankPlace); none else
+      let gy;
+      const pb = bankBand(x, z);
+      if (pb && !(bankWet(x, z, pb) && ovpDeckY(x, z, undefined, undefined, true) !== null)) {
+        const q = bankPlace(x, z, false);
+        if (!q) { pos[i * 3 + 1] = -1000; BANK_STAT.poles++; continue; }
+        x = q[0]; z = q[1]; gy = q[2];
+      } else gy = siteY(x, z, 'ground');
       if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }   // Round 144: it stood in the deck
       const hm = clamp(hft * 0.3048, 3.5, 15);
       X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm;
@@ -46813,7 +47000,8 @@ float pinOccGate() {
         }
         yaw = Math.atan2(tx, tz);
       }
-      return { x: px, z: pz, y: siteY(px, pz, 'ground'), yaw };
+      const q = bankPlace(px, pz);   // the realism round two (R1): the drawn slope on the Schuylkill's bank, a deck's top in the river
+      return q ? { x: q[0], z: q[1], y: q[2], yaw } : { x: px, z: pz, y: siteY(px, pz, 'ground'), yaw, river: true };
     };
     const cellOf = (rec, isM) => { const k = Math.floor(rec.x / 400) + ':' + Math.floor(rec.z / 400); let a = markerCells.get(k); if (!a) { a = []; markerCells.set(k, a); } a.push({ rec, isM }); };
     for (const r of MARKERS.m || []) {
@@ -46823,6 +47011,7 @@ float pinOccGate() {
       rec.x = p.x; rec.z = p.z; rec.gy = p.y; rec.yaw = p.yaw;
       markerRecs.push(rec);
       if (rec.type > 1) continue;   // a wall plaque: a card and a search entry, no post
+      if (p.river) { rec.river = true; BANK_STAT.posts++; continue; }   // in the river off a deck: the card and the search entry, no post (R1)
       cellOf(rec, true);
     }
     for (const r of MARKERS.a || []) {
@@ -46831,6 +47020,7 @@ float pinOccGate() {
       const p = place(rec.x, rec.z, 31, 5);   // any street within 30 m: the work stands on its sidewalk (the Clothespin's point lies inside Centre Square's outline); a park or plaza piece farther from a street stays put
       rec.x = p.x; rec.z = p.z; rec.gy = p.y; rec.yaw = p.yaw;
       artRecs.push(rec);
+      if (p.river) { rec.river = true; BANK_STAT.posts++; continue; }   // in the river off a deck: no plinth (R1)
       cellOf(rec, false);
     }
     for (const m of markerMeshes) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -46950,14 +47140,18 @@ float pinOccGate() {
     const B = SEPTA_STOPS.bus, R = SEPTA_STOPS.rail;
     for (let i = 0; i < B.id.length; i++) {
       const x = B.x[i] / 2, z = B.z[i] / 2;
-      const rec = { kind: 'bus', id: B.id[i], x, z, gy: siteY(x, z, 'ground'), n: B.n[i], r: B.r[i] };
-      STOPS.bus.push(rec); put(rec);
+      const sq = bankPlace(x, z);   // the realism round two (R1): the drawn slope on the Schuylkill's bank, a deck's top in the river
+      const rec = { kind: 'bus', id: B.id[i], x: sq ? sq[0] : x, z: sq ? sq[1] : z, gy: sq ? sq[2] : siteY(x, z, 'ground'), n: B.n[i], r: B.r[i] };
+      STOPS.bus.push(rec);
+      if (!sq) { rec.river = true; BANK_STAT.stops++; } else put(rec);   // in the river off a deck: the near me card's and the search's, no pin
     }
     for (let i = 0; i < R.id.length; i++) {
       const x = R.x[i] / 2, z = R.z[i] / 2;
-      const rec = { kind: 'rail', id: R.id[i], x, z, gy: siteY(x, z, 'ground'), n: (R.d && R.d[i]) || R.n[i], board: R.n[i] };   // n shown, board asked (Market East is Jefferson Station)
+      const rq = bankPlace(x, z);   // R1, as the bus stops
+      const rec = { kind: 'rail', id: R.id[i], x: rq ? rq[0] : x, z: rq ? rq[1] : z, gy: rq ? rq[2] : siteY(x, z, 'ground'), n: (R.d && R.d[i]) || R.n[i], board: R.n[i] };   // n shown, board asked (Market East is Jefferson Station)
       for (const p of REBUILD_PINS) if (x >= p.bb[0] && x <= p.bb[1] && z >= p.bb[2] && z <= p.bb[3] && pointInPoly(x, z, p.ring)) { rec.x = p.at[0]; rec.z = p.at[2]; rec.gy = p.at[1] - 4.5; break; }   // Round 161: the pin stands 4.5 m over rec.gy
-      STOPS.rail.push(rec); put(rec);
+      STOPS.rail.push(rec);
+      if (!rq && rec.x === x && rec.z === z) { rec.river = true; BANK_STAT.stops++; } else put(rec);   // R1: none in the river off a deck (a rebuilt station's pin stands on its own)
     }
     busStopPin = pinMesh(pinTexture('#1f4fa3', '#fdfbf6', glyphBus), 900, 'busStopPin');
     railStationPin = pinMesh(pinTexture('#45637a', '#fdfbf6', glyphTrain), 80, 'railStationPin');
@@ -51477,6 +51671,7 @@ float pinOccGate() {
       mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, warmN: MIRZ.warmN || 0, warmP: MIRZ.warmP || 0, warmMs: MIRZ.warmMs || 0 } });   // Round 192: the depth mode, its probe and the deck's programs
     if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
+    if (window.__dbg) Object.assign(window.__dbg, { bankCheck });   // the realism round two (R1): the Schuylkill's banks
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
