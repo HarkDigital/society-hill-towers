@@ -16,7 +16,7 @@ const clock={y:2026,m:10,d:12,minutes:870};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
 const smooth=(a,b,v)=>{let t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
 const hash01=n=>{let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);};
-const ZREV={on:false},REAL=true,LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
+const ZREV={on:false},REAL=true,SNOW2_ON=true,wxSurfU={uSnowAcc:{value:0},uWet:{value:0}},LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
 const isTouch=TOUCH,NEAR_R=804.67,SCORES={games:[]},SEPTA_STOPS=undefined;
 const inCore=()=>CORE_HW!==null,roadHalfW=()=>CORE_HW===null?4.5:CORE_HW,groundMeshLandY=()=>0,groundMeshY=()=>0,siteY=()=>0;
 const _sp=new V3(),_sq=new THREE.Quaternion(),_ss=new V3(),_sm=new THREE.Matrix4(),_sc=new THREE.Color();

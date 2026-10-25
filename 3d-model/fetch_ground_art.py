@@ -48,7 +48,42 @@ GROUNDS = [
     ('roof_white', 'a white TPO membrane flat roof of a commercial building, about eight metres across: off-white with grey dirt '
      'streaks, scuffs and a few faint irregular welded seams', 'roof'),
     ('roof_gravel', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, uniform', 'roof'),
-    ('yard', 'the ground of urban backyards and a vacant lot in Philadelphia, about ten metres across: a patchwork of cracked '
+    # the realism round two (R4): three more of each kind, what a Philadelphia flat roof carries at 8 m (the four above stay
+    # its variant 0); bake_ground_art.py takes every one to its kind's own mean, so only the near roofs change
+    ('roof_tar_1', 'an old flat rowhouse roof of black modified bitumen in Philadelphia, about eight metres across, patched '
+     'many times: several large irregular patches of newer, blacker membrane lapped over the faded charcoal sheet, their '
+     'edges sealed with glossy lines of tar, a few smaller dabs of roof cement and faint cracks', 'roofvar'),
+    ('roof_tar_2', 'an old flat rowhouse roof of black modified bitumen in Philadelphia, about eight metres across: dark '
+     'charcoal with two or three broad irregular pale grey dried ponding stains where rainwater stood, rings of fine silt '
+     'and dust at their edges, faint tar-sealed cracks', 'roofvar'),
+    ('roof_tar_3', 'a flat roof of dark grey granulated cap sheet in Philadelphia, about eight metres across, laid in wide '
+     'overlapping strips with a few long lapped seams running at slightly different angles, tar bleeding out along them, '
+     'one small round metal roof drain with a black ring of tar around it, a little dust', 'roofvar'),
+    ('roof_silver_1', 'a flat rowhouse roof in Philadelphia, about eight metres across, its silver aluminium roof coating '
+     'old and worn thin: weathered silver grey with the black bitumen beneath showing through in irregular dark patches and '
+     'along cracks, brush marks', 'roofvar'),
+    ('roof_silver_2', 'a flat rowhouse roof coated with silver aluminium roof paint in Philadelphia, about eight metres '
+     'across: weathered silver grey with two broad brownish grey dried ponding stains and rings of dirt where water stood, a '
+     'darker streak running to a small round drain', 'roofvar'),
+    ('roof_silver_3', 'a flat rowhouse roof coated with silver aluminium roof paint in Philadelphia, about eight metres '
+     'across: older dull silver with a few irregular, brush-edged patches of fresher, brighter silver coating over repairs, '
+     'two narrow strips of silver seam tape, scattered small dark spots of tar', 'roofvar'),
+    ('roof_white_1', 'a white TPO membrane flat roof of a commercial building, about eight metres across: off-white sheets '
+     'joined by long welded seams and a few strips of seam tape at irregular spacing, grey dirt tracks where people walk, '
+     'scuffs', 'roofvar'),
+    ('roof_white_2', 'a white TPO membrane flat roof of a commercial building, about eight metres across: off-white, '
+     'weathered and evenly dulled by fine grey dust, with soft, faint, irregular tan grey ponding marks spread thinly over '
+     'much of the surface, no distinct spots, a few faint seams', 'roofvar'),
+    ('roof_white_3', 'a white TPO membrane flat roof of a commercial building, about eight metres across: off-white with '
+     'several rectangular welded repair patches a little whiter than the weathered sheet around them, grey scuffed foot '
+     'paths and fine dust', 'roofvar'),
+    ('roof_gravel_1', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, the '
+     'stones spread thinner in a few small irregular places where the dark membrane beneath shows through', 'roofvar'),
+    ('roof_gravel_2', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, the '
+     'stones finer and more silted in broad irregular low areas, darker grey brown silt between them, uniform', 'roofvar'),
+    ('roof_gravel_3', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, with '
+     'darker patches of silt and a little green moss in the low spots and the stones piled more thickly in places', 'roofvar'),
+    ('yard','the ground of urban backyards and a vacant lot in Philadelphia, about ten metres across: a patchwork of cracked '
      'grey concrete, bare packed brown dirt, patches of weeds and grass and a little gravel, no fences, no objects'),
     # the realism pass (Mike: "make this look more photo realistic and less cartoony ... all surfaces/water/anything"): the
     # ground's broad variation from the air, the woods' canopy by season, the river banks and the yards (tidemud, litter
@@ -88,6 +123,13 @@ FRAME_ROOF = ('Seamless tileable texture for a 3D city model: an aerial photogra
               '{what}, filling the whole frame evenly. No perspective, no parapets, no edges or borders, no vents, no '
               'skylights, no HVAC units, no shadows of objects, no objects. Soft even overcast daylight. Natural colours, '
               'photorealistic, uniform detail across the whole image so it repeats without a visible seam.')
+# the realism round two: the variants' frame, the same with room for what lies flat in the surface (a drain, a patch, tape)
+FRAME_ROOF_VAR = ('Seamless tileable texture for a 3D city model: an aerial photograph taken by a drone looking straight down '
+                  'at {what}, filling the whole frame evenly. No perspective, no parapets, no walls, no roof edges, no borders '
+                  'or frame, no vents, no skylights, no HVAC units, no pipes, nothing standing on the roof and no shadows of '
+                  'objects: only what lies flat in the roof surface itself. No text, no lettering, no painted markings, no '
+                  'logos. Soft even overcast daylight. Natural colours, photorealistic, the detail spread across the whole '
+                  'image so it repeats without a visible seam.')
 
 
 def api_key():
@@ -108,7 +150,7 @@ def make(key, gid, what, force, kind=None):
     base = os.path.join(RAW, gid)
     if os.path.exists(base + '.png') and not force:
         return gid, 'kept'
-    prompt = what if kind == 'aerial' else (FRAME_STREET if kind == 'street' else FRAME_ROOF if kind == 'roof' else FRAME).format(what=what)
+    prompt = what if kind == 'aerial' else (FRAME_STREET if kind == 'street' else FRAME_ROOF if kind == 'roof' else FRAME_ROOF_VAR if kind == 'roofvar' else FRAME).format(what=what)
     body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1,
                        'output_format': 'png'}).encode()
     err = ''

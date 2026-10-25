@@ -249,7 +249,7 @@ class Data(unittest.TestCase):
 
     def test_the_ground_set(self):
         d = json.loads((ROOT / 'ground_art.json').read_text())['veg']
-        self.assertEqual(set(d), {'parkmacro', 'canopy_summer', 'canopy_autumn', 'canopy_winter', 'riprap', 'alley'})
+        self.assertEqual(set(d), {'parkmacro', 'canopy_summer', 'canopy_autumn', 'canopy_winter', 'riprap', 'alley', 'snow'})   # the realism round two: the lying snow
         from PIL import Image
         for k, rec in d.items():
             self.assertEqual(set(rec), {'img', 'imgHalf', 'm', 'mean'})

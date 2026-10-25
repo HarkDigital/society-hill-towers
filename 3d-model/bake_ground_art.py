@@ -20,13 +20,32 @@ IDS = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks', 'yard')   # Round 184:
 # for the page's tinting; a tile is ROOF_M metres
 ROOFS = ('roof_tar', 'roof_silver', 'roof_white', 'roof_gravel')
 ROOF_CELL, ROOF_PAD, ROOF_M = 1024, 32, 8.0
+# the realism round two (R4): each kind's quadrant holds four variants in its own 2 by 2 (variant 0 the Round 185 picture,
+# then roof_<kind>_1 to _3 from fetch_ground_art.py), each 432 px made to tile and taken to its kind's linear mean (per
+# channel, in linear light), so a far roof, which is its kind's mean, is exactly what it was. A variant is padded with
+# its own wrapped edge, ROOF_EXT px on the quadrant's outside, where another kind's albedo lies, and ROOF_INT px toward its
+# kind's other variants (one mean, the same surface), so the quadrant's edge holds through mip 7 and a 512 px cell does not
+# carry a 64 px pad on every side
+ROOF_VARS, ROOF_EXT, ROOF_INT = 4, 64, 16
+
+
+def roof_var(a, mean, k=4):
+    """A variant taken to its kind's linear mean per channel (a few rounds, so what clips at white is made up elsewhere)."""
+    lin = np.clip(a, 0, 255) / 255.0
+    lin = np.where(lin <= 0.04045, lin / 12.92, ((lin + 0.055) / 1.055) ** 2.4)
+    for _ in range(k):
+        lin = np.clip(lin * (np.asarray(mean) / np.maximum(lin.reshape(-1, 3).mean(0), 1e-6)), 0, 1)
+    return np.where(lin <= 0.0031308, lin * 12.92, 1.055 * lin ** (1 / 2.4) - 0.055) * 255.0
 N = 1024
 # the realism pass (ground-vegetation and water's bank findings): the ground's own set, kept apart under 'veg' with each
 # image's metres a tile and its linear mean colour (the page takes a texture's detail as a ratio to its mean): the parks'
 # broad variation from the air, the woods' canopy by season, the river banks' riprap and the yards behind the rows (the
 # tidal mud and the leaf fall are drawn in the shader: a phone's ground program has no texture units to spare)
 VEG = {'parkmacro': 240.0, 'canopy_summer': 70.0, 'canopy_autumn': 70.0, 'canopy_winter': 70.0, 'riprap': 6.0,
-       'alley': 10.0}
+       'alley': 10.0, 'snow': 6.5}
+# the realism round two (D8): the lying snow (fetch_ground_art.py made it in the first pass and it stayed raw "for want of
+# texture units"); the page lays it through the alley's sampler on the bare ground's program while snow lies, so it takes
+# no unit of its own, and only as a ratio to its own mean, so the snow keeps the weather's calibrated white
 
 
 def lin_mean(a):
@@ -35,14 +54,32 @@ def lin_mean(a):
     return [round(float(v), 5) for v in lin.reshape(-1, 3).mean(0)]
 
 
-def tileable(a):
-    """Seamless in x, then in y: a blend with a half-rolled copy, the copy at the edges."""
+def tileable(a, quiet=False):
+    """Seamless in x, then in y: a blend with a half-rolled copy, the copy at the edges. quiet (the realism round two's
+    roof variants): the copy rolled by whatever share between a quarter and three quarters lays the least of the picture's
+    own features in the edge band, where the copy shows (the half roll lays a drain in the middle again at the edge, so a
+    tile carried two)."""
     for axis in (1, 0):
         n = a.shape[axis]
-        r = np.roll(a, n // 2, axis=axis)
         t = np.arange(n, dtype=np.float32)
         w = np.clip(np.minimum(t, n - 1 - t) / (n * 0.22), 0, 1)
         w = w * w * (3 - 2 * w)
+        s = n // 2
+        if quiet:
+            # a feature: the 2% of pixels farthest from their own 31 px neighbourhood (a drain's ring, a stain's edge, a
+            # patch's lap), counted along each column (row)
+            L = a @ np.array([0.2126, 0.7152, 0.0722], np.float32)
+            B = L.copy()
+            for ax in (0, 1):
+                m = B.shape[ax]
+                c = np.cumsum(np.concatenate([B.take(range(-15, 0), axis=ax), B, B.take(range(0, 15), axis=ax)], axis=ax), axis=ax)
+                c = np.concatenate([np.zeros_like(c.take([0], axis=ax)), c], axis=ax)
+                B = (c.take(range(31, m + 31), axis=ax) - c.take(range(0, m), axis=ax)) / 31.0
+            D = np.abs(L - B)
+            f = (D > np.quantile(D, 0.98)).sum(axis=0 if axis == 1 else 1).astype(np.float64)
+            cost = [float(((1 - w) * np.roll(f, k)).sum()) for k in range(n // 4, 3 * n // 4 + 1)]
+            s = n // 4 + int(np.argmin(cost))
+        r = np.roll(a, s, axis=axis)
         w = w[None, :, None] if axis == 1 else w[:, None, None]
         a = a * w + r * (1 - w)
     return a
@@ -108,27 +145,33 @@ def main():
         out[gid] = art_files.write(im, 'ground', gid, 'WEBP', quality=80, method=6)
         out[gid + 'Half'] = art_files.write(im.resize((N // 2, N // 2), Image.LANCZOS), 'ground', gid + '-half', 'WEBP', quality=80, method=6)
         print('%-8s %d KB, half %d KB' % (gid, art_files.size(out[gid]) // 1024, art_files.size(out[gid + 'Half']) // 1024))
-    roofs = [p for p in (os.path.join(RAW, r + '.png') for r in ROOFS) if os.path.exists(p)]
-    if len(roofs) == len(ROOFS):
-        inner = ROOF_CELL - 2 * ROOF_PAD
+    roofs = [os.path.join(RAW, r + ('_%d' % v if v else '') + '.png') for r in ROOFS for v in range(ROOF_VARS)]
+    if all(os.path.exists(p) for p in roofs):
+        inner = ROOF_CELL // 2 - ROOF_EXT - ROOF_INT
         atlas = np.zeros((2 * ROOF_CELL, 2 * ROOF_CELL, 3), np.float32)
         means = []
-        for k, p in enumerate(roofs):
-            a = tileable(np.asarray(Image.open(p).convert('RGB').resize((inner, inner), Image.LANCZOS), np.float32))
-            lin = (np.clip(a, 0, 255) / 255.0)
-            lin = np.where(lin <= 0.04045, lin / 12.92, ((lin + 0.055) / 1.055) ** 2.4)
-            means.append([round(float(v), 5) for v in lin.reshape(-1, 3).mean(0)])
-            cell = np.pad(a, ((ROOF_PAD, ROOF_PAD), (ROOF_PAD, ROOF_PAD), (0, 0)), mode='wrap')
-            y0, x0 = (k // 2) * ROOF_CELL, (k % 2) * ROOF_CELL
-            atlas[y0:y0 + ROOF_CELL, x0:x0 + ROOF_CELL] = cell
+        for k in range(len(ROOFS)):
+            for v in range(ROOF_VARS):
+                src = Image.open(roofs[k * ROOF_VARS + v]).convert('RGB')
+                if v == 0:   # the kind's mean as Round 185 took it (its picture at 960), so the manifest's four are unchanged
+                    means.append(lin_mean(tileable(np.asarray(src.resize((ROOF_CELL - 2 * ROOF_PAD,) * 2, Image.LANCZOS), np.float32))))
+                a = roof_var(tileable(np.asarray(src.resize((inner, inner), Image.LANCZOS), np.float32), quiet=v > 0), means[k])
+                # the quadrant's outside takes the wide pad, the side toward the kind's other variants the narrow one
+                cx, cy = v % 2, v // 2
+                cell = np.pad(a, ((ROOF_INT if cy else ROOF_EXT, ROOF_EXT if cy else ROOF_INT), (ROOF_INT if cx else ROOF_EXT, ROOF_EXT if cx else ROOF_INT), (0, 0)), mode='wrap')
+                y0, x0 = (k // 2) * ROOF_CELL + cy * (ROOF_CELL // 2), (k % 2) * ROOF_CELL + cx * (ROOF_CELL // 2)
+                atlas[y0:y0 + ROOF_CELL // 2, x0:x0 + ROOF_CELL // 2] = cell
+                print('roof %-7s variant %d mean %s (its kind %s)' % (ROOFS[k][5:], v, lin_mean(a), means[k]))
         im = Image.fromarray(np.clip(atlas, 0, 255).astype(np.uint8))
         out['roofs'] = art_files.write(im, 'ground', 'roofs', 'WEBP', quality=82, method=6)
         out['roofsHalf'] = art_files.write(im.resize((ROOF_CELL, ROOF_CELL), Image.LANCZOS), 'ground', 'roofs-half', 'WEBP', quality=80, method=6)
         out['roofKinds'] = [r[5:] for r in ROOFS]
         out['roofMean'] = means
-        out['roofPad'] = ROOF_PAD / ROOF_CELL
+        out['roofPad'] = [ROOF_EXT / ROOF_CELL, ROOF_INT / ROOF_CELL]   # shares of a kind's quadrant: its outside, between its variants
         metres['roof'] = ROOF_M
         print('roofs    atlas %d KB, half %d KB, means %s' % (art_files.size(out['roofs']) // 1024, art_files.size(out['roofsHalf']) // 1024, means))
+    else:
+        print('roofs    missing %s (run fetch_ground_art.py): the page goes without them' % ', '.join(os.path.basename(p) for p in roofs if not os.path.exists(p)))
     veg = {}
     for gid, mt in VEG.items():
         p = os.path.join(RAW, gid + '.png')

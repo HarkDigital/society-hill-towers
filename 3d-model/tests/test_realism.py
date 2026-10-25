@@ -68,7 +68,7 @@ class RoofsAndYards(unittest.TestCase):
     def test_a_roof_is_dealt_per_house(self):
         # a row on one block face shares its wall colour and so its tint byte: the seed takes the base to the centimetre
         self.assertIn("'      float rsd = fract(sin(vBase * 371.3 + vTint * 91.7) * 43758.5453);',", self.s)
-        self.assertIn("textureGrad(uRoofArt, rUV, dFdx(rG) * rSc, dFdy(rG) * rSc)", self.s)
+        self.assertIn("textureGrad(uRoofArt, rUV, rGx * rHold, rGy * rHold)", self.s)   # the realism round two: the footprint held in the pad
 
     def test_the_yards(self):
         self.assertIn("if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9;", self.s)

@@ -227,6 +227,7 @@ const artImage = () => Promise.resolve(null), artSrc = (a) => a;
 const SF_PARTA = true, SF_PARTA_MIN = 3.4;
 const unb64 = (b) => { const u = Buffer.from(b, 'base64'); return new Uint8Array(u.buffer.slice(u.byteOffset, u.byteOffset + u.length)); };
 let STOREFRONT_N = 0, STOREFRONT_NEAR = 0, STOREFRONT_BASE = 0;
+const BL_ON = false;   // the realism round two's blade signs (their own section, not the block's): off here
 __HASH01__
 __BLOCK__
 const raw = Buffer.from(fs.readFileSync(__B64__, 'utf8').trim(), 'base64');

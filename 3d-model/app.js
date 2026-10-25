@@ -3088,6 +3088,7 @@
     const T = LANE_REAL;
     for (const k in laneU) shader.uniforms[k] = laneU[k];
     shader.uniforms.uLaneFresh = { value: fresh ? 1 : 0 };   // this material's own: the paving season's fresh blacktop, unworn
+    if (SNOW2_ON) shader.uniforms.uLnSnow = wxSurfU.uSnowAcc;   // the realism round two: the plowed street (the weather lays it, wxSurfaceLate)
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aLane; varying vec4 vLane;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLane = aLane;');
@@ -3095,6 +3096,7 @@
       .replace('#include <common>', '#include <common>\nvarying vec4 vLane;')
       .replace('void main() {', [
         'uniform sampler2D uLaneWear; uniform float uLaneWearOn, uLaneWearM, uLaneWearLen, uLaneFresh;',
+        SNOW2_ON ? 'uniform float uLnSnow; float lnSnowRut = 0.0, lnSnowMid = 0.0, lnSnowPile = 0.0;' : '',
         'float lnLine(float d, float h, float aa){ return 1.0 - smoothstep(h - 0.5 * aa, h + 0.5 * aa, d); }',
         'float lnH1(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float lnN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(lnH1(i), lnH1(i + vec2(1.0, 0.0)), f.x), mix(lnH1(i + vec2(0.0, 1.0)), lnH1(i + vec2(1.0, 1.0)), f.x), f.y); }',
@@ -3158,6 +3160,20 @@
         '  float lkf = (1.0 - smoothstep(0.0, 0.6 * lnW + 0.02, abs(lnKd - 0.17))) * (1.0 - lkt);',
         '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.155, 0.155, 0.145), lkt * lkOn);',   // a granite or concrete kerb, a shade over the sidewalk (SIDEWALK_COL)
         '  diffuseColor.rgb *= 1.0 - 0.5 * lkf * lkOn;',
+        // the realism round two (D12): the kerb's dirt, a band of grit and dust on the road's outer metre, lighter and warmer
+        // than the asphalt, broken along the kerb, past the grime at its foot; gone where the kerb is (a side street's mouth)
+        WEAR_ON ? '  diffuseColor.rgb *= mix(vec3(1.0), vec3(1.4, 1.29, 1.08), (1.0 - smoothstep(0.4, 1.15, lnKd)) * smoothstep(0.14, 0.32, lnKd) * lnKerb * (1.0 - lnMouth) * (1.0 - smoothstep(1.0, 3.0, lnW)) * (0.45 + 0.55 * lnN(vec2(lnS * 0.31, lnHw * 1.7))));' : '',
+        // the realism round two (D8): a plowed street under snow, for the weather to lay (wxSurfaceLate): the wheel paths 0.8 m
+        // either side of each lane's middle, the slushed crown between them, and the plow's pile on the kerb's last 0.6 m; each
+        // gone to its mean across the lane before it can alias
+        ...(SNOW2_ON ? [
+          '  if (uLnSnow > 0.001) {',
+          '    float lsR = (abs(lnF - 0.5) * lnP - 0.8) / 0.3, lsM = (lnF - 0.5) * lnP / 0.45, lsF = smoothstep(0.25, 0.9, lnW);',
+          '    lnSnowRut = mix(exp(-lsR * lsR), 0.32, lsF) * lnLaneK;',
+          '    lnSnowMid = mix(exp(-lsM * lsM), 0.24, lsF) * lnLaneK;',
+          '    lnSnowPile = mix(1.0 - smoothstep(0.45, 0.75, lnKd), min(1.0, 0.6 / lnHw), lsF) * max(lnKerb, lnDiv) * (1.0 - lnMouth);',
+          '  }',
+        ] : []),
         // the paint
         '  float lnLineW = max(' + T.lineW + ', lnW * 0.9);',
         '  float lnGain = clamp(' + T.lineW + ' / lnLineW, 0.55, 1.0);',
@@ -4274,6 +4290,17 @@
   sun.shadow.camera.far = 2600;
   scene.add(sun);
   scene.add(sun.target);
+  // the realism round two (C4 a): shadows that meet their walls. The near map's two biases were fixed and sized for LITE's
+  // coarsest map (1024 over the 900 m box, 1.76 m a texel): a depth bias of 1 m (-0.0004 of the shadow camera's 2,500 m
+  // range), which left about 0.9 m of lit ground at the foot of every wall under a 27 degree sun, and a normal offset of
+  // 1.4 m, which cut every shadow's tip short by 1.4 m over the tangent of the sun's elevation (2.8 m at 15:30, 6.6 m at 17:00).
+  // Both now follow the map's texel at its current box (aimSun), as the far map's do: the normal offset a texel and a half
+  // (n), which alone keeps a plane clear of its own map within the filter's reach at any slope (its margin along the light is
+  // the offset over the cosine), and the depth bias a texel (d) scaled by the receiver's slope to the sun (p3dBiasK, below the
+  // far map's rewrite: half a texel facing the sun, three and a half at a graze), so a street in a 27 degree sun at the
+  // computer's street box (0.146 m a texel) takes 0.2 m of each. Every device and tier, the far map's own pair untouched;
+  // ?shadowbias=0 and ?real=0 keep the fixed pair
+  const SHBIAS = { on: REAL && !/[?&]shadowbias=0\b/.test(location.search), d: 1.0, n: 1.5, fail: '', dbg: false };
 
   const shadowAim = { cx: NaN, cz: NaN, extent: NaN, sun: new V3() };   // what the shadow map was last drawn for
   let shadowsIdle = false;   // nothing receives (moonShadowsOff): no depth pass is worth drawing
@@ -4299,6 +4326,18 @@
     renderer.shadowMap.needsUpdate = true;
   }
   aimSun(-1450, -700, 800);
+  // the realism round two (C4 a): the pair follows the box the map was last drawn for (its half-width, c.right), wrapped from
+  // outside as the probe's bake is (the box's own text runs under node in tests/test_realism_post_shadows.py)
+  function shBiasSet() {
+    const c = sun.shadow.camera, texel = (c.right * 2) / SHADOW_RES;
+    sun.shadow.bias = -SHBIAS.d * texel / (c.far - c.near);
+    sun.shadow.normalBias = SHBIAS.n * texel;
+    if (!SHBIAS.dbg && window.__dbg) {   // __dbg.shadowBias(d, n): the pair in metres, the texel, the box and the map; d and n set the texels (the A/B)
+      SHBIAS.dbg = true;
+      window.__dbg.shadowBias = (d, n) => { if (d != null) SHBIAS.d = +d; if (n != null) SHBIAS.n = +n; if (d != null || n != null) shBiasSet(); const k = sun.shadow.camera; return { on: SHBIAS.on, fail: SHBIAS.fail, map: SHADOW_RES, ext: k.right, texel: +((k.right * 2) / SHADOW_RES).toFixed(3), depthM: +(-sun.shadow.bias * (k.far - k.near)).toFixed(3), normalM: +sun.shadow.normalBias.toFixed(3) }; };
+    }
+  }
+  if (SHBIAS.on) { const aim0 = aimSun; aimSun = function (cx, cz, extent) { aim0(cx, cz, extent); shBiasSet(); }; shBiasSet(); }
 
   // ---- the far shadows (the realism pass, sky-light 8: "Shadows end 300 to 900 m from the eye", every aerial view stood
   // shadowless past the near box). Not three's CSM: it adds three lit lights that every hooked material would have to opt
@@ -4375,6 +4414,27 @@
       L.shadow.radius = 0;
       scene.add(L); scene.add(L.target);   // after the sun: three numbers the directional lights in the scene's order
       FARSH.light = L; FARSH.on = true;
+    }
+  }
+  // the realism round two (C4 a): the near map's depth bias scaled by the receiver's slope to the sun, after the far map's
+  // rewrite and before anything compiles. r149 has no slope-scaled bias, so the light loop works out p3dBiasK once a fragment
+  // from the shading normal and the sun's direction (light 0), half plus half the tangent of their angle (to 6), and the near
+  // map's lookup takes its bias times it: the stock loop's (a phone, a computer off the post pipeline) at index 0 only, the
+  // rewrite's one-light path and p3dSunShadow's near lookup. The far map's lookup and the water's own keep theirs
+  if (SHBIAS.on) {
+    const C = THREE.ShaderChunk, sp = C.shadowmap_pars_fragment, lf = C.lights_fragment_begin;
+    const decl = 'uniform DirectionalLightShadow directionalLightShadows[ NUM_DIR_LIGHT_SHADOWS ];', at = 'IncidentLight directLight;';
+    const stock = 'getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias,';
+    const one = 'getShadow( directionalShadowMap[ 0 ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias,';
+    const near = 'getShadow( directionalShadowMap[ 0 ], nS.shadowMapSize, nS.shadowBias,';
+    if (sp.indexOf(decl) < 0 || lf.indexOf(at) < 0 || (lf.indexOf(stock) < 0 && lf.indexOf(one) < 0)) SHBIAS.fail = 'chunks';
+    else {
+      C.shadowmap_pars_fragment = sp.replace(decl, decl + '\n\t\tfloat p3dBiasK = 1.0;')
+        .replace(near, 'getShadow( directionalShadowMap[ 0 ], nS.shadowMapSize, nS.shadowBias * p3dBiasK,');
+      C.lights_fragment_begin = lf.replace(at, at + '\n#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0 && NUM_DIR_LIGHTS > 0\n' +
+          '{ float p3dC = clamp( dot( geometry.normal, directionalLights[ 0 ].direction ), 0.05, 1.0 ); p3dBiasK = 0.5 + 0.5 * min( sqrt( 1.0 - p3dC * p3dC ) / p3dC, 6.0 ); }\n#endif')
+        .split(stock).join('getShadow( directionalShadowMap[ i ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias * ( UNROLLED_LOOP_INDEX == 0 ? p3dBiasK : 1.0 ),')
+        .split(one).join('getShadow( directionalShadowMap[ 0 ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias * p3dBiasK,');
     }
   }
   const _farV = new V3();
@@ -4643,6 +4703,84 @@
   // clear-air multiplier on the fog distances, and tint, the smoke colour of the sky and fog
   const AQI = { ok: false, pm25: null, o3: null, aqi: null, cat: '', sites: 0, t: 0, k: 1, tint: 0 };
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
+  // ---- one wind (the realism round two, D14): the live wind drove the water, the rain, the snow and the Famine Memorial's
+  // flag, while the trees swayed on two sines at a fixed 0.012 in a fixed direction, as much on a calm day as in a gale. Now
+  // everything that moves in it reads one profile: the reported speed and heading (eased, so a new report never snaps) and
+  // its gusts (Open-Meteo's wind_gusts_10m over the speed, 0.45 when a preset gives none), the gusts a slow noise running
+  // downwind across the city at the wind's own pace (a front every 60 m of fetch), so a gust crosses a park rather than every
+  // tree swaying alone. The sway's phases are integrated here, so a change of speed changes the pace without a jump. The cards'
+  // and the crowns' sway, the tufts, the wood field (the cards' material) and the depth pass (the cards' depth material compiles
+  // the same patch, so a shadow sways with its tree), the flag, the water's chop and the precipitation's slant all read it.
+  // A calm stays calm: the cards' amplitude is 0.004 + 0.0025 a metre a second (Round 179's fixed 0.012 is a 3.2 m/s day),
+  // capped at 0.032 (a 25 mph wind), inside the cards' bounding sphere (the tree step's cardG); the crowns stay inside
+  // CROWN_SLACK and the tufts never cull. Wind does not show in a still: __dbg.wind(spd) pins it and reports the sway.
+  // ?wind1=0 brings back the fixed sway
+  const WIND = { on: REAL && !/[?&]wind1=0\b/.test(location.search), spd: 2.3, dx: 0.92, dz: 0.39, gust: 0.45, tSpd: 2.3, tDx: 0.92, tDz: 0.39, tGust: 0.45,
+    p1: 0, p2: 0, p3: 0, clk: 0, eye: 2.3, vx: 2.1, vz: 0.9, pin: null };
+  const windU = { uWindF: { value: new THREE.Vector4(0.92, 0.39, 2.3, 0.45) }, uWindP: { value: new THREE.Vector4() } };
+  // the shaders' half: uWindF = (heading x, z, speed m/s, gust ratio), uWindP = (the sway's two phases, the gust clock, the
+  // flutter's phase); windE is the wind at a point, gusts and all; windAmp the cards' sway a unit of size (the crowns and the
+  // tufts take it as a ratio to Round 179's 0.012), windLean the steady bend downwind as a share of it
+  const WIND_AMP = [0.004, 0.0025, 0.032], WIND_LEAN = 0.5;
+  // the realism round two's other two flags, read where the shaders are built (D8: snow that lies, see snow2Step; D12: the
+  // worn ground, see canopyPatch and lanePatchReal)
+  const SNOW2_ON = REAL && !/[?&]snow2=0\b/.test(location.search);
+  const WEAR_ON = REAL && !/[?&]wear=0\b/.test(location.search);
+  const WIND_GLSL = [
+    'uniform vec4 uWindF, uWindP;',
+    'float wnH(float i) { i = fract(i * 0.1031); i *= i + 33.33; i *= i + i; return fract(i); }',
+    'float wnN(float q) { float i = floor(q), f = fract(q); f = f * f * (3.0 - 2.0 * f); return mix(wnH(mod(i, 256.0)), wnH(mod(i + 1.0, 256.0)), f); }',
+    'float windE(vec2 p) { float q = uWindP.z - dot(p, uWindF.xy) / 60.0; float g = 0.65 * wnN(q) + 0.35 * wnN(q * 3.0 + 17.0); return max(0.0, uWindF.z * (1.0 + uWindF.w * (g - 0.4) * 1.6)); }',
+    'float windAmp(float e) { return clamp(' + WIND_AMP[0].toFixed(4) + ' + ' + WIND_AMP[1].toFixed(4) + ' * e, ' + WIND_AMP[0].toFixed(4) + ', ' + WIND_AMP[2].toFixed(4) + '); }',
+    'float windLean(float e) { return ' + WIND_LEAN.toFixed(2) + ' * smoothstep(1.0, 12.0, e); }',
+  ].join('\n');
+  // the same in JavaScript, for what the frame moves on the CPU (the flag, the water's chop, the rain's and the snow's slant).
+  // Both octaves are periodic in 256 of the clock (the second at three times the first), so its wrap never jumps
+  const windFr = (x) => x - Math.floor(x);
+  const windH = (i) => { i = windFr(i * 0.1031); i *= i + 33.33; i *= i + i; return windFr(i); };
+  const windN = (q) => { const i = Math.floor(q); let f = q - i; f = f * f * (3 - 2 * f); return windH(((i % 256) + 256) % 256) * (1 - f) + windH((((i + 1) % 256) + 256) % 256) * f; };
+  function windAt(x, z) {
+    const q = WIND.clk - (x * WIND.dx + z * WIND.dz) / 60, g = 0.65 * windN(q) + 0.35 * windN(q * 3 + 17);
+    return Math.max(0, WIND.spd * (1 + WIND.gust * (g - 0.4) * 1.6));
+  }
+  const windAmpAt = (e) => Math.min(WIND_AMP[2], Math.max(WIND_AMP[0], WIND_AMP[0] + WIND_AMP[1] * e));
+  // each frame (after the water's clock): ease to the latest report, carry the phases on (none under reduced motion), and the
+  // wind at the eye for the water and the precipitation (half the gust there: a gust is a patch of the river, not all of it)
+  function windStep(dt) {
+    if (window.__dbg && !window.__dbg.wind) Object.assign(window.__dbg, { wind: windProbe, snow2: snow2Probe, wear: () => ({ on: WEAR_ON }) });   // ?dev=1: the realism round two's probes
+    if (!WIND.on) return;
+    const W = WIND, k = 1 - Math.exp(-dt / 6), rs = Math.hypot(WX.windX || 0, WX.windZ || 0);
+    W.tSpd = W.pin == null ? rs : W.pin; W.tGust = WX.gustK == null ? 0.45 : WX.gustK;
+    if (rs > 0.05) { W.tDx = WX.windX / rs; W.tDz = WX.windZ / rs; }
+    W.spd += (W.tSpd - W.spd) * k; W.gust += (W.tGust - W.gust) * k;
+    W.dx += (W.tDx - W.dx) * k; W.dz += (W.tDz - W.dz) * k;
+    const l = Math.hypot(W.dx, W.dz) || 1; W.dx /= l; W.dz /= l;
+    if (!reducedMotion) {
+      const fr = 0.75 + 0.05 * Math.min(W.spd, 15), TAU = Math.PI * 128;
+      W.p1 = (W.p1 + dt * 1.1 * fr) % TAU; W.p2 = (W.p2 + dt * 2.3 * fr) % TAU; W.p3 = (W.p3 + dt * 3.1 * fr) % TAU;
+      W.clk = (W.clk + dt * W.spd / 60) % 256;
+    }
+    const e = windAt(camera.position.x, camera.position.z), ke = 1 - Math.exp(-dt / 2);
+    W.eye += (W.spd + 0.5 * (e - W.spd) - W.eye) * ke;
+    W.vx = W.dx * W.eye; W.vz = W.dz * W.eye;
+    windU.uWindF.value.set(W.dx, W.dz, W.spd, W.gust);
+    windU.uWindP.value.set(W.p1, W.p2, W.clk, W.p3);
+    // the water's chop and heading on the profile (applyWx set them from the report alone)
+    waterU.uWAmp.value = clamp(0.5 + W.eye * 0.14, 0.5, 1.8);
+    waterU.uWDir.value.set(W.dx, W.dz);
+  }
+  // ?dev: __dbg.wind(spd) pins the speed (m/s; null lets the report back) and reports the profile and what it moves: the cards'
+  // sway at the top of a 10 m tree (metres, the swing and the lean), the crowns' and the tufts' share of their own size
+  function windProbe(spd) {
+    if (spd !== undefined) { WIND.pin = spd == null ? null : +spd; if (WIND.pin != null) WIND.tSpd = WIND.spd = WIND.pin; }
+    const e = WIND.spd, a = windAmpAt(e), lean = WIND_LEAN * smooth(1, 12, e), H = 10 * 1.08;
+    return { on: WIND.on, pin: WIND.pin, spd: +WIND.spd.toFixed(2), dir: [+WIND.dx.toFixed(3), +WIND.dz.toFixed(3)], gust: +WIND.gust.toFixed(3), eye: +WIND.eye.toFixed(2),
+      here: +windAt(camera.position.x, camera.position.z).toFixed(2), phases: [WIND.p1, WIND.p2, WIND.p3, WIND.clk].map((v) => +v.toFixed(2)),
+      card10m: { amp: +a.toFixed(4), swing: +(a * 0.85 * H).toFixed(3), lean: +(a * lean * H).toFixed(3), old: +(0.012 * 0.85 * H).toFixed(3) },
+      crown: +(Math.min(1.5, Math.max(0.3, a / 0.012)) * Math.hypot(0.85 * 0.04 + lean * 0.05, 0.85 * 0.02)).toFixed(4),
+      tuft: +(Math.min(1.5, Math.max(0.35, a / 0.012)) * Math.hypot(0.85 * 0.2 + lean * 0.3, 0.85 * 0.1)).toFixed(4),
+      water: { amp: +waterU.uWAmp.value.toFixed(3) }, flag: FAM && FAM.flag ? { spd: +FAM.spd.toFixed(2) } : null };
+  }
   // per-fragment hash noise added to the sky before it is written: +/-0.5/255
   // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
   const SKY_DITHER = 1 / 255;
@@ -4651,6 +4789,10 @@
   // 2.5 read as a moon, 2.0 is Mike's "a bit smaller" (Round 64 coda)
   const MOON_SCALE = 2.0, MOON_R = 0.0091 * MOON_SCALE;
   const SKY_SAT0 = gradeU.uSat.value;   // the composite's own saturation (0.84 under REAL), which the open sky takes back (realSky)
+  // the realism pass two (R5): the cirrus Open-Meteo reports (WX.high, kept out of the deck since Round 88) drawn on the dome
+  // (the cirrus block below, realSky sets uCirrus); ?cirrus=0 keeps the empty gradient, ?wx=cirrus pins a clear sky under 60
+  // per cent high cloud, __dbg.cirrus(k) pins the amount
+  const CIRRUS = REAL && !/[?&]cirrus=0\b/.test(location.search);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -4688,6 +4830,8 @@
       uSatK: { value: 1 },                               // the composite's saturation undone over the open sky (its horizon matches the air's)
       uStar: { value: Array.from({ length: 24 }, () => new THREE.Vector4(0, -1, 0, 0)) },   // the brightest stars (realSky): direction, brightness
       uStarK: { value: 0 },                                                                // and how many of them the night's sky lets through
+      // the realism pass two: the cirrus (its amount, eased from WX.high, and the wind's heading, x and z; realSky)
+      uCirrus: { value: new THREE.Vector4(0, 0.86, -0.5, 0) },
     },
     vertexShader:
       'varying vec3 vDir;\n' +
@@ -4697,6 +4841,7 @@
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
       'uniform vec3 uGlow, uGlowDir, uSkyFogC, uSkyGlowC; uniform vec4 uSkyFog; uniform float uBand, uSatK;\n' +
       'uniform vec4 uStar[24]; uniform float uStarK;\n' +
+      (CIRRUS ? 'uniform vec4 uCirrus;\n' : '') +
       'uniform vec3 uMoon, uMoonU, uMoonV, uMoonN, uMoonE; uniform float uMoonK, uMoonI, uMoonD, uMoonR; uniform float uPost, uExposure;\n' +
       'float mare(vec2 p, vec2 c, vec2 r){ vec2 q = (p - c) / r; return 1.0 - smoothstep(0.5, 1.25, dot(q, q)); }\n' +
       INV_GLSL + '\n' +
@@ -4712,6 +4857,7 @@
       // Screen footprint is evaluated outside the disc branch, where derivatives
       // are defined. It keeps the terminator filtered on small/low-DPR displays.
       '  float moonPixel = fwidth(dot(nd, uMoonU) / uMoonR);\n' +
+      (CIRRUS ? '  float ciPx = length(fwidth(nd));\n' : '') +   // (the cirrus fibres' footprint, outside every branch as the moon's is)
       '  float h = nd.y;\n' +
       '  float sunward = dot(normalize(nd.xz + vec2(0.0001)), normalize(uSun.xz + vec2(0.0001))) * 0.5 + 0.5;\n' +
       '  vec3 horizon = mix(cHorizon, cZenith * 0.65 + vec3(0.12, 0.095, 0.13), uTwilight * (1.0 - pow(sunward, 2.0)) * 0.65);\n' +
@@ -4815,6 +4961,39 @@
       '    float horiz = smoothstep(0.0, 0.03, h) * (1.0 - smoothstep(0.04, 0.12, h));\n' +
       '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov) * uBand);\n' +
       '  }\n' +
+      (CIRRUS ? [
+        // the realism pass two (R5): cirrus, the high cloud Open-Meteo reports and Round 88 took out of the deck (WX.high): a
+        // thin sheet some 9 km up on the dome above about 8 degrees, by the share reported. Its fibres are drawn out along the
+        // wind (a sheet over the dome's own ray, nd.xz over the height as the band's), bent across it by a slow octave (the
+        // hooks of the mares' tails) and gathered by a broad field into patches with a faint veil between them; ridged noise
+        // makes the strands, faded to their mean where a pixel spans them. Lit white by day (9 km up it keeps the full sun
+        // while the deck's light dims for the dusk below) and brighter toward the sun (ice scatters forward), gold at a low
+        // sun, faint in the city's glow at night, and never darker than the sky behind it (lifted to the sky's brightness where
+        // its own light is less): no shadow, no dark bellies (Round 88, Mike: it is not that cloudy in Philly), no change to
+        // any light. Gone as the deck closes and under rain, snow and fog (uBand); the probe's copy takes it to the glass and
+        // the water. 0.1 ms a full screen of sky at 1280 by 800 at 0.6, measured headless on the Mac
+        '  if (uCirrus.x > 0.003 && h > 0.04) {',
+        '    float ck = uCirrus.x;',
+        '    vec2 ciW = normalize(uCirrus.yz + vec2(1e-4, 0.0));',
+        '    vec2 ciP = nd.xz / (h + 0.06) * 1.4 + uCloudOff * 0.5;',
+        '    vec2 ciQ = vec2(dot(ciP, ciW), dot(ciP, vec2(-ciW.y, ciW.x)));',
+        '    float ciB = 0.6 * cnoise(ciQ * vec2(0.22, 0.5) + 3.7) + 0.4 * cnoise(ciQ * vec2(0.55, 1.1) + 11.9);',
+        '    ciQ.y += (cnoise(ciQ * vec2(0.3, 0.6) + 7.3) - 0.5) * 0.8;',
+        '    float ciBody = cnoise(ciQ * vec2(0.6, 2.2) + 19.1);',
+        '    vec2 ciR = ciQ * vec2(0.8, 7.0);',
+        '    float ciR1 = 1.0 - abs(2.0 * cnoise(ciR + 1.3) - 1.0), ciR2 = 1.0 - abs(2.0 * cnoise(ciR * vec2(1.7, 2.3) + 5.1) - 1.0);',
+        '    float ciF = mix(0.6 * ciR1 * ciR1 + 0.4 * ciR2 * ciR2, 0.45, smoothstep(0.35, 0.9, ciPx * 9.8 / ((h + 0.06) * (h + 0.06))));',
+        '    float ciWisp = smoothstep(0.35, 0.8, ciBody * (0.55 + 0.6 * ciF)) * smoothstep(0.58 - 0.30 * ck, 0.86 - 0.12 * ck, ciB);',
+        '    float ciVeil = smoothstep(0.35 - 0.3 * ck, 0.85, ciB);',
+        '    float ciA = (0.48 * ciWisp + 0.08 * ciVeil) * (0.35 + 0.65 * ck) * smoothstep(0.08, 0.22, h) * (1.0 - smoothstep(0.55, 0.9, uCloud)) * uBand;',
+        '    float ciMu = max(sMu, 0.0);',
+        '    vec3 ciC = mix(vec3(0.95, 0.965, 0.99), cSun, 0.25 + 0.5 * (1.0 - smoothstep(0.0, 0.35, uSun.y))) * max(uCloudLight, 0.9) * (0.92 + 0.5 * pow(ciMu, 6.0) + 0.25 * ciMu * ciMu)',
+        '      * smoothstep(-0.08, 0.05, uSun.y) + uGlow * 1.2;',
+        '    float ciL = dot(ciC, vec3(0.2126, 0.7152, 0.0722)), ciS = dot(col, vec3(0.2126, 0.7152, 0.0722));',
+        '    col = mix(col, ciL > 1e-4 ? ciC * max(1.0, ciS / ciL) : col, ciA);',   // its own hue, never under the sky's brightness
+        '  }',
+        '',
+      ].join('\n') : '') +
       (REAL ? [
         // the weather's veil (weather#1): rain, snow and fog stand between the eye and the sky as they do between the eye
         // and the city, thickest along the horizon, so a fog's sky is milk and a rain's a grey lid
@@ -5550,6 +5729,8 @@
     for (const k of ['uGlow', 'uSkyFogC', 'uSkyGlowC']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     for (const k of ['uGlowDir', 'uSkyFog']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     envSky.material.uniforms.uBand.value = skyMat.uniforms.uBand.value;
+    // (the realism pass two: the cirrus, so the glass and the water see the sky that is drawn)
+    envSky.material.uniforms.uCirrus.value.copy(skyMat.uniforms.uCirrus.value);
     // A compact sun glint follows twilight and cloud cover. The old 9-degree
     // white ball made daylight glass look like it had a floodlight painted on it.
     const sunVis=skyMat.uniforms.uSunVis.value;
@@ -8236,6 +8417,25 @@
     tRefl: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uReflOn: { value: 0 }, uReflY: { value: -7.34 }, uReflTexel: { value: new THREE.Vector2(1 / 640, 1 / 400) },
     uReflCrop: { value: new THREE.Vector2(1, 1) },   // the mirror's image is cropped to the water's box on the screen: full-frame offsets scale by this
   });
+  // the realism round two (R8): a phone's river mirrors the city. A phone has no planar mirror (REFL needs the post pipeline),
+  // so its rivers mirrored the water's sky-only probe and the skyline had no image in them by day. A phone already bakes the
+  // city's probe (CITYENV: one centre over Center City, a 128 cube from the water's own generator, so its layout is the
+  // water's own probe's and one set of cube defines reads both); the river's program binds it as a second probe (uWCity,
+  // re-pointed every frame in waterFrame, since each bake replaces the target) and reads it along the reflected ray carried
+  // to a sphere round the centre, as the glass carries its own (glassParallax), but from outside it: the sphere's far side
+  // along the ray, so the towers beyond the centre stand where the eye sees them from Penn's Landing or Boathouse Row and
+  // their faces are the ones it sees, and the low city lies at the horizon under them. The sphere is 700 m (r), the tower
+  // cluster's own size, not the glass's 1500 m: a tower that far beyond the centre lands at its true height and a nearer one
+  // a little taller, where at 1500 m the mirrored towers stood two to three times their height and wide of the ones above
+  // them (the captures); the near side of the centre (the faces turned from the eye) is not read, since it mirrored towers
+  // the bank hides from the water. Only what the city adds is taken: the water's own probe along the carried ray is taken
+  // away again, so wherever the city's probe shows sky the reflected sky is exactly the water's. A ray that passes the sphere
+  // wide, heads away from it or leaves it within 200 m keeps the sky, and the city's share fades from 3.5 to 6 km from the
+  // centre (one centre: the Navy Yard and the airport keep the sky). Rivers, ponds and reservoirs only (no basin or pool);
+  // tiers 0 and 1 (tier 2 bakes no city probe and keeps the sky); a computer keeps its planar mirror and nothing here.
+  // ?rivercity=0 off; __dbg.riverCity()
+  const RCITY = { want: REAL && isTouch && !TIER2 && !/[?&]rivercity=0\b/.test(location.search), on: false, dbg: false, r: 700 };   // on: set with CITYENV
+  Object.assign(waterU, { uWCity: { value: null }, uWCityOn: { value: 0 } });
   // the planar mirror (desktop post pipeline only): the city drawn from the eye mirrored in the river's plane, at half the
   // frame's size, into its own target, before the scene pass. Its own pass with its own counts (REFL.calls, REFL.tris): the
   // perf beacons read POST's, the scene pass's alone. It draws layer 5, which reflSweep gives every mesh and point cloud
@@ -8252,6 +8452,7 @@
   // (swimming pools: their vertex colour is the painted floor, bodyK dims it to an albedo)
   function liquifyReal(mat, scale, amp, speed, opt) {
     const kind = opt.kind || 'river', refl = !!opt.refl && REFL.on, wake = kind === 'river', phone = isTouch;
+    const city = () => kind === 'river' && !refl && RCITY.on;   // the realism round two (R8): read at compile, once CITYENV stands
     mat.metalness = 0; mat.roughness = 0.06; mat.envMapIntensity = 1;
     mat.userData.water = true;
     if (!waterEnvBake.rt) waterEnvBake();
@@ -8261,11 +8462,13 @@
       for (const k of ['uTime', 'uWAmp', 'uWDir', 'uSun', 'uGlint', 'uWaterHorizon', 'uWaterZenith', 'tWave', 'uExpo', 'uWEnvK', 'uSunRad', 'uCoxMunk', 'uRain', 'uHail', 'uCover', 'uWake', 'uWakeS']) sh.uniforms[k] = waterU[k];
       if (refl) for (const k of ['tRefl', 'uReflMat', 'uReflOn', 'uReflY', 'uReflTexel', 'uReflCrop']) sh.uniforms[k] = waterU[k];
       if (wake) for (const k of ['tFoam', 'uFoamOn', 'uFoamM']) sh.uniforms[k] = waterArtU[k];
+      const wc = city();
+      if (wc) { sh.uniforms.uWCity = waterU.uWCity; sh.uniforms.uWCityOn = waterU.uWCityOn; sh.uniforms.uCityEnvC = CITYENV.u.uCityEnvC; sh.uniforms.uCityEnvK = CITYENV.u.uCityEnvK; }
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWq;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWq = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\n' + (phone ? '#define W_PHONE\n' : '') + (wake ? '#define W_WAKE\n' : '') + (refl ? '#define W_REFL\n' : '') +
+        .replace('#include <common>', '#include <common>\n' + (phone ? '#define W_PHONE\n' : '') + (wake ? '#define W_WAKE\n' : '') + (refl ? '#define W_REFL\n' : '') + (wc ? '#define W_CITY\n#define W_CITY_R ' + RCITY.r.toFixed(1) + '\n' : '') +
           '#define W_NWAKE ' + WAKE_N + '\n#define W_GLINT_MAX ' + (phone ? '3.0' : '40.0') + '\n' + `
 varying vec3 vWq;
 uniform float uTime, uWAmp, uGlint, uExpo, uWEnvK, uCoxMunk, uRain, uHail, uCover;
@@ -8279,6 +8482,9 @@ uniform sampler2D tFoam; uniform float uFoamOn, uFoamM;
 #endif
 #ifdef W_REFL
 uniform sampler2D tRefl; uniform mat4 uReflMat; uniform float uReflOn, uReflY; uniform vec2 uReflTexel, uReflCrop;
+#endif
+#ifdef W_CITY
+uniform sampler2D uWCity; uniform vec4 uCityEnvC[2]; uniform float uCityEnvK, uWCityOn;
 #endif
 float wF = 0.0;
 vec3 wEmit = vec3(0.0);
@@ -8388,6 +8594,26 @@ vec2 wRing(vec2 rc, float tt) {
   vec3 wEnv = mix(uWaterHorizon, uWaterZenith, pow(clamp(wr.y, 0.0, 1.0), 0.48));
 #endif
   wEnv = pUndoLin(min(wEnv, vec3(0.95)), uExpo) * uWEnvK;   // the probe holds the sky as displayed: its radiance is the dome's pre-image
+#if defined( W_CITY ) && defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV )
+  // the city in a phone's river (the realism round two, R8; RCITY): the ray carried to the far side of a W_CITY_R sphere round
+  // the city probe's centre; the city's share by the ray's reach, its nearest approach and the distance from the centre;
+  // what the city adds over the water's own sky along the carried ray, and below the centre's horizon (the low city, the
+  // ground) the city's probe itself
+  if (uWCityOn > 0.5) {
+    vec3 cp = vWq - uCityEnvC[0].xyz;
+    float cb = dot(cp, wr), cc = dot(cp, cp) - W_CITY_R * W_CITY_R;
+    float ct = -cb + sqrt(max(cb * cb - cc, 0.0));
+    float cm = (dot(cp, cp) - (cb < 0.0 ? cb * cb : 0.0)) / (W_CITY_R * W_CITY_R);   // the ray's nearest approach to the centre, squared, over the radius's
+    float kC = (1.0 - smoothstep(3500.0, 6000.0, length(cp.xz))) * smoothstep(40.0, 200.0, ct) * (1.0 - smoothstep(1.0, 1.5625, cm));
+    if (kC > 0.002) {
+      vec3 cd = normalize(cp + wr * ct);
+      vec3 cCity = pUndoLin(min(textureCubeUV(uWCity, cd, wRough).rgb * uCityEnvK, vec3(0.95)), uExpo) * uWEnvK;
+      vec3 cSky = pUndoLin(min(textureCubeUV(envMap, cd, wRough).rgb, vec3(0.95)), uExpo) * uWEnvK;
+      float kS = smoothstep(-0.035, -0.008, cd.y);
+      wEnv = max(wEnv + kC * (cCity - kS * cSky - (1.0 - kS) * wEnv), vec3(0.0));
+    }
+  }
+#endif
   vec3 wRef = wEnv;
 #ifdef W_REFL
   if (uReflOn > 0.5 && abs(vWq.y - uReflY) < 2.0) {
@@ -8431,7 +8657,7 @@ vec2 wRing(vec2 rc, float tt) {
         .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directSpecular = vec3(0.0);\nreflectedLight.indirectSpecular = vec3(0.0);\nreflectedLight.directDiffuse *= 1.0 - wF;\nreflectedLight.indirectDiffuse *= 1.0 - wF;\n')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += wEmit;\n');
     };
-    mat.customProgramCacheKey = () => 'waterR|' + [scale, amp, speed, isTouch, kind, refl, bodyK].join('|');
+    mat.customProgramCacheKey = () => 'waterR|' + [scale, amp, speed, isTouch, kind, refl, bodyK].join('|') + (city() ? '|city' : '');
   }
   // which meshes the mirror draws: all but the water, the flats laid on the ground (a mirror never sees a surface's top
   // from under the plane), the pins and labels, the sky and the weather, the grass; swept again every 90 frames for the
@@ -8860,10 +9086,19 @@ vec2 wRing(vec2 rc, float tt) {
     if (!waterArtLoad.started) waterArtLoad();   // the generated deck and white water (artSrc is ready by the first frame)
     waterU.uRain.value = WXFX.rain; waterU.uHail.value = WXFX.hail; waterU.uCover.value = WX.cover;
     waterU.uSunRad.value.set(sun.color.r, sun.color.g, sun.color.b).multiplyScalar(sun.intensity * Math.PI);
-    waterU.uCoxMunk.value = 0.003 + 0.00512 * Math.min(Math.hypot(WX.windX || 0, WX.windZ || 0) || 2.2, 15);
+    waterU.uCoxMunk.value = 0.003 + 0.00512 * Math.min((WIND.on ? WIND.eye : Math.hypot(WX.windX || 0, WX.windZ || 0)) || 2.2, 15);   // the realism round two: the wind at the eye, gusts and all (WIND)
     if (REFL.on && (frameNo & 7) === 0) reflGate();
     if (!MIRZ.warmed && frameNo >= 2) mirzWarm();   // the mirror's sprite twins, built behind the veil (the second review)
     if ((frameNo & 1) === 0) waterWakes();
+    // the realism round two (R8): the city's probe as it stands after this frame's bake (cityEnvTick ran behind applyLighting;
+    // a bake disposes the target it replaces), read once the first real bake has landed
+    if (RCITY.on) { const rt = CITYENV.rts[0]; waterU.uWCity.value = rt ? rt.texture : null; waterU.uWCityOn.value = rt && CITYENV.renders > 0 ? 1 : 0; }
+    if (!RCITY.dbg && window.__dbg) {
+      RCITY.dbg = true;
+      window.__dbg.riverCity = () => ({ want: RCITY.want, on: RCITY.on, bound: waterU.uWCityOn.value, renders: CITYENV.renders, k: +CITYENV.u.uCityEnvK.value.toFixed(3),
+        centre: CITYENV.centres[0] ? [Math.round(CITYENV.centres[0].x), CITYENV.centres[0].y, Math.round(CITYENV.centres[0].z), CITYENV.centres[0].R] : null,
+        size: CITYENV.rts[0] ? [CITYENV.rts[0].width, CITYENV.rts[0].height] : null, water: waterEnvBake.rt ? [waterEnvBake.rt.width, waterEnvBake.rt.height] : null });
+    }
     if (!waterFrame.dbg && window.__dbg) {
       waterFrame.dbg = true;
       window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED, reflBox, REFL_BOX, MIRZ };
@@ -12587,6 +12822,7 @@ vec2 wRing(vec2 rc, float tt) {
     mats: [], recs: [], centres: [], rts: [null, null], scene: null, group: null, mesh: null, mat: null, gen: null, geoms: [],
     renders: 0, ms: 0, msLast: 0, tris: 0, at: -1e9, pending: false, next: -1, built: false, buildMs: 0, lumAt: 0, error: null };
   CITYENV.two = CITYENV.on && !isTouch;
+  RCITY.on = RCITY.want && CITYENV.on;   // the realism round two (R8): a phone's river reads this probe too (liquifyReal)
   // a tower for the proxy: its footprint, base and top, its colour (the scene's working value) and kind (0 masonry, 1 glass,
   // 2 a themed crown)
   function cityEnvNote(poly, base, top, col, kind, themed) {
@@ -13999,7 +14235,7 @@ vec2 wRing(vec2 rc, float tt) {
           FAR_LIT ? FAR_LIT_GLSL : '',
           'uniform float uNight;',
           'uniform float uDetFar;',
-          'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofPad, uRoofOwn, uRoofDbg; uniform vec3 uRoofMean[4];',
+          'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofOwn, uRoofDbg; uniform vec2 uRoofPad; uniform vec3 uRoofMean[4];',
           'uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9];',
           'uniform sampler2D uPitchArt; uniform float uPitchOn, uPitchPad, uPitchPx; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];',
           'uniform sampler2D uSnowArt; uniform float uSnowOn, uSnowM; uniform vec3 uSnowMean; uniform vec4 uRoofKindK;',
@@ -14128,14 +14364,26 @@ vec2 wRing(vec2 rc, float tt) {
           '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
           // (the realism pass: the gravel at a third of the others' scale, its stones 3 to 8 cm, not the cobbles 8 m made them)
           '      vec2 rG = vec2(dot(vWPos.xz, vec2(0.986, 0.167)), dot(vWPos.xz, vec2(-0.167, 0.986))) / (uRoofM * ' + (REAL ? '(rk > 2.5 ? 0.35 : 1.0)' : '1.0') + ') + rsd * 17.0;',
-          '      float rSc = 0.5 * (1.0 - 2.0 * uRoofPad);',
-          '      vec2 rUV = vec2(mod(rk, 2.0) * 0.5, 0.5 - floor(rk / 2.0) * 0.5) + 0.5 * uRoofPad + fract(rG) * rSc;',
+          // the realism round two (R4): each kind is four photographs in its own quadrant's 2 by 2 (Round 185's, then a patched,
+          // a ponded and a seamed or drained one), all four baked to the kind's own linear mean so a far roof is what it was;
+          // the variant is dealt by a second seed of the house, so a row's neighbours of one kind seldom share a picture as
+          // well as a kind (?roofs16=0 deals only the first). A variant is padded 64 px of its 512 on the quadrant's outside
+          // and 16 toward its kind's other variants: uRoofPad, as shares of the quadrant
+          ROOFS16 ? "      float rv = min(floor(fract(sin(vBase * 127.1 + vTint * 311.7) * 43758.5453) * 4.0), 3.0);" : "      float rv = 0.0;",
+          '      float rC = 0.5 - uRoofPad.x - uRoofPad.y, rSc = 0.5 * rC;',
+          '      vec2 rUV = vec2(mod(rk, 2.0), 1.0 - floor(rk / 2.0)) * 0.5 + 0.5 * (uRoofPad.x + vec2(mod(rv, 2.0), 1.0 - floor(rv / 2.0)) * (rC + 2.0 * uRoofPad.y) + fract(rG) * rC);',
+          // the footprint is held inside the quadrant's outside pad (a mip read that reaches the next kind lays its albedo along
+          // every tile's edge), and the texel goes to the kind's mean as it is held: past rfw 1.2 m on the 8 m kinds, where the
+          // fade below has all but taken it, and from 0.4 m on the gravel's 2.8 m tile, which bled there before
+          '      vec2 rGx = dFdx(rG) * rSc, rGy = dFdy(rG) * rSc;',
+          '      float rGl = max(length(rGx), length(rGy)) / (0.5 * uRoofPad.x), rHold = 1.0 / max(rGl, 1.0);',
           '#if __VERSION__ >= 300',
-          '      vec3 rT = textureGrad(uRoofArt, rUV, dFdx(rG) * rSc, dFdy(rG) * rSc).rgb;',
+          '      vec3 rT = textureGrad(uRoofArt, rUV, rGx * rHold, rGy * rHold).rgb;',
           '#else',
           '      vec3 rT = texture2D(uRoofArt, rUV).rgb;',
           '#endif',
           '      vec3 rMean = rk < 0.5 ? uRoofMean[0] : (rk < 1.5 ? uRoofMean[1] : (rk < 2.5 ? uRoofMean[2] : uRoofMean[3]));',
+          '      rT = mix(rT, rMean, smoothstep(1.0, 2.0, rGl));',
           '      float rLm = max(dot(rMean, vec3(0.2126, 0.7152, 0.0722)), 1e-3), rLd = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));',
           // the realism pass (buildings#2: past about 150 m every flat roof went back to one grey): the far roof is the near
           // roof's own mean, its kind's colour at the same share, so a house keeps its kind at any distance; each kind's
@@ -14144,7 +14392,7 @@ vec2 wRing(vec2 rc, float tt) {
           '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
           '      vec3 rFar = mix(diffuseColor.rgb, rMean * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
           '      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',
-          '      if (uRoofDbg > 0.5) diffuseColor.rgb = rk < 0.5 ? vec3(0.3, 0.0, 0.0) : (rk < 1.5 ? vec3(0.0, 0.3, 0.0) : (rk < 2.5 ? vec3(0.0, 0.0, 0.3) : vec3(0.3, 0.3, 0.0)));',
+          '      if (uRoofDbg > 0.5) { float rD = uRoofDbg > 1.5 ? rv : rk; diffuseColor.rgb = rD < 0.5 ? vec3(0.3, 0.0, 0.0) : (rD < 1.5 ? vec3(0.0, 0.3, 0.0) : (rD < 2.5 ? vec3(0.0, 0.0, 0.3) : vec3(0.3, 0.3, 0.0))); }',   // 1 the kinds, 2 the variants (the realism round two)
           '    }',
           '  }',
           '  if (abs(n.y) < 0.35 && st != 3 && v > 0.0) {',
@@ -14790,6 +15038,9 @@ vec2 wRing(vec2 rc, float tt) {
             '    float sfp = max(fwidth(sg.x), fwidth(sg.y)) * 1024.0;',
             '    float fN = shtVN(vWPos.xz * 0.31) * 0.6 + shtVN(vWPos.xz * 1.7 + 5.3) * 0.4;',
             '    fabSnowW = uFabSnow * fUp * (0.80 + 0.20 * fN);',
+            // the realism round two (D8): the snow on the roof shows over its edge, a lip of white 10 cm deep along the top of every
+            // wall that knows its height (the eave, the parapet's coping), anti-aliased by the pixel and gone to its share past it
+            ...(SNOW2_ON ? ['    float lpA = max(fwidth(v), 0.01) * 0.5;', '    if (vWallL > 0.5 && abs(n.y) < 0.35) fabSnowW = max(fabSnowW, uFabSnow * (1.0 - smoothstep(0.1 - lpA, 0.1 + lpA, vWallH - v)) * step(0.0, vWallH - v + lpA) * (0.75 + 0.25 * fN));'] : []),
             '    if (fabSnowW > 0.001) {',
             '      vec3 snowC = vec3(0.84, 0.86, 0.90);',
             '      if (uSnowOn > 0.5 && sfp < 64.0) snowC *= mix(vec3(1.0), clamp(texture2D(uSnowArt, sg).rgb / max(uSnowMean, vec3(1.0e-3)), 0.6, 1.3), 1.0 - smoothstep(16.0, 64.0, sfp));',
@@ -16851,7 +17102,7 @@ vChK = vec3(aK, aK.x > -0.5 ? uChRough[chI] : 0.0);`)
 vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = ${Y0.toFixed(2)};`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', `#include <common>
-uniform sampler2D uMask, uPitchArt, uRoofArt; uniform float uArtOn, uNight, uChLamp, uPitchOn, uPitchPad, uRoofOn, uRoofM, uRoofPad; uniform vec2 uChLate; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4]; uniform vec3 uRoofMean[4];
+uniform sampler2D uMask, uPitchArt, uRoofArt; uniform float uArtOn, uNight, uChLamp, uPitchOn, uPitchPad, uRoofOn, uRoofM; uniform vec2 uChLate, uRoofPad; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4]; uniform vec3 uRoofMean[4];
 varying vec4 vChCell; varying vec3 vChK; varying vec2 vChUv; varying vec4 vChCol; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;
 vec4 frMask; float chKind; float chPass; float chGl;
 ${FAB_ATLAS_FN.join('\n')}`)
@@ -16902,7 +17153,9 @@ ${FAB_ATLAS_FN.join('\n')}`)
           // the decks: the flat roofs' generated tar (the atlas's first kind) as grain over the stored charcoal, with the
           // membrane's lapped seams every 0.9 m (fix1: flat grey planes from every flight)
           'if (chKind > 2.5 && chKind < 3.5) {',
-          '  float rSc = 0.5 * (1.0 - 2.0 * uRoofPad); vec2 rUV = vec2(0.0, 0.5) + 0.5 * uRoofPad + fract(rG) * rSc;',
+          // (the realism round two: the tar's first variant, the top left cell of the tar's quadrant, ringed only by the atlas's
+          // edge and the tar's other variants)
+          '  float rC = 0.5 - uRoofPad.x - uRoofPad.y, rSc = 0.5 * rC; vec2 rUV = vec2(0.0, 0.5) + 0.5 * (uRoofPad.x + vec2(0.0, rC + 2.0 * uRoofPad.y) + fract(rG) * rC);',
           '  if (uRoofOn > 0.5) { vec3 rT = ' + tg('uRoofArt', 'rUV', 'rGx * rSc, rGy * rSc') + '.rgb; chAlb *= clamp(rT / max(uRoofMean[0], vec3(1e-3)), 0.5, 1.8); }',
           '  float sw = max(uvW.x / 0.9, 1e-4), sf = fract(vChUv.x / 0.9); chAlb *= 1.0 + 0.12 * (1.0 - smoothstep(0.0, 2.0 * sw + 0.02, sf)) * (1.0 - smoothstep(0.3, 0.6, sw));',
           '}',
@@ -18232,7 +18485,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     FAM.t = t;
     fl.visible = Math.hypot(p.x - FAM.pole[0], p.z - FAM.pole[1]) < FAMINE.flagR;
     if (!fl.visible) return;
-    const wx = WX.windX || 0, wz = WX.windZ || 0, spd = Math.hypot(wx, wz);
+    const we = WIND.on ? windAt(FAM.pole[0], FAM.pole[1]) : 0;   // the realism round two: the one wind at the pole, its gusts too (WIND)
+    const wx = WIND.on ? WIND.dx * we : WX.windX || 0, wz = WIND.on ? WIND.dz * we : WX.windZ || 0, spd = Math.hypot(wx, wz);
     if (WX.ok) FAM.spd += (Math.min(spd, 14) - FAM.spd) * Math.min(1, dt / 3);
     if (WX.ok && spd > 0.3) { let da = Math.atan2(wz, wx) - FAM.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); FAM.ang += Math.max(-0.6 * dt, Math.min(0.6 * dt, da)); }
     const s = FAM.spd;
@@ -33018,7 +33272,7 @@ if (uOlLamp > 0.001) {
       }
       return false;
     };
-    const recs = [];
+    const recs = [], blWant = [];   // (blWant: the realism round two, the records on a generated street floor, for their blade signs)
     let baseN = 0, nearN = 0, hidden = 0, switched = 0, borrowed = 0, repeats = 0;
     // every record laid (sfPlace), and the runs on a wall the facade shader paints its own shopfronts on taken to its units'
     // joints (sfSnapRun) before any test is made, so the tests see the span that stands
@@ -33045,7 +33299,7 @@ if (uOlLamp > 0.001) {
       // floor and stood in the air, Insomnia Cookies on Broad Street among them)
       const { x, z, cx, cz, wx, wz, nx, nz, w, out } = p;
       if (ownsIt(wx - nx * 1.2, wz - nz * 1.2)) continue;
-      if (baseOn && onBase(wx - nx * 1.2, wz - nz * 1.2)) { baseN++; continue; }
+      if (baseOn && onBase(wx - nx * 1.2, wz - nz * 1.2)) { baseN++; if (BL_ON) blWant.push({ i, cx, cz, nx, nz, w, out, fh, fp, hostH, fam, hrs, name, near: 0 }); continue; }
       let near = 0;
       if (frCells) {
         frSet.clear();
@@ -33174,6 +33428,9 @@ if (uOlLamp > 0.001) {
     if (SF_SIGNS && names.length) {
       try { sfNamesInit(); } catch (e) { SF.slot = null; SF_U.uSfNames.value = null; SF.error = 'names: ' + String(e && e.message || e); }
     }
+    // the realism round two: the blade signs of the records with no board of their own (on a generated street floor, or under
+    // a generated shop front near the eye), on their own, so a throw leaves the panels standing
+    if (BL_ON) { try { bladeBuild(blWant.concat(recs.filter((r) => r.near))); } catch (e) { BL.state = 'failed'; BL.error = String(e && e.message || e); console.error('blade signs:', e); } }
     return true;
   }
   // ---- the names (Round 189): an atlas of slots, white type on black read as coverage (red only: no alpha anywhere, so
@@ -33552,6 +33809,385 @@ if (uOlLamp > 0.001) {
     m.customProgramCacheKey = () => 'el steel';
     m.userData.wxSurf = true;   // the weather hookup wraps it (snow on the deck) as it did the plain material
     return m;
+  }
+  // ---- the blade signs (the realism round two, R9: Round 189's open item, "blade signs for the 796 on street floors"). A
+  // storefront on a generated street floor (a tower's lobby or shop floor, a building's own facade: STOREFRONT_BASE) has no
+  // panel and so no board, and one under a generated shop front loses its panel, its board and its name within the fronts'
+  // radius (the front's own board is blank). Each now hangs a projecting blade sign square to its wall at one end of its
+  // span, at its storey's head: one of six generated blanks (BLADE_ART, bake_blade_art.py: round, rectangular, a hanging
+  // board on a scroll bracket, a projecting lightbox, a tall vertical, a small oval; never lettered), the shop's own OSM
+  // name lettered on its plate by the page in the boards' faces (sfNameStyle), reading from both sides, named within the
+  // boards' radius and lit after dark by the shop's hours as the boards are (a lightbox through its face, the rest by a
+  // lamp's wash). The shapes go by trade, and no two blades within SF_NEIGH_R wear one shape while another will do. A
+  // blade under a generated shop front comes in with the front (the panels' dissolve turned over); one on a street floor
+  // stands to BL_FAR. One InstancedMesh, one draw, one 512 square sheet (a phone's half, 256), uploaded premultiplied and
+  // divided back out and decoded in the shader as the tree cards are; wherever the storefronts' art is built, so every phone tier that has the
+  // records (a tier 2 phone draws no generated street floor or front, so every one of its records keeps its own board).
+  // ?blades=0 leaves them out, ?signs=0 leaves them blank
+  const BL_ON = SF_ART_ON && typeof BLADE_ART !== 'undefined' && !!BLADE_ART && Array.isArray(BLADE_ART.shapes) && BLADE_ART.shapes.length === 6 && !/[?&]blades=0\b/.test(location.search);
+  const BL_FAR = isTouch ? 420 : 700;   // a blade on a street floor fades out from 0.8 of this (a metre's sign is under two pixels past it)
+  const BL_INSET = 0.45;                // its wall plate in from its span's end
+  // each trade's shapes, best first (0 round, 1 rectangular, 2 hanging, 3 lightbox, 4 vertical, 5 oval; the trades in
+  // STOREFRONT_ART.fams' order): the first three dealt by the name, then the neighbour's rule
+  const BL_PREF = [[1, 3, 2, 5, 0, 4], [2, 0, 5, 1, 4, 3], [3, 1, 0, 4, 2, 5], [0, 5, 2, 1, 3, 4], [2, 4, 0, 5, 1, 3], [3, 1, 4, 5, 0, 2],
+    [3, 1, 0, 4, 5, 2], [3, 1, 0, 2, 5, 4], [5, 0, 2, 1, 3, 4], [5, 1, 2, 0, 3, 4], [5, 0, 1, 3, 2, 4], [4, 3, 1, 2, 0, 5], [1, 3, 0, 2, 5, 4]];
+  const BL = { state: BL_ON ? 'waiting' : 'off', mesh: null, n: 0, base: 0, near: 0, skipped: 0, low: 0, repeats: 0, byShape: [0, 0, 0, 0, 0, 0], named: 0,
+    list: null, names: null, famOf: null, shapeOf: null, aSlot: null, slot: null, slotOf: null, at: -1e9, eye: new THREE.Vector3(1e9, 0, 0), drawn: 0, error: null, ms: 0, awn: null };
+  const BL_U = { uBlMap: { value: null }, uBlNames: { value: null }, uBlSlots: { value: new THREE.Vector2(4, isTouch ? 2 : 4) }, uBlFar: { value: BL_FAR } };
+  let blArtP = null;
+  // the sheet, asked for at the top of the build (54 KB, a phone's 11 KB; decoded it is a megabyte at most)
+  function bladeArtLoad() { if (!blArtP && BL_ON) blArtP = artImage(artSrc(BLADE_ART.img, BLADE_ART.imgHalf)); return blArtP; }
+  function bladeGeometry() {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    return g;
+  }
+  // the blade's program: the unit quad is the blank's cell (x out from the wall, y up), the instance its size and frame
+  // (x along the wall's normal, z along the wall, so the face seen from +z has the wall on its left). aBlInfo: x the word
+  // (vertical 1, lightbox 2, the letters' colour 4 to 28, the trade from 32), y the name's aspect in its slot (at most 4),
+  // z its share of the plate along the name, w the near flag plus twice its foot over the sidewalk in decimetres; aBlLift
+  // the metres a house front's awning raised it (bladeAwnNote)
+  const BL_VERT_DECL = 'attribute vec4 aBlCell, aBlPlate, aBlInfo, aBlHours; attribute float aBlSlot, aBlLift; uniform vec2 uSfClock;\n' +
+    'varying vec4 vBlCell, vBlPlate, vBlInfo; varying vec3 vBlW, vWNorm; varying vec2 vBlUv; varying float vBase, vBlSign, vBlSlot;';
+  const BL_VERT = [
+    // the hours on the model clock, as the panels read them (SF_VERT): today's span, last night's running on, the shut weekdays
+    '{ float m = uSfClock.x, dw = uSfClock.y;',
+    '  float today = dw < 0.5 ? aBlHours.z : (dw > 5.5 ? aBlHours.y : aBlHours.x), yest = dw < 0.5 ? aBlHours.y : (dw < 1.5 ? aBlHours.z : aBlHours.x);',
+    '  float yd = dw < 0.5 ? 6.0 : dw - 1.0;',
+    '  if (dw > 0.5 && dw < 5.5 && mod(floor(aBlHours.w / exp2(dw - 1.0) + 0.001), 2.0) > 0.5) today = -1.0;',
+    '  if (yd > 0.5 && yd < 5.5 && mod(floor(aBlHours.w / exp2(yd - 1.0) + 0.001), 2.0) > 0.5) yest = -1.0;',
+    '  float open = 0.0, late = 0.0;',
+    '  if (today >= 0.0) { float o = floor(today / 2048.0), c = today - o * 2048.0; open = step(o, m) * step(m, c - 0.5); late = step(o, m) * step(m, 1379.5); }',
+    '  if (yest >= 0.0) { float o = floor(yest / 2048.0), c = yest - o * 2048.0; if (c > 1440.0) open = max(open, step(m, c - 1440.5)); }',
+    '  float fam = floor(floor(aBlInfo.x + 0.5) / 32.0 + 0.001), sgn = max(open, late * (' + [...SF_LATE].map((f) => 'fam == ' + f + '.0').join(' || ') + ' ? 1.0 : 0.0));',
+    '  vBlSign = open + 2.0 * sgn;',
+    '  vBlUv = position.xy; vBlCell = aBlCell; vBlPlate = aBlPlate; vBlInfo = aBlInfo; vBlSlot = aBlSlot;',
+    '  float lift = floor(floor(aBlInfo.w + 0.5) / 2.0 + 0.001) / 10.0;',
+    '  vBase = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).y - lift;',
+    // raised clear of a house front's awning (bladeAwnNote), or gone where the roof left no room over it
+    '  transformed.y += aBlLift / max(length(instanceMatrix[1].xyz), 0.01); if (aBlLift < -50.0) transformed = vec3(0.0); }',
+  ].join('\n');
+  function bladeHook(sh) {
+    Object.assign(sh.uniforms, BL_U);
+    sh.uniforms.uSfClock = SF_U.uSfClock; sh.uniforms.uSfK = SF_U.uSfK; sh.uniforms.uNight = nightUniform; sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + BL_VERT_DECL)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + BL_VERT)
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvBlW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);');
+    const SZ = ((isTouch && BLADE_ART.imgHalf ? 0.5 : 1) * (BLADE_ART.w || 512)).toFixed(1);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + [
+      'uniform sampler2D uBlMap, uBlNames; uniform vec4 uSfK; uniform vec2 uBlSlots; uniform float uNight, uFrR, uFrShop, uBlFar;',
+      'varying vec4 vBlCell, vBlPlate, vBlInfo; varying vec3 vBlW, vWNorm; varying vec2 vBlUv; varying float vBase, vBlSign, vBlSlot;',
+      'vec4 blArt; vec3 blCol, blTxt; vec2 blDx, blDy; float blCov, blFront, blVert, blBox, blFd;',
+      SF_TXT_GLSL,
+      // the name's coordinates on the plate (x along the name, y up its letters): a face's own reading from either side,
+      // a vertical's name running down the panel with its letters' heads toward the reader's right (a spine's)
+      'vec2 blText(vec2 uv) {',
+      '  vec2 pc = (uv - vBlPlate.xy) / max(vBlPlate.zw - vBlPlate.xy, vec2(1e-4));',
+      '  float px = mix(1.0 - pc.x, pc.x, blFront);',
+      '  vec2 t = blVert > 0.5 ? vec2(1.0 - pc.y, px) : vec2(px, pc.y);',
+      '  return vec2((t.x - 0.5) / max(vBlInfo.z, 0.05) + 0.5, t.y);',
+      '}',
+      'vec2 blSlotUv(vec2 t, float s) { float cl = mod(s, uBlSlots.x), rw = floor(s / uBlSlots.x + 0.001); return vec2((cl + 0.5 + (t.x - 0.5) * vBlInfo.y / 4.0) / uBlSlots.x, 1.0 - (rw + 1.0 - t.y) / uBlSlots.y); }',
+    ].join('\n'))
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + [
+        // the gradients first, in uniform flow: every read below is textureGrad from these
+        'vec2 blUvA = vBlCell.xy + vBlUv * vBlCell.zw; blDx = dFdx(vBlUv); blDy = dFdy(vBlUv);',
+        'vec2 blGx = blDx * vBlCell.zw, blGy = blDy * vBlCell.zw;',
+        '{ float w = floor(vBlInfo.x + 0.5); blVert = mod(w, 2.0); blBox = mod(floor(w / 2.0 + 0.001), 2.0); blTxt = SF_TXT[int(mod(floor(w / 4.0 + 0.001), 8.0))]; }',
+        'blFront = gl_FrontFacing ? 1.0 : 0.0; blFd = distance(vBlW, cameraPosition);',
+        // a blade under a generated shop front comes in where the front does (the panels' dither turned over); one on a
+        // street floor fades out at BL_FAR
+        '{ float ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));',
+        '  if (mod(floor(vBlInfo.w + 0.5), 2.0) > 0.5) { if (uFrShop < 0.5 || ign > 1.0 - smoothstep(uFrR * 0.8, uFrR, blFd)) discard; }',
+        '  else if (ign <= smoothstep(uBlFar * 0.8, uBlFar, blFd)) discard; }',
+        'blArt = textureGrad(uBlMap, blUvA, blGx, blGy);',
+        // the coverage held up the mips by their level, so the iron and the chains do not thin away with distance
+        '{ float lod = max(0.0, 0.5 * log2(max(dot(blGx, blGx), dot(blGy, blGy)) * ' + SZ + ' * ' + SZ + '));',
+        '  if (blArt.a * (1.0 + 0.25 * lod) < 0.5) discard; }',
+        '{ vec3 c = clamp(blArt.rgb / max(blArt.a, 1e-3), 0.0, 1.0); blCol = mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }',
+      ].join('\n'))
+      .replace('#include <map_fragment>', [
+        // the name on the plate, from the slot atlas (the panels' rule: a 4:1 slot, the name's plate centred in it)
+        'blCov = 0.0;',
+        'if (vBlSlot > -0.5) {',
+        '  vec2 t = blText(vBlUv);',
+        '  if (t.x >= 0.0 && t.x <= 1.0 && t.y >= 0.0 && t.y <= 1.0) {',
+        '    float s = floor(vBlSlot + 0.5);',
+        '    vec2 su = blSlotUv(t, s), sx = blSlotUv(blText(vBlUv + blDx), s) - su, sy = blSlotUv(blText(vBlUv + blDy), s) - su;',
+        '    blCov = textureGrad(uBlNames, su, sx, sy).r * (1.0 - smoothstep(0.75 * uSfK.z, uSfK.z, blFd));',
+        '  } }',
+        'diffuseColor.rgb *= blCol;',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, blTxt, blCov);',
+      ].join('\n'))
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+        // after dark, while the sign is lit (open, or a late trade's to 23:00): a lightbox through its own pale face, its letters
+        // standing dark on it; a painted blade under a little lamp's wash, the gilt and the letters with it
+        'if (uNight > 0.001 && floor(vBlSign + 0.5) > 1.5) {',
+        '  if (blBox > 0.5) totalEmissiveRadiance += blCol * smoothstep(0.45, 0.8, dot(blCol, vec3(0.2126, 0.7152, 0.0722))) * (1.0 - blCov) * 1.6 * uNight;',
+        '  else totalEmissiveRadiance += diffuseColor.rgb * 0.30 * uNight;',
+        '}',
+      ].join('\n'));
+    sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= mix(1.0, 0.6, blBox * smoothstep(0.45, 0.8, dot(blCol, vec3(0.2126, 0.7152, 0.0722))));');
+    lampLightPatch(sh, 'vBlW', 'wall');
+    wxSurfacePatch(sh);
+  }
+  function bladeMat() {
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0, side: THREE.DoubleSide });
+    m.onBeforeCompile = bladeHook;
+    m.customProgramCacheKey = () => 'blade-signs|wx';
+    return m;
+  }
+  // the records' blades: each to one end of its span on its wall's line (by its name; the other where a blade already
+  // stands within 1.5 m), its foot 0.2 m over its storey's head as the panels take it (lower under a low roof, never under
+  // 2.5 m over the sidewalk), its shape its trade's by the neighbour's rule
+  function bladeBuild(want) {
+    const t0 = performance.now(), SH = BLADE_ART.shapes;
+    const gy = (px, pz) => groundMeshY(px, pz) ?? siteY(px, pz, 'ground');
+    const worn = new Map(), plates = new Map(), C = SF_NEIGH_R, P = 4;
+    const nearestWorn = (s, x, z) => {
+      const gx = Math.floor(x / C), gz = Math.floor(z / C);
+      let d = Infinity;
+      for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
+        const L = worn.get(a + ':' + b); if (!L) continue;
+        for (const q of L) if (q[2] === s) d = Math.min(d, Math.hypot(q[0] - x, q[1] - z));
+      }
+      return d < C ? d : Infinity;
+    };
+    const plateNear = (x, z) => {
+      const gx = Math.floor(x / P), gz = Math.floor(z / P);
+      for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
+        const L = plates.get(a + ':' + b); if (L) for (const q of L) if ((q[0] - x) ** 2 + (q[1] - z) ** 2 < 2.25) return true;
+      }
+      return false;
+    };
+    const put = (M, key, v) => { let L = M.get(key); if (!L) M.set(key, L = []); L.push(v); };
+    const out = [];
+    for (const r of want) {
+      if (!r.name) { BL.skipped++; continue; }
+      const rx = r.nz, rz = -r.nx, wx = r.cx + r.nx * r.out, wz = r.cz + r.nz * r.out, h = sfHash(r.name + '|blade');
+      let px = 0, pz = 0, ok = false;
+      for (const sd of (h & 1) ? [1, -1] : [-1, 1]) {
+        const s = sd * Math.max(0, r.w / 2 - BL_INSET);
+        px = wx + rx * s; pz = wz + rz * s;
+        if (!plateNear(px, pz)) { ok = true; break; }
+      }
+      if (!ok) { BL.skipped++; continue; }
+      let H = Math.min(r.fh, Math.max(3.4, (r.fp || 3.05) + 0.7));
+      if (r.hostH > 0) H = Math.min(H, r.hostH - 0.15);
+      H = Math.max(2.6, H);
+      const ox = px + r.nx * 1.2, oz = pz + r.nz * 1.2, yS = gy(ox, oz) + (sidewalkAt(ox, oz) ? SIDEWALK_UP : 0.02);
+      const room = r.hostH > 0 ? r.hostH - 0.35 : 1e9;   // its host's wall top over the sidewalk, less a coping
+      const pref = BL_PREF[r.fam] || BL_PREF[0], k0 = (h >>> 1) % 3;
+      let best = -1, bd = -1, foot = 0;
+      for (const s of [pref[k0], pref[(k0 + 1) % 3], pref[(k0 + 2) % 3], pref[3], pref[4], pref[5]]) {
+        const f = Math.min(H + 0.2, room - SH[s].size[1]);
+        if (f < 2.5) continue;
+        const d = nearestWorn(s, px, pz);
+        if (d > bd) { bd = d; best = s; foot = f; }
+        if (d === Infinity) break;
+      }
+      if (best < 0) { BL.low++; continue; }
+      if (bd !== Infinity) BL.repeats++;
+      put(worn, Math.floor(px / C) + ':' + Math.floor(pz / C), [px, pz, best]);
+      put(plates, Math.floor(px / P) + ':' + Math.floor(pz / P), [px, pz]);
+      out.push({ r, px, pz, yS, foot, s: best, h });
+    }
+    BL.ms = Math.round(performance.now() - t0);
+    if (!out.length) { BL.state = 'none'; blArtP = null; return; }   // (a tier 2 phone: no generated street floor or front, so no record without its board; the sheet goes)
+    const N = out.length, geo = bladeGeometry(), mesh = new THREE.InstancedMesh(geo, bladeMat(), N);
+    const at = (k) => new THREE.InstancedBufferAttribute(new Float32Array(N * k), k);
+    const aCell = at(4), aPlate = at(4), aInfo = at(4), aHours = at(4), aSlot = at(1), aLift = at(1);
+    aSlot.array.fill(-1); aSlot.setUsage(THREE.DynamicDrawUsage); aLift.setUsage(THREE.DynamicDrawUsage);
+    const M = mesh.instanceMatrix.array, list = new Float32Array(N * 9), names = [];
+    // the blades under a generated shop front, in 8 m cells, for the fronts' awnings (bladeAwnNote): each one's wall point,
+    // foot, room and height
+    const awn = { grid: new Map(), lift: aLift, x: new Float32Array(N), z: new Float32Array(N), y0: new Float32Array(N), top: new Float32Array(N), h: new Float32Array(N), raised: 0, gone: 0 };
+    out.forEach((b, k) => {
+      const { r, s } = b, sh = SH[s], wM = sh.size[0], hM = sh.size[1], tx = -r.nz, tz = r.nx, o = k * 16, y0 = b.yS + b.foot;
+      M[o] = r.nx * wM; M[o + 1] = 0; M[o + 2] = r.nz * wM; M[o + 3] = 0;
+      M[o + 4] = 0; M[o + 5] = hM; M[o + 6] = 0; M[o + 7] = 0;
+      M[o + 8] = tx; M[o + 9] = 0; M[o + 10] = tz; M[o + 11] = 0;
+      M[o + 12] = b.px; M[o + 13] = y0; M[o + 14] = b.pz; M[o + 15] = 1;
+      const p = sh.plate, along = (sh.vertical ? p[3] - p[1] : p[2] - p[0]) * (sh.vertical ? hM : wM), across = (sh.vertical ? p[2] - p[0] : p[3] - p[1]) * (sh.vertical ? wM : hM);
+      const asp = Math.min(4, along / Math.max(across, 0.05)), kx = Math.min(1, asp * across / Math.max(along, 0.05));
+      // the letters' colour by the face, as the boards': light on a dark face, dark on a light one
+      const hb = sfHash(r.name + '|t'), dark = sh.lum < 0.3;
+      const txt = dark ? (r.fam === 1 || r.fam === 4 || r.fam === 8 ? [0, 2, 1][hb % 3] : [0, 1][hb % 2]) : [3, 4, 5, 6][hb % 4];
+      aCell.array.set(sh.rect, k * 4);
+      aPlate.array.set(p, k * 4);
+      aInfo.array.set([(sh.vertical ? 1 : 0) + (sh.lightbox ? 2 : 0) + 4 * txt + 32 * r.fam, asp, kx, (r.near ? 1 : 0) + 2 * Math.round(b.foot * 10)], k * 4);
+      const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, c) => (a < 0 || c < 0 ? -1 : a * 2048 + Math.min(2047, c));
+      aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);
+      const nm = SF_SIGNS ? names.push(r.name) - 1 : -1;
+      const pcx = (p[0] + p[2]) / 2 * wM, pcy = (p[1] + p[3]) / 2 * hM;
+      list.set([b.px + r.nx * pcx, y0 + pcy, b.pz + r.nz * pcx, tx, tz, Math.max(wM, hM), r.near ? 1 : 0, nm, asp], k * 9);
+      BL.byShape[s]++; if (r.near) BL.near++; else BL.base++;
+      if (r.near) {
+        awn.x[k] = b.px; awn.z[k] = b.pz; awn.y0[k] = y0; awn.h[k] = hM; awn.top[k] = r.hostH > 0 ? b.yS + r.hostH - 0.35 : 1e9;
+        put(awn.grid, Math.floor(b.px / 8) + ':' + Math.floor(b.pz / 8), k);
+      }
+    });
+    sfInstSphere(M, N, geo);
+    for (const a of [aCell, aPlate, aInfo, aHours]) a.onUpload(dropUploadedArray);
+    geo.setAttribute('aBlCell', aCell); geo.setAttribute('aBlPlate', aPlate); geo.setAttribute('aBlInfo', aInfo); geo.setAttribute('aBlHours', aHours); geo.setAttribute('aBlSlot', aSlot); geo.setAttribute('aBlLift', aLift);
+    mesh.instanceMatrix.onUpload(dropUploadedArray);
+    mesh.count = N; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.name = 'blade-signs';
+    mesh.visible = false;   // until its sheet is up
+    groupCity.add(mesh);
+    BL.mesh = mesh; BL.n = N; BL.list = list; BL.names = names; BL.aSlot = aSlot; BL.named = names.length; BL.awn = BL.near ? awn : null;
+    BL.famOf = Uint8Array.from(out, (b) => b.r.fam); BL.shapeOf = Uint8Array.from(out, (b) => b.s);
+    BL.ms = Math.round(performance.now() - t0);
+    BL.state = 'art';
+    bladeArtLoad().then((im) => {
+      if (!im) { BL.state = 'art failed'; return; }
+      const t = new THREE.Texture(im);
+      t.premultiplyAlpha = true; t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); t.needsUpdate = true;   // left linear: the shader divides the coverage out, then decodes the colour (treeArtAtlas's way)
+      BL_U.uBlMap.value = freeTexOnUpload(t);
+      blArtP = null;
+      mesh.visible = true; BL.state = 'built';
+    });
+    if (SF_SIGNS && names.length) {
+      try { bladeNamesInit(); } catch (e) { BL.slot = null; BL_U.uBlNames.value = null; BL.error = 'names: ' + String(e && e.message || e); }
+    }
+  }
+  // a house front's awning (frontsLay hands each one it lays here): a blade under a generated shop front stands at its record's
+  // own storey, and the front over it may hang its awning higher (the fronts' ground floors run 2.1 to 5.3 m over their foot),
+  // so every blade on that wall within its run is raised 0.12 m clear of its top at the wall (the cloth only falls from
+  // there), or let go where its host's roof leaves no room over it. Only ever raised: a front is laid the same each time
+  function bladeAwnNote(x0, z0, rx, rz, len, yA, nx, nz) {
+    const A = BL.awn, C = 8, x1 = x0 + rx * len, z1 = z0 + rz * len, L = A.lift.array;
+    for (let gx = Math.floor((Math.min(x0, x1) - 1) / C); gx <= Math.floor((Math.max(x0, x1) + 1) / C); gx++)
+      for (let gz = Math.floor((Math.min(z0, z1) - 1) / C); gz <= Math.floor((Math.max(z0, z1) + 1) / C); gz++) {
+        const ks = A.grid.get(gx + ':' + gz); if (!ks) continue;
+        for (const k of ks) {
+          const dx = A.x[k] - x0, dz = A.z[k] - z0, t = dx * rx + dz * rz;
+          if (Math.abs(dx * nx + dz * nz) > 0.8 || t < -0.3 || t > len + 0.3 || L[k] < -50) continue;
+          const need = yA + 0.12 - A.y0[k];
+          if (need <= L[k] + 0.01) continue;
+          if (A.y0[k] + need + A.h[k] > A.top[k]) { L[k] = -100; A.gone++; } else { L[k] = need; A.raised++; }
+          A.lift.needsUpdate = true;
+        }
+      }
+  }
+  // the names: the panels' scheme (sfNamesInit) on an atlas of their own, 16 slots of 256 by 64 (a phone's 8), red only
+  function bladeNamesInit() {
+    const cols = 4, rows = isTouch ? 2 : 4, SWp = 256, SHp = 64;
+    const cv = document.createElement('canvas'); cv.width = cols * SWp; cv.height = rows * SHp;
+    const cx = cv.getContext('2d'); cx.fillStyle = '#000'; cx.fillRect(0, 0, cv.width, cv.height);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.format = THREE.RedFormat; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);
+    const S = { cols, rows, SW: SWp, SH: SHp, n: cols * rows, tex, live: false, owner: new Int32Array(cols * rows).fill(-1), fonts: false, cell: null, queue: [], subs: 0 };
+    tex.onUpdate = () => { if (S.live) return; S.live = true; cv.width = cv.height = 1; };
+    BL.slot = S; BL.slotOf = new Int16Array(BL.n).fill(-1);
+    BL_U.uBlNames.value = tex; BL_U.uBlSlots.value.set(cols, rows);
+    try { renderer.initTexture(tex); } catch (e) { }
+    if (document.fonts && document.fonts.load) Promise.all([document.fonts.load('700 48px Montserrat'), document.fonts.load('italic 600 48px Montserrat')]).then(() => { S.fonts = true; for (let s = 0; s < S.n; s++) if (S.owner[s] >= 0) S.queue.push(s); }).catch(() => { S.fonts = true; });
+    else S.fonts = true;
+  }
+  // a name on a blade's plate (aspect asp, at most 4:1): on one, two or three lines (the breaks that even them out),
+  // whichever lets its type stand tallest; condensed to 0.85 before it is made smaller, never stretched
+  function bladeDrawName(ctx, S, text, fam, asp) {
+    const W = S.SW, H = S.SH, pw = Math.min(W, H * asp), x0 = (W - pw) / 2, st = sfNameStyle(fam);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+    const words = (st.caps ? text.toUpperCase() : text).split(/\s+/).filter(Boolean);
+    if (!words.length) return;
+    const wid = (l, s) => ctx.measureText(l).width + st.track * s * l.length;
+    let best = null;
+    for (let n = 1; n <= Math.min(3, words.length); n++) {
+      const s = H * [0.62, 0.38, 0.27][n - 1] / 0.72;
+      ctx.font = st.font.replace('{s}', s.toFixed(1));
+      let lines = null, lw = Infinity;
+      const cuts = n === 1 ? [[]] : n === 2 ? words.slice(1).map((_, i) => [i + 1]) : [].concat(...words.slice(1).map((_, i) => words.slice(i + 2).map((__, j) => [i + 1, i + 2 + j])));
+      for (const c of cuts) {
+        const b = [0, ...c, words.length], L = [];
+        for (let q = 0; q < b.length - 1; q++) L.push(words.slice(b[q], b[q + 1]).join(' '));
+        const m = Math.max(...L.map((l) => wid(l, s)));
+        if (m < lw) { lw = m; lines = L; }
+      }
+      const f = pw * 0.92 / lw, k = Math.min(1, Math.max(0.85, f)), eff = s * Math.min(1, f / 0.85);
+      if (!best || eff > best.eff * 1.12) best = { lines, s: eff, k, eff };
+    }
+    ctx.save();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = st.font.replace('{s}', best.s.toFixed(1));
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (st.track * best.s).toFixed(1) + 'px';
+    ctx.translate(x0 + pw / 2, H / 2); ctx.scale(best.k, 1);
+    const lh = best.s * 0.95;
+    best.lines.forEach((l, j) => ctx.fillText(l, 0, (j - (best.lines.length - 1) / 2) * lh + best.s * 0.04));
+    ctx.restore();
+  }
+  // each drawn frame after the panels' (sfStep keeps the clock): every 0.4 s (0.6 on a phone) or 8 m of travel the
+  // nearest named blades in view within the boards' radius take the slots, a few drawn a tick
+  function bladeStep(now) {
+    if (window.__dbg && !window.__dbg.blades) window.__dbg.blades = bladeProbe;   // ?dev=1
+    const S = BL.slot;
+    if (!BL.mesh || !BL.mesh.visible || !S || !S.live || !S.fonts) return;
+    const cam = camera.position, moved = cam.distanceToSquared(BL.eye) > 64, gap = isTouch ? 600 : 400;
+    if (now - BL.at < gap && !moved && !S.queue.length) return;
+    if (now - BL.at >= gap || moved) { BL.at = now; BL.eye.copy(cam); bladeNamesAssign(); }
+    bladeNamesFlush(isTouch ? 2 : 4);
+  }
+  function bladeNamesAssign() {
+    const S = BL.slot, L = BL.list, N = BL.n, R = SF_U.uSfK.value.z, cam = camera.position;
+    _sfPm.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); _sfFr.setFromProjectionMatrix(_sfPm);
+    const cand = [];
+    for (let k = 0; k < N; k++) {
+      const o = k * 9; if (L[o + 7] < 0) continue;
+      const dx = cam.x - L[o], dy = cam.y - L[o + 1], dz = cam.z - L[o + 2], d = Math.hypot(dx, dy, dz);
+      if (d > R) continue;
+      if (L[o + 6] > 0.5 && frShopOn.value < 0.5) continue;                 // under a front that is not drawn
+      if (Math.abs(dx * L[o + 3] + dz * L[o + 4]) < 0.15 * d) continue;      // edge on
+      _sfSph.center.set(L[o], L[o + 1], L[o + 2]); _sfSph.radius = L[o + 5];
+      if (!_sfFr.intersectsSphere(_sfSph)) continue;
+      cand.push([d, k]);
+    }
+    cand.sort((a, b) => a[0] - b[0]);
+    const want = new Set(cand.slice(0, S.n).map((c) => c[1]));
+    const slotOf = BL.slotOf, A = BL.aSlot.array;
+    let changed = false;
+    for (let s = 0; s < S.n; s++) { const k = S.owner[s]; if (k >= 0 && !want.has(k)) { S.owner[s] = -1; slotOf[k] = -1; A[k] = -1; changed = true; } }
+    for (const k of want) {
+      if (slotOf[k] >= 0) continue;
+      let s = -1; for (let q = 0; q < S.n; q++) if (S.owner[q] < 0) { s = q; break; }
+      if (s < 0) break;
+      S.owner[s] = k; slotOf[k] = s; S.queue.push(s);
+    }
+    if (changed) BL.aSlot.needsUpdate = true;
+  }
+  const _blPos = new THREE.Vector2();
+  function bladeNamesFlush(max) {
+    const S = BL.slot;
+    if (!S.queue.length) return;
+    if (!S.cell) { const c = document.createElement('canvas'); c.width = S.SW; c.height = S.SH; S.cell = { ctx: c.getContext('2d', { willReadFrequently: true }), tex: new THREE.Texture(c) }; S.cell.tex.format = THREE.RedFormat; }
+    const mips = S.tex.generateMipmaps, L = BL.list;
+    const todo = S.queue.splice(0, max).filter((s) => S.owner[s] >= 0);
+    if (!todo.length) return;
+    todo.forEach((s, i) => {
+      const k = S.owner[s], o = k * 9;
+      bladeDrawName(S.cell.ctx, S, BL.names[L[o + 7]], BL.famOf[k], L[o + 8]);
+      S.tex.generateMipmaps = mips && i === todo.length - 1;
+      const col = s % S.cols, row = Math.floor(s / S.cols);
+      renderer.copyTextureToTexture(_blPos.set(col * S.SW, (S.rows - 1 - row) * S.SH), S.cell.tex, S.tex);   // flipped: the slot's foot at row (rows - 1 - row)
+      S.subs++;
+      BL.aSlot.array[k] = s;
+    });
+    S.tex.generateMipmaps = mips;
+    BL.aSlot.needsUpdate = true;
+    BL.drawn += todo.length;
+  }
+  // ?dev=1: __dbg.blades() the counts, __dbg.blades(r) the blades within r metres of the eye
+  function bladeProbe(near) {
+    const L = BL.list, SH = BL_ON ? BLADE_ART.shapes : [];
+    if (near && L) {
+      const cam = camera.position, out = [];
+      for (let k = 0; k < BL.n; k++) { const o = k * 9, d = Math.hypot(cam.x - L[o], cam.y - L[o + 1], cam.z - L[o + 2]); if (d < near) out.push({ k, d: Math.round(d), x: +L[o].toFixed(1), y: +L[o + 1].toFixed(1), z: +L[o + 2].toFixed(1), n: [+L[o + 4].toFixed(3), +(-L[o + 3]).toFixed(3)], near: L[o + 6], name: L[o + 7] >= 0 ? BL.names[L[o + 7]] : null, shape: SH[BL.shapeOf[k]].id, slot: BL.slotOf ? BL.slotOf[k] : -1 }); }
+      return out.sort((a, b) => a.d - b.d).slice(0, 30);
+    }
+    const S = BL.slot;
+    return { on: BL_ON, state: BL.state, error: BL.error, n: BL.n, base: BL.base, near: BL.near, skipped: BL.skipped, low: BL.low, repeats: BL.repeats, named: BL.named, awnings: BL.awn ? { raised: BL.awn.raised, gone: BL.awn.gone } : null,
+      byShape: Object.fromEntries(SH.map((s, i) => [s.id, BL.byShape[i]])), ms: BL.ms, far: BL_FAR, slots: S ? { n: S.n, held: Array.from(S.owner).filter((k) => k >= 0).length, live: S.live, fonts: S.fonts, subs: S.subs, queue: S.queue.length } : null, drawn: BL.drawn };
   }
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
@@ -34256,7 +34892,9 @@ if (uOlLamp > 0.001) {
       float py = 0.5 * lean;                                      // the pivot climbs from the trunk's foot to the card's middle
       vec3 piv = tb + vec3(0.0, S * py, 0.0);
       float ph = tb.x * 0.07 + tb.z * 0.05, yy = position.y + 0.5;
-      float sw = (sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25) * 0.012 * yy * yy * S * (1.0 - tw);
+      ${WIND.on ? `float wE = windE(tb.xz), wAcr = dot(uWindF.xy, rt.xz);   // the wind here (gusts and all), and its share across the card: the eye sees only that part of a lean
+      float sw = ((sin(uWindP.x + ph) * 0.6 + sin(uWindP.y + ph * 3.1) * 0.25) * (0.45 + 0.55 * abs(wAcr)) + windLean(wE) * wAcr) * windAmp(wE) * yy * yy * S * (1.0 - tw);`
+        : 'float sw = (sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25) * 0.012 * yy * yy * S * (1.0 - tw);'}
       wpOut = piv + rt * (position.x * S${REAL ? ' * (0.9 + 0.2 * v3)' : ''} + sw) + up * ((yy - py) * S - ${REAL ? '0.035 * S * (1.0 - lean)' : '0.03 * (1.0 - lean)'});   // world space
       tTw = tw; tTurn = turn; tVar = fract(seedT * 23.3 + 0.29); tCsY = yy; tWood = step(aLS.y, 0.0); tTp = L1.w;
       vec2 cs = ${REAL ? 'vec2(mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1)), yy)' : 'vec2(position.x + 0.5, yy)'};
@@ -34290,13 +34928,14 @@ if (uOlLamp > 0.001) {
   function treeArtPatch(sh, depth) {
     const S = TREEART.side, T = TREEART.top;
     Object.assign(sh.uniforms, { uLk: TREEART.uLk, uLk2: TREEART.uLk2, uTime: waterU.uTime, uResH: TREEART.uResH, tSide: { value: S.tex }, tTop: { value: T.tex } });
+    if (WIND.on) Object.assign(sh.uniforms, windU);   // the realism round two: one wind (the depth pass too, so the shadow sways with its tree)
     // the card is built in world space: project_vertex multiplies by the instance matrix, so the vertex undoes it first
     const lit = !depth;   // the depth shader carries beginnormal_vertex too, but only under USE_DISPLACEMENTMAP
     sh.vertexShader = sh.vertexShader
       // (the realism pass: r149 never uploads viewMatrix to a MeshDepthMaterial, so in the shadow pass tCard read a zero matrix,
       // built every card of NaNs and no tree ever cast a shadow; the trees' meshes stand untransformed, so their model-view
       // matrix is the view's)
-      .replace('#include <common>', '#include <common>\n' + (depth ? '#define viewMatrix modelViewMatrix\n' : '') + 'attribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; ' + TREE_VARY + '\n' + TREE_ART_VERT(S.N, S.A, S.AH, T.N, T.A, T.AH, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
+      .replace('#include <common>', '#include <common>\n' + (depth ? '#define viewMatrix modelViewMatrix\n' : '') + 'attribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; ' + TREE_VARY + '\n' + (WIND.on ? WIND_GLSL + '\n' : '') + TREE_ART_VERT(S.N, S.A, S.AH, T.N, T.A, T.AH, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
@@ -34894,6 +35533,17 @@ if (uOlLamp > 0.001) {
         .replace('#include <common>', '#include <common>\nvarying float vCY; uniform float uSnowAcc;')
         .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp);' +
           (REAL ? ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), uSnowAcc * smoothstep(-0.2, 0.9, vCY) * 0.85);' : '') + ' }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now; the realism pass: snow on the crown's top (weather 9)
+      if (WIND.on) {   // the realism round two: the crowns on the one wind (WIND): the swing and the lean along the wind in the crown's own frame,
+        // a third of the swing across it, the whole a ratio to the cards' amplitude at Round 179's 0.012, held to 0.3 to 1.5 of
+        // it, so a vertex moves at most 1.5 x hypot(0.85 x 0.04 + 0.5 x 0.05, 0.85 x 0.02) = 0.092 sideways, 0.094 with the
+        // flutter's 0.02, inside CROWN_SLACK (tests/test_wind.py)
+        Object.assign(sh.uniforms, windU);
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vCY;\n' + WIND_GLSL)
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uWindP.x + ph) * 0.6 + sin(uWindP.y + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n' +
+            '  float wE = windE(tw.xz), wK = clamp(windAmp(wE) / 0.012, 0.3, 1.5);\n  vec3 wW = vec3(uWindF.x, 0.0, uWindF.y), wL = vec3(dot(instanceMatrix[0].xyz, wW), dot(instanceMatrix[1].xyz, wW), dot(instanceMatrix[2].xyz, wW)); wL *= inversesqrt(max(dot(wL, wL), 1e-12));   // the wind in the crown\'s own frame\n' +
+            '  transformed += (wL * (sw * 0.04 + windLean(wE) * 0.05) + vec3(-wL.z, 0.0, wL.x) * sw * 0.02) * wK * up; transformed.y += sin(uWindP.w + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
+      } else
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vCY;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n  transformed.x += sw * 0.07 * up; transformed.z += sw * 0.035 * up; transformed.y += sin(uTime * 3.1 + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
@@ -35086,7 +35736,9 @@ if (uOlLamp > 0.001) {
       TREEART.uLk2 = { value: looks.map(() => new THREE.Vector4(0, 1, 1, 0)) };
       TREEART.side = treeArtAtlas('side'); TREEART.top = treeArtAtlas('top');
       // the card: a unit quad the shader builds in world space. Its sphere, at an instance scale of the tree's height (x,
-      // y) and span (z), encloses the card standing (up to twice the height tall) or lying over the crown
+      // y) and span (z), encloses the card standing (up to twice the height tall) or lying over the crown (the realism round
+      // two: the one wind's largest sway, 0.032 x (0.85 + 0.5) = 0.043 of the card's size across at its top, puts the corner of
+      // the fullest card the atlas holds, hf 0.61 under the 1.08, at 1.36 of the tree's height from the sphere's centre: inside)
       const cardG = new THREE.PlaneGeometry(1, 1);
       cardG.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.4);
       const mat = new THREE.MeshStandardMaterial({ alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.2, color: new THREE.Color(0.82, 0.82, 0.82) });
@@ -35438,6 +36090,15 @@ if (uOlLamp > 0.001) {
     const mat = new THREE.MeshStandardMaterial({ map: tuftTex, alphaTest: 0.4, roughness: 0.95, side: THREE.DoubleSide, vertexColors: false });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = waterU.uTime;
+      if (WIND.on) {   // the realism round two: the blades on the one wind (WIND), a lean downwind and the flutter along it, a ratio to the
+        // cards' amplitude at Round 179's 0.012 held to 0.35 to 1.5 of it; the tufts never cull (their sphere is the city's)
+        Object.assign(sh.uniforms, windU);
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uTime;\n' + WIND_GLSL)
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\n{\n  vec4 gw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = gw.x * 0.31 + gw.z * 0.23;\n  float sw = sin(uWindP.y + ph) * 0.55 + sin(uWindP.w + ph * 2.7) * 0.3;\n  float up = position.y * position.y;\n' +
+            '  float wE = windE(gw.xz), wK = clamp(windAmp(wE) / 0.012, 0.35, 1.5);\n  vec3 wW = vec3(uWindF.x, 0.0, uWindF.y), wL = vec3(dot(instanceMatrix[0].xyz, wW), dot(instanceMatrix[1].xyz, wW), dot(instanceMatrix[2].xyz, wW)); wL *= inversesqrt(max(dot(wL, wL), 1e-12));\n' +
+            '  transformed += (wL * (sw * 0.2 + windLean(wE) * 0.3) + vec3(-wL.z, 0.0, wL.x) * sw * 0.1) * wK * up;\n}');
+      } else
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n{\n  vec4 gw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = gw.x * 0.31 + gw.z * 0.23;\n  float sw = sin(uTime * 1.7 + ph) * 0.55 + sin(uTime * 3.1 + ph * 2.7) * 0.3;\n  float up = position.y * position.y;\n  transformed.x += sw * 0.28 * up; transformed.z += sw * 0.12 * up;\n}');
@@ -42611,6 +43272,21 @@ float pinOccGate() {
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vPaintM * vCarX.x * 0.55;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLampM * vec3(1.0, 0.05, 0.02) * step(0.0, vCarX.y) * (1.3 * uNight + 1.6 * vCarX.y);')
         .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= vPaintM;\n#endif');
+      // the realism round two (D8): snow lies on a parked car (a brake of -1) as on the street, a cap on whatever faces up, its
+      // windscreen too; a moving one carries a quarter of it and none on its glass (the wipers). A colour term: nothing enters
+      // the depth pass
+      if (SNOW2_ON) {
+        sh.uniforms.uCarSnow = wxSurfU.uSnowAcc;
+        sh.fragmentShader = sh.fragmentShader.replace('uniform float uPaintInv, uNight;', 'uniform float uPaintInv, uNight, uCarSnow;')
+          .replace('#include <lights_physical_fragment>', [
+            'if (uCarSnow > 0.001) {',
+            '  float vSnow = uCarSnow * smoothstep(0.6, 0.9, dot(normal, (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)) * vBody * (vCarX.y < -0.5 ? 1.0 : 0.25 * (1.0 - vGlassM));',
+            '  vSnow = min(0.95, vSnow * 1.15);',
+            '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.86, 0.90), vSnow); roughnessFactor = mix(roughnessFactor, 0.9, vSnow); metalnessFactor *= 1.0 - vSnow; vPaintM *= 1.0 - vSnow;',
+            '}',
+            '#include <lights_physical_fragment>',
+          ].join('\n'));
+      }
       vehLampPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // a parked car under a streetlamp takes its pool
     };
     mat.customProgramCacheKey = () => 'car-art-v1';
@@ -45621,6 +46297,7 @@ float pinOccGate() {
               put(M, i2, px + rx * s0, yA, pz + rz * s0, rx * (s1 - s0) / 2.6, rz * (s1 - s0) / 2.6, 1, nx, nz);
               M.setColorAt(i2, kd[0]); M.aAwn.array.set([kd[1].r, kd[1].g, kd[1].b, kd[2]], i2 * 4);
               if (shop) gc.awnF++; else gc.awnS++;
+              if (BL.awn) bladeAwnNote(px + rx * s0, pz + rz * s0, rx, rz, s1 - s0, yA, nx, nz);   // the realism round two: a blade sign on this wall clears it
             }
           }
         }
@@ -47530,7 +48207,7 @@ float pinOccGate() {
       const high = cur.cloud_cover_high || 0;
       WX.high = clamp(high / 100, 0, 1);
       WX.cover = clamp(Math.max(cur.cloud_cover_low, cur.cloud_cover_mid * 0.8, Math.max(0, (cur.cloud_cover || 0) - high) * 0.45) / 100, 0, 1);
-    }
+    } else WX.high = 0;   // (the realism pass two: a preset without the layers has no cirrus, whatever the last live report drew)
     if (WX.precip > 0.1) WX.cover = Math.max(WX.cover, 0.85);
     if (WX.snowfall > 0.02) WX.cover = Math.max(WX.cover, 0.8);
     if (WX.code === 45 || WX.code === 48) WX.cover = Math.max(WX.cover, 0.55);
@@ -47539,6 +48216,11 @@ float pinOccGate() {
     const spd = (cur.wind_speed_10m == null ? 8 : cur.wind_speed_10m) / 3.6;
     const dir = ((cur.wind_direction_10m == null ? 250 : cur.wind_direction_10m) + 180) * Math.PI / 180;
     WX.windX = Math.sin(dir) * spd; WX.windZ = -Math.cos(dir) * spd;   // world m/s, the clouds' heading
+    // the realism round two: the gusts over the speed (one wind, WIND), and the next twelve hours' snowfall (the snow's
+    // picture is fetched ahead of it, snow2Step); a preset reports neither
+    WX.gustK = cur.wind_gusts_10m == null ? null : clamp((cur.wind_gusts_10m / 3.6 - spd) / Math.max(spd, 1), 0.1, 1.5);
+    const hs = js.hourly && js.hourly.snowfall;
+    WX.snowSoon = Array.isArray(hs) && hs.some((v) => v > 0);
     const drift = 0.0008 + spd * 0.00035;
     wxWind.set(Math.sin(dir) * drift, -Math.cos(dir) * drift);
     // the water chop follows the real wind: calm glass at 0, whitecap energy by ~9 m/s
@@ -47555,6 +48237,8 @@ float pinOccGate() {
   // ?dev console does the same at runtime.
   const WX_PRESETS = {
     clear: { cloud_cover: 8, weather_code: 0, wind_speed_10m: 10, temperature_2m: 74 },
+    // the realism pass two (R5): a clear deck under 60 per cent high cloud, the evening Round 88 measured (the cirrus alone)
+    cirrus: { cloud_cover: 60, cloud_cover_low: 0, cloud_cover_mid: 0, cloud_cover_high: 60, weather_code: 1, wind_speed_10m: 12, wind_direction_10m: 260, temperature_2m: 68 },
     overcast: { cloud_cover: 92, weather_code: 3, wind_speed_10m: 14, temperature_2m: 66 },
     fog: { cloud_cover: 70, weather_code: 45, wind_speed_10m: 4, temperature_2m: 57 },
     drizzle: { cloud_cover: 88, precipitation: 0.4, weather_code: 53, wind_speed_10m: 12, temperature_2m: 61 },
@@ -47575,7 +48259,7 @@ float pinOccGate() {
     if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden) return;
     if (wxRetry) { clearTimeout(wxRetry); wxRetry = 0; }
     try {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit',
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=snowfall&forecast_hours=12&temperature_unit=fahrenheit',
         { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
         .then(r => (r && r.ok ? r.json() : Promise.reject(new Error('http ' + (r && r.status)))))
         .then((js) => { wxOkT = performance.now(); wxBackoff = 60000; applyWx(js); })
@@ -47852,8 +48536,8 @@ float pinOccGate() {
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
   const WXFX = {
-    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0, haze: 1, hazeTint: 0,
-    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0, tHaze: 1, tHazeTint: 0,
+    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,
+    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0, tHaze: 1, tHazeTint: 0, tCirrus: 0, cirrusPin: null,   // cirrus: the realism pass two (R5), WX.high or a pin
     storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, boltSoft: false, dayF: 1, boltGap: [2600, 9000],
   };
   function wxSetTargets() {
@@ -47888,10 +48572,11 @@ float pinOccGate() {
     if (WX.temp != null && WX.temp > 38) F.tSnowGround *= 0.25;   // too warm to stick: slush at best
     F.tWet = (F.tRain > 0.02 || iceCode) ? clamp(0.35 + 0.65 * F.tRain, 0, 1) : 0;
     F.tHaze = AQI.ok ? AQI.k : 1; F.tHazeTint = AQI.ok ? AQI.tint : 0;   // the air quality rides along (applyAqi)
+    F.tCirrus = F.cirrusPin != null ? F.cirrusPin : clamp(WX.high || 0, 0, 1);   // the realism pass two: the high cloud for the dome's cirrus
     if (!F.seeded) {   // first report of the session: land in the ongoing weather, don't fade into it
       F.seeded = true;
       F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail;
-      F.snowGround = F.tSnowGround; F.wet = F.tWet; F.haze = F.tHaze; F.hazeTint = F.tHazeTint;
+      F.snowGround = F.tSnowGround; F.wet = F.tWet; F.haze = F.tHaze; F.hazeTint = F.tHazeTint; F.cirrus = F.tCirrus;
     }
   }
   // ---- weather on surfaces: snow lies on whatever faces up (roofs, roads,
@@ -47926,8 +48611,11 @@ float pinOccGate() {
   // display 7 percent), so the gain sits on the painted meadow itself
   const MEADOW_GAIN = 0.82;
   // Round 185: the flat roofs' atlas (bake_ground_art.py ROOFS: tar, silver, white, gravel) and its kinds' linear means;
-  // loadGroundArt fills it and turns it on, every facade material reads it
-  const roofArtU = { uRoofArt: { value: null }, uRoofOn: { value: 0 }, uRoofM: { value: 8 }, uRoofPad: { value: 0.03125 }, uRoofOwn: { value: 0.75 }, uRoofDbg: { value: 0 },
+  // loadGroundArt fills it and turns it on, every facade material reads it. The realism round two (R4): four variants of
+  // each kind in its quadrant, uRoofPad the pads (the quadrant's outside, between its variants); ?roofs16=0 deals only the
+  // first variant, Round 185's picture
+  const ROOFS16 = REAL && !/[?&]roofs16=0\b/.test(location.search);
+  const roofArtU = { uRoofArt: { value: null }, uRoofOn: { value: 0 }, uRoofM: { value: 8 }, uRoofPad: { value: new THREE.Vector2(0.0625, 0.015625) }, uRoofOwn: { value: 0.75 }, uRoofDbg: { value: 0 },
     uRoofMean: { value: [new THREE.Vector3(0.1, 0.1, 0.1), new THREE.Vector3(0.3, 0.3, 0.3), new THREE.Vector3(0.6, 0.6, 0.6), new THREE.Vector3(0.3, 0.28, 0.25)] } };
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
     uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 },
@@ -48002,7 +48690,9 @@ float pinOccGate() {
         if (!im) return;
         const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
-        roofArtU.uRoofArt.value = t; roofArtU.uRoofPad.value = GROUND_ART.roofPad || 0.03125;
+        roofArtU.uRoofArt.value = t; if (Array.isArray(GROUND_ART.roofPad)) roofArtU.uRoofPad.value.set(GROUND_ART.roofPad[0], GROUND_ART.roofPad[1]);
+        // the realism round two: __dbg.PERF.roofs() (uRoofDbg 2 paints the variants, 1 the kinds)
+        const imW = im.width; PERF.roofs = (dbg) => { if (dbg != null) roofArtU.uRoofDbg.value = +dbg; return { on: ROOFS16, art: roofArtU.uRoofOn.value, size: imW, pad: roofArtU.uRoofPad.value.toArray(), means: roofArtU.uRoofMean.value.map((m) => m.toArray().map((v) => +v.toFixed(5))), dbg: roofArtU.uRoofDbg.value }; };
         roofArtU.uRoofM.value = (GROUND_ART.m && GROUND_ART.m.roof) || 8;
         (GROUND_ART.roofMean || []).forEach((m, k) => roofArtU.uRoofMean.value[k].set(m[0], m[1], m[2]));
         roofArtU.uRoofOn.value = 1;
@@ -48359,7 +49049,9 @@ float pinOccGate() {
       // toned as the yards are: to the painted lawn's brightness, then lighter by as much (concrete is paler than grass)
       const M = VEG_ART.alley.mean;
       vegU.uAlleyTone.value = Math.min(2.5, 1.4 * (vegU.LP || 0.03) / Math.max(1e-4, 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2]));
-      vegU.uAlley.value = vegTex(im, true); vegU.uAlleyOn.value = 1;
+      const t = vegTex(im, true);
+      if (SNOW2.live) SNOW2.alley = t; else vegU.uAlley.value = t;   // the realism round two: while snow lies the slot is the snow's (snow2Step)
+      vegU.uAlleyOn.value = 1;
     });
     if (!VEG_LAND) return;
     artImage(artSrc(VEG_LAND.img, VEG_LAND.imgHalf)).then((im) => {
@@ -48386,6 +49078,46 @@ float pinOccGate() {
       vegU.uRiprap.value = vegTex(im, true); vegU.uRiprapOn.value = 1;
     });
   }
+  // ---- snow that lies (the realism round two, D8). The ground's snow picture (bake_ground_art.py's 'snow', 6.5 m a tile, made in
+  // the first pass and left raw for want of a texture unit) goes into the alley's sampler on the bare ground's program while
+  // the snow lies (snowGround over 0.3, back under 0.15): the same sampler name, another texture, so no recompile and no
+  // sixteenth unit (the ground's program is at fifteen); the alleys are under the snow anyway, and the alley's own line steps
+  // aside while the slot holds it. Its file is fetched and decoded ahead of the snow (a forecast of snow in the next twelve
+  // hours, snow falling or lying), so the swap costs one upload and no decode; once the snow is gone its texture goes (a
+  // phone's source went at upload, so the next snow fetches it again). Not at tier 2 (no alley, no land mask there): its
+  // snow keeps the plain white, with the plowed streets and the parked cars' caps every tier with streets and cars has.
+  // A program vegBudget took the alley out of (#define VEG_NO_ALLEY) keeps the white too. ?snow2=0 keeps Round 188's snow
+  const SNOW2_M = VEG_ART && VEG_ART.snow ? VEG_ART.snow.m : 6.5;
+  const SNOW2 = { on: SNOW2_ON && !!(VEG_ART && VEG_ART.snow) && !TIER2, asked: false, im: null, tex: null, alley: null, live: false, swaps: 0, fetched: 0 };
+  const snow2U = { uAlleySnow: { value: 0 }, uAlleySnowM: { value: new THREE.Vector3(0.66, 0.67, 0.68) } };
+  function snow2Step(F) {
+    const S = SNOW2;
+    if (!S.on) return;
+    if (!S.asked && (F.snowGround > 0.02 || F.tSnow > 0.02 || F.tSnowGround > 0.02 || WX.snowSoon)) {
+      S.asked = true;
+      const rec = VEG_ART.snow;
+      artImage(artSrc(rec.img, rec.imgHalf)).then((im) => {
+        if (!im) { S.asked = false; return; }
+        const done = () => { S.im = im; S.fetched++; };
+        if (im.decode) im.decode().then(done, done); else done();   // decoded now, not in the frame that first draws it
+      });
+    }
+    const want = S.live ? F.snowGround > 0.15 : F.snowGround > 0.3;
+    if (want && !S.live && S.im) {
+      if (!S.tex) S.tex = vegTex(S.im, true);
+      const M = VEG_ART.snow.mean;
+      snow2U.uAlleySnowM.value.set(M[0], M[1], M[2]);
+      S.alley = vegU.uAlley.value; vegU.uAlley.value = S.tex; snow2U.uAlleySnow.value = 1;
+      S.live = true; S.swaps++;
+    } else if (!want && S.live) {
+      vegU.uAlley.value = S.alley; S.alley = null; snow2U.uAlleySnow.value = 0;
+      S.tex.dispose(); S.tex = null;
+      if (isTouch) { S.im = null; S.asked = false; }   // freed at upload (freeTexOnUpload): fetched again for the next snow
+      S.live = false; S.swaps++;
+    }
+  }
+  const snow2Probe = () => ({ on: SNOW2.on, flag: SNOW2_ON, asked: SNOW2.asked, decoded: !!SNOW2.im, fetched: SNOW2.fetched, live: SNOW2.live, swaps: SNOW2.swaps,
+    snowGround: +WXFX.snowGround.toFixed(3), soon: !!WX.snowSoon, alleyOn: vegU.uAlleyOn.value, m: SNOW2_M });
   // the woods' season by the day of the year: bare from early December to leaf-out, coloured from late October
   const canopySeasonOf = (doy) => doy < 112 || doy >= 333 ? 'winter' : doy >= 296 ? 'autumn' : 'summer';
   function vegCanopySeason(doy) {
@@ -48449,7 +49181,9 @@ float pinOccGate() {
       'vec3 vegLM = vec3(0.0);',
       'if (uLandOn > 0.5) vegLM = texture2D(uLand, (sWP.xz - uLandBox.xy) * uLandBox.zw).rgb * (1.0 - vegCore);',
     ], macro, [
-      'vec3 grass = gTex * mix(1.0, gMacL, 0.20) * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_REAL.toFixed(2) + ';',
+      // (the realism round two, D12: the 47 m read's weight climbs from 0.20 near to 0.38 past 0.4 m a pixel, where the two
+      // tilings' weave shows from the air; the near lawn is as it was)
+      'vec3 grass = gTex * mix(1.0, gMacL, ' + (WEAR_ON ? '0.20 + 0.18 * smoothstep(0.06, 0.4, sfw)' : '0.20') + ') * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_REAL.toFixed(2) + ';',
       'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88) * vec3(1.03, 1.0, 0.74);',
       // the parks from the air: two tilings of a 240 m photograph of parkland (dry rises, damp swales, worn lines), as a
       // ratio to its mean; without it, two warped noises do the same job more plainly
@@ -48469,8 +49203,14 @@ float pinOccGate() {
       forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; float urb = smoothstep(0.12, 0.5, vegLM.r);' +
         ' yw = mix(yw * (1.0 - 0.6 * uLandOn * (1.0 - vegCore)), max(yw, 0.6 + 0.4 * stn(sWP.xz * 0.07 + 9.1)), urb);' +
         ' vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone;' +
-        '\n#ifndef VEG_NO_ALLEY\n if (uAlleyOn > 0.5) gY = mix(gY, texture2D(uAlley, sWP.xz * 0.1 + 0.17).rgb * uAlleyTone, smoothstep(0.45, 0.7, stn(sWP.xz * 0.05 + 2.4)) * urb);\n#endif\n' +
+        '\n#ifndef VEG_NO_ALLEY\n if (uAlleyOn > 0.5' + (SNOW2_ON ? ' && uAlleySnow < 0.5' : '') + ') gY = mix(gY, texture2D(uAlley, sWP.xz * 0.1 + 0.17).rgb * uAlleyTone, smoothstep(0.45, 0.7, stn(sWP.xz * 0.05 + 2.4)) * urb);\n#endif\n' +
         ' grass = mix(grass, gY * (0.97 + 0.06 * sn1) * ' + (MEADOW_REAL * 0.9).toFixed(3) + ', yw); }' : '',
+      // the realism round two (D8): while snow lies the alley's slot holds the snow's picture (snow2Step), its detail as a ratio
+      // to its own mean at 6.5 m a tile, 2.2 times as deep (the picture's own +-7 per cent all but vanished in the tone curve's
+      // shoulder), gone to the plain white past 0.8 m a pixel; the weather lays it (wxSurfaceLate)
+      ...(forced && SNOW2_ON ? ['vec3 vegSnowT = vec3(1.0);', '#ifndef VEG_NO_ALLEY',
+        'if (uAlleySnow > 0.5) vegSnowT = mix(clamp(1.0 + 2.2 * (texture2D(uAlley, vec2(sWP.x * 0.940 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.940) / ' + SNOW2_M.toFixed(2) + ').rgb / uAlleySnowM - 1.0), 0.6, 1.3), vec3(1.0), smoothstep(0.25, 0.8, sfw));',
+        '#endif'] : []),
     ]);
   }
   // after the meadow and the streets are coloured (green surfaces only): the woods' canopy where the mask says woods, and
@@ -48522,6 +49262,7 @@ float pinOccGate() {
     if (!REAL) return;
     for (const k of ['uMacro', 'uMacroMean', 'uMacroOn', 'uLand', 'uLandBox', 'uLandOn', 'uCanopy', 'uCanopyGain', 'uCanopyMean', 'uCanopyOn', 'uRiprap', 'uRiprapOn', 'uWaterY', 'uLawn', 'uCore']) shader.uniforms[k] = vegU[k];
     if (forced) for (const k of ['uAlley', 'uAlleyOn', 'uAlleyTone']) shader.uniforms[k] = vegU[k];
+    if (forced && SNOW2_ON) Object.assign(shader.uniforms, snow2U);   // the realism round two: the snow's picture in the alley's slot
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
         // a paved surface takes none of these pictures (surfTexPatch); elsewhere each extra picture sits behind its own
@@ -48531,6 +49272,7 @@ float pinOccGate() {
           '#ifndef VEG_NO_CANOPY', 'uniform sampler2D uCanopy;', '#endif', '#ifndef VEG_NO_RIPRAP', 'uniform sampler2D uRiprap;', '#endif'].join('\n'),
         'uniform float uMacroOn, uLandOn, uCanopyOn, uRiprapOn, uWaterY;',
         forced ? '#ifndef VEG_NO_ALLEY\nuniform sampler2D uAlley;\n#endif\nuniform float uAlleyOn, uAlleyTone;' : '',
+        forced && SNOW2_ON ? 'uniform float uAlleySnow; uniform vec3 uAlleySnowM;' : '',
         TIDE_GLSL,
         'void main() {',
       ].join('\n'))
@@ -48616,6 +49358,10 @@ float pinOccGate() {
         '    if (uCanShow > 0.5) diffuseColor.rgb = vec3(c0.r, cst, 0.1) * 0.3;',   // ?canopy=show: the map itself, red the crowns and green their shadow
         green ? '    float lit = c0.r * uLawn.y * ' + green + ' * cf;' : '',
         green ? '    if (lit > 0.01) { float ln = stn(cwp.xz * 1.7 + 3.1) * 0.6 + stn(cwp.xz * 5.3) * 0.4; diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.15, 0.075, 0.025), vec3(0.24, 0.15, 0.04), ln), lit * smoothstep(0.2, 0.55, ln + 0.25 * lit)); }' : '',
+        // the realism round two (D12): the ground worn under the crowns, a street tree in a ring of packed earth and a grove on
+        // bare ground, the lawn's own brightness in a dry brown, broken by a noise; under snow, the snow's (wxSnowW)
+        green && WEAR_ON ? '    float wr = smoothstep(0.55, 0.95, c0.r) * ' + green + ' * cf' + (shader.fragmentShader.indexOf('float wxSnowW') !== -1 ? ' * (1.0 - wxSnowW)' : '') + ';' : '',
+        green && WEAR_ON ? '    if (wr > 0.01) { float wn = stn(cwp.xz * 0.9 + 6.1) * 0.6 + stn(cwp.xz * 3.7 + 1.3) * 0.4; diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.105, 0.085, 0.058) * (0.8 + 0.4 * wn), wr * 0.4 * smoothstep(0.25, 0.6, wn + 0.3 * wr)); }' : '',
         '  }',
         '}',
       ].join('\n'));
@@ -48858,9 +49604,11 @@ float pinOccGate() {
         REAL ? 'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08) + 0.30 * cshn(wxWP.xz * 0.35 + 7.1) + 0.15 * cshn(wxWP.xz * 1.7 + 3.3));'   // the realism pass (weather 8): drifts, not a checkerboard of 1.1 m squares
           : 'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',
         'float wxSnowW = uSnowAcc * max(wxUpW, 0.14) * (0.78 + 0.22 * wxN);',
+        REAL && SNOW2_ON ? '/*wxSnowLane*/' : '',   // the realism round two: a plowed street's ruts and kerb piles (wxSurfaceLate, on a lane-painted road)
         'float wxDark = 1.0 - clamp(dot(diffuseColor.rgb, vec3(0.55)), 0.0, 1.0);',
         'float wxWetW = uWet * wxUpW * (1.0 - wxSnowW);',
         'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.90, 0.93), wxSnowW);',
+        REAL && SNOW2_ON ? '/*wxSnowLate*/' : '',   // and the slushed lanes, or on the bare ground the snow's picture (wxSurfaceLate)
         REAL ? WX_WET_GLSL.color : 'diffuseColor.rgb *= 1.0 - 0.45 * wxWetW;',
       ].join('\n'))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + [
@@ -49037,6 +49785,16 @@ float pinOccGate() {
     if (!REAL) return;
     let fs = shader.fragmentShader;
     if (fs.indexOf('varying vec4 vLane;') !== -1) fs = fs.replace('/*wxLane*/', WX_WET_GLSL.lane);
+    // the realism round two (D8): the snow that lies. On a lane-painted road (lanePatchReal's lnSnow terms) the wheel paths show
+    // the asphalt through a thin slush, the crown between them is a grey slush and the plow has piled the kerb's last 0.6 m
+    // white, with twice the drifts' unevenness; on the bare ground the snow takes its picture's detail (vegSnowT, the alley's slot)
+    if (SNOW2_ON) {
+      if (fs.indexOf('float lnSnowRut') !== -1) {
+        fs = fs.replace('/*wxSnowLane*/', 'if (uSnowAcc > 0.001) { wxSnowW *= 1.0 - 0.72 * lnSnowRut; wxSnowW = max(wxSnowW, min(1.0, uSnowAcc * 1.2) * lnSnowPile * (0.56 + 0.44 * wxN)); }')
+          .replace('/*wxSnowLate*/', 'if (uSnowAcc > 0.001) diffuseColor.rgb *= 1.0 - (0.18 * lnSnowMid + 0.12 * lnSnowRut) * wxSnowW;');
+      }
+      if (fs.indexOf('vec3 vegSnowT') !== -1) fs = fs.replace('/*wxSnowLate*/', 'diffuseColor.rgb *= mix(vec3(1.0), vegSnowT, wxSnowW);');
+    }
     // the surface's own word for a lawn, when surfTexPatch declared it ahead of the weather's lines (it lands right after the
     // colour include, the weather's after it)
     const ig = fs.indexOf('float isGreen = '), wg = fs.indexOf('  wxGreen = ' + WX_GREEN_COL + ';');
@@ -49524,7 +50282,7 @@ float pinOccGate() {
     shellU.uCam.value.copy(camera.position);
     shellU.uTime.value = (shellU.uTime.value + dt) % 600;
     shellU.uRain.value = F.rain * (1 - 0.6 * F.hail); shellU.uSnow.value = F.snow;
-    shellU.uWind.value.set(WX.windX * 0.75 / fall, WX.windZ * 0.75 / fall); shellU.uFall.value = fall;
+    shellU.uWind.value.set((WIND.on ? WIND.vx : WX.windX) * 0.75 / fall, (WIND.on ? WIND.vz : WX.windZ) * 0.75 / fall); shellU.uFall.value = fall;
     shellU.uVis.value = vis;
     if (!rainMesh.visible) rainU.uCol.value.copy(skyMat.uniforms.cHorizon.value);   // snow alone: the shells still take the air's colour
   }
@@ -49662,11 +50420,13 @@ float pinOccGate() {
     const eh = 1 - Math.exp(-dt / 20);   // a haze never snaps: twenty seconds either way
     F.haze += (F.tHaze - F.haze) * eh;
     F.hazeTint += (F.tHazeTint - F.hazeTint) * eh;
+    F.cirrus += (F.tCirrus - F.cirrus) * eh;   // (the realism pass two: the cirrus thickens and thins over the same twenty seconds)
     F.wet += (F.tWet - F.wet) * (1 - Math.exp(-dt / (F.tWet > F.wet ? 25 : 300)));   // streets darken fast, dry slowly
     // accumulation settles in about a minute of snowfall; melts off slowly, faster above freezing
     const sgTau = F.tSnowGround > F.snowGround ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600);
     F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / sgTau));
     wxSurfU.uSnowAcc.value = F.snowGround;
+    snow2Step(F);   // the realism round two: the snow's picture in the bare ground's alley slot while it lies
     wxSurfU.uWet.value = REAL ? F.wet : F.wet * (0.45 + 0.55 * F.dayF);   // the realistic look: a street is as wet by night as by day
     wxFxStep(now, dt);   // the wet city's glints, rings, halos and grade (the realism pass)
     if (reducedMotion) return;   // sky, fog and surfaces still answer the weather; no particles, no strobe
@@ -49677,7 +50437,7 @@ float pinOccGate() {
     if (rainMesh.visible) {
       // real fall speed at street level; faster with altitude so a streak seen from above
       // still reads as falling rain instead of a slow drift
-      rainVel.set(WX.windX * 0.75, -(8.5 + 4 * F.rain + 9 * F.hail) * (1 + 2.2 * hi), WX.windZ * 0.75);
+      rainVel.set((WIND.on ? WIND.vx : WX.windX) * 0.75, -(8.5 + 4 * F.rain + 9 * F.hail) * (1 + 2.2 * hi), (WIND.on ? WIND.vz : WX.windZ) * 0.75);   // the realism round two: the one wind at the eye (WIND)
       rainOff.addScaledVector(rainVel, dt);
       rainU.uOff.value.copy(rainOff);
       // small box at street level so the near field is dense enough to read
@@ -49696,7 +50456,7 @@ float pinOccGate() {
     snowMesh.visible = F.snow > 0.02 && vis > 0.02;
     if (snowMesh.visible) {
       const sk = REAL ? 0.4 + 0.6 * smooth(0.6, 1.0, F.snow) : 0.4;   // a blizzard is driven by the whole wind
-      snowVel.set(WX.windX * sk, -(1.5 + 1.3 * F.snow), WX.windZ * sk);
+      snowVel.set((WIND.on ? WIND.vx : WX.windX) * sk, -(1.5 + 1.3 * F.snow), (WIND.on ? WIND.vz : WX.windZ) * sk);
       snowOff.addScaledVector(snowVel, dt);
       snowU.uTime.value += dt;
       snowU.uOff.value.copy(snowOff);
@@ -49774,6 +50534,13 @@ float pinOccGate() {
   // down; a strike's light in its cloud; and, with AP on, the visibility from the weather and the air quality, the air's
   // colours as the dome's horizon has them, and the weather's veil over the dome itself
   const _apA = new THREE.Color(), _apS = new THREE.Color(), _apG = new THREE.Color(), _apX = new THREE.Color(), _apY = new THREE.Color(), glowD = new THREE.Color();
+  // the realism pass two (R5): __dbg.cirrus(k) pins the cirrus at k, 0 to 1, at once; __dbg.cirrus(null) hands it back to
+  // WX.high; either way it reports the amount drawn, its target, the report's high cloud and the wind it lies along
+  function cirrusProbe(k) {
+    const F = WXFX;
+    if (k !== undefined) { F.cirrusPin = k == null ? null : clamp(+k || 0, 0, 1); wxSetTargets(); F.cirrus = F.tCirrus; lastEnvEl = 999; }
+    return { on: CIRRUS, k: +F.cirrus.toFixed(3), target: +F.tCirrus.toFixed(3), pin: F.cirrusPin, high: WX.high == null ? null : WX.high, deck: WX.cover, u: skyMat.uniforms.uCirrus.value.toArray().map((v) => +v.toFixed(3)) };
+  }
   // dev (?dev=1): the air's state, and a strike held at a phase of its flicker for a capture (__dbg.boltHold(0.08) strikes
   // 2.5 km ahead and pins it, __dbg.boltHold(null) lets it go)
   const apProbe = () => ({ on: AP.on, V: Math.round(AP.V), haze: apU.fogAP.value.toArray().map((v) => +v.toPrecision(4)), low: apU.fogAPLow.value.toArray().map((v) => +v.toPrecision(4)),
@@ -49811,6 +50578,9 @@ float pinOccGate() {
     const F = WXFX, cover = WX.cover, U = skyMat.uniforms;
     envLamp = lampUniform.value;
     if (window.__dbg && !window.__dbg.ap) Object.assign(window.__dbg, { ap: apProbe, boltHold, cloudsPhase1, clouds3d: () => ({ on: CLOUD3D.on, ms: CLOUD3D.ms, why: CLOUD3D.why, gpu: CLOUD3D.gpu }) });
+    if (window.__dbg && !window.__dbg.cirrus) Object.assign(window.__dbg, { cirrus: cirrusProbe });   // the realism pass two
+    // the realism pass two (R5): the cirrus's amount (WX.high eased, or the pin) and the wind's heading it lies along
+    if (CIRRUS) { const wl = Math.hypot(WX.windX, WX.windZ) || 1; U.uCirrus.value.set(F.cirrus, WX.windX / wl, WX.windZ / wl, 0); }
     // the stars: only the brightest in a city's sky, gone behind a deck, in fog, rain and smoke, and washed out at dusk and
     // under a bright moon's sky
     U.uStarK.value = smooth(0.55, 1, night) * (1 - smooth(0.3, 0.75, cover)) * (1 - Math.max(F.fog, F.rain, F.snow, F.gloom)) * clamp((F.haze - 0.3) / 0.7, 0, 1)
@@ -50074,7 +50844,7 @@ float pinOccGate() {
     }
     // (the realism pass, night#1 (g): the probe is every matte surface's fill as well as the glass's sky, so it follows the
     // weather as it eases in and the night's glow under a closing deck, not only the sun's height and a new report)
-    const envKey = WX.cover + 0.8 * Math.max(WXFX.rain, WXFX.snow, WXFX.fog, WXFX.gloom) + 0.5 * night;
+    const envKey = WX.cover + 0.8 * Math.max(WXFX.rain, WXFX.snow, WXFX.fog, WXFX.gloom) + 0.5 * night + (CIRRUS ? 0.3 * WXFX.cirrus : 0);   // (the realism pass two: and the cirrus)
     if (REAL && Math.abs(envKey - lastEnvKey) > 0.15) lastEnvEl = 999;
     if (Math.abs(el - lastEnvEl) > 3 && (!envGap || performance.now() >= envNextT)) { lastEnvEl = el; lastEnvKey = envKey; envNextT = performance.now() + envGap; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.95;
@@ -50436,6 +51206,7 @@ float pinOccGate() {
   async function build() {
     if (BOOT_GATE) await bootGate();
     if (SF_ART_ON) { if (isTouch) sfArtPrefetch(); else sfArtLoad(); }   // Round 189: the storefronts' art downloads while the city is raised (a phone's as bytes only)
+    if (BL_ON) bladeArtLoad();   // the realism round two: the blade signs' sheet (54 KB, a phone's 11 KB)
     let failures = 0;
     let builtSteps = 0;
     for (const s of buildSteps) {
@@ -51456,6 +52227,7 @@ float pinOccGate() {
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     cloudFieldUpdate(dt);
     if (!reducedMotion) waterU.uTime.value += dt;
+    windStep(dt);   // the realism round two: one wind for the trees, the tufts, the flag, the water and the rain
     grassUpdate();
     waterU.uSun.value.copy(glintDir);
     waterU.uGlint.value = glintK;
@@ -51478,6 +52250,7 @@ float pinOccGate() {
     venuesStep();   // Round 195: the venues' levels, their art on a phone's approach
     bridgesStep();   // Round 195: the bridges' levels, their art on the approach
     sfStep(now);   // Round 189: the storefronts' clock and names
+    bladeStep(now);   // the realism round two: the blade signs' names
     gloryStep(now);   // Round 191: Glory's levels of detail and its hours
     famineStep();   // Round 197: the Irish Famine Memorial's level, its flag on the wind
     libStep();   // Round 195: the Liberty Places' near level, their lobbies' light and their art

@@ -12870,3 +12870,55 @@ Mike's request), and `CAR_MIN_LIFE` is 16 s in the code, not Round 89's 4 s.
   north edge (83 trees there are now left out or moved); 486 samples just inside the far ring's outline stand over the
   sheet, identical before this round.
 
+## Round 223 — the realism round two: roofs, cirrus, the phone's river, shadows, wind and snow, blade signs (Oct 25)
+
+Mike, after Round 222's bank fix: "do the cheap round behind flags ... with a side by side for me", then, after the side by
+side (a private page of before and after pairs at 20 desktop and 6 phone poses, the weather pinned to clear on both builds):
+"Ship the cheap round with the haze change dropped (keep cirrus, roofs, river, shadows, wind and snow, blades). Keep blade
+signs on both sets of shops and leave the roof drain as is." Six implementers in their own worktrees from the realism plan's
+verified specs (`philly3d-realism-plan.md`, items R4 to R10), merged here. Every item is under REAL and has its own flag.
+
+- **The flat roofs (R4):** sixteen surfaces where there were four, each kind (tar, silver, white, gravel) in four
+  photographed variants with patches, ponding, seam tape and drains (12 new gpt-image-2 pictures, $3.36), dealt house by
+  house by a second hash; each kind's variants share its 1024 quadrant of the same 2048 atlas, 64 px pads outside, so a
+  kind never bleeds into another, and every variant is baked to its kind's linear mean, so a far roof is exactly as it was.
+  City Hall's decks read tar's variant 0. Every tier (the same texture). Known: on a large tar roof a drain repeats every
+  8 m; Mike: leave it.
+- **Cirrus (R5):** the high cloud Open-Meteo reports (`WX.high`, recorded since Round 88 and drawn nowhere) as procedural
+  wind-aligned wisps and a faint veil above about 8 degrees, brighter toward the sun, gold at a low sun, never darker than the
+  sky, copied into the sky probe so the glass and the water see it; no light changes (Round 88's rule). `?wx=cirrus`,
+  `__dbg.cirrus(k)`. 0 bytes, 0.1 to 0.2 ms.
+- **The haze, dropped.** The warmer low air built with the cirrus (R10's D3 part) made the noon city read washed out in the
+  side by side and moved the W's blue glass 1.8 delta E further from its photograph; Mike dropped it, and it is gone from the
+  code, not flagged off, so `apColor` and the glass's twin `apColorC` are as they were and `tests/glass_calibration.json`'s
+  fingerprint still matches. Found on the way: the calibration's own measure of the W already reads 12.9 against its
+  recorded 11.0 at Round 222's build (some earlier round moved it without touching the fingerprinted text); the test only
+  checks the fingerprint, so it passes. Left for a glass round.
+- **The phone's river (R8):** a phone's water reads the city probe it already builds (tiers 0 and 1; tier 2 keeps the sky),
+  through a 700 m sphere (1,500 m stood the reflected towers two to three times too tall), the water's own sky subtracted so
+  the open sky is exactly as before. The computer's planar mirror is untouched. 5 of 16 texture units; phone GPU unchanged.
+- **Shadows that meet their walls (R10, C4 part (a)):** both shadow biases scale with the map's texel, as the far map's
+  already did: the depth bias slope-scaled, so the metre of lit ground at a shaded wall's foot is gone, the normal bias by
+  the texel, so shadows keep their length; no acne on the phone's 2048 or LITE's 1024 map. Every device.
+- **One wind (R10, D14):** the trees' cards and crowns, the grass, the flag, the water's glitter and the rain and snow all
+  read one live wind (speed, direction, gusts; the Open-Meteo request gains `wind_gusts_10m` and a 12-hour snowfall
+  forecast); a 10 m tree swings 0.08 m at 1 to 2 m/s and 0.29 m at 11 m/s with a 0.17 m lean, against the old fixed 0.11 m.
+  `__dbg.wind(spd)`.
+- **Snow that lies and worn ground (R10, D8, D12):** the raw snow picture baked and laid through the alley slot on the
+  forced program (no new ground sampler: 15 of 16 units), ruts and slush along the lanes, kerb piles, white caps on the
+  parked cars, a lip on the wall tops; the lawn's macro tap weighted, worn earth under the crowns and dust at the kerb.
+  +1.3 MB on a phone only while snow lies. Tier 2: the ruts, piles and lip, no snow picture or worn earth.
+- **Blade signs (R9):** a projecting sign at one end of each shop with no board of its own, six generated blanks
+  (gpt-image-1.5, transparent, $0.80), lettered by the page with the shop's OSM name on both faces and lit by its hours,
+  within the names' radius; on the 747 shops on generated street floors and, at Mike's yes, the 660 whose panel and name a
+  generated house front takes over (lifted over the front's awning, `bladeAwnNote`). Tiers 0 and 1 (tier 2 keeps every
+  shop's own board). +1 MB on a phone.
+- **Set aside: lit floors on the night skyline (R6).** Measured first, as its verifier asked: with the far towers' light
+  points on and off, the points make 2% of the night skyline's speckle on a computer and 9 to 15% on a phone; the rest is
+  the room windows. Lit floors belong in the far window rules (Round 188's speckle fix's ground), a round of their own.
+
+Measured headless on the phone path (740 by 360 at 1.25, touch): tier 0 897 MB GPU at ready and 971 after the look, tier 2
+368 and 637, before and after alike (the blades and the resident snow picture aside). Page +71 KB raw. Every pose of the side
+by side rendered with no console errors and nothing failed. `tests/test_r4.py`, `test_sky.py`, `test_r8.py`, `test_wind.py`,
+`test_r9.py`.
+
