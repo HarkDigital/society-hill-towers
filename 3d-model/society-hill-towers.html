@@ -52098,9 +52098,14 @@ float pinOccGate() {
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
   const LAMP_SHOULDER = 0.04;    // the irradiance's shoulder (REAL): only a mast's or a crossing's hot spot is held back, a pool keeps its edge
-  // the luminaires (night#5): the cobra head's lens under the head box at (1.5, 8.81) on the 9 m reference pole (scaled in
-  // height by the pole's own), a post-top lantern's glass centred 4.1 m up on its reference post
-  const POLE_HEAD = { arm: 1.5, y: 8.81, lantern: 4.1 };
+  // the luminaires (night#5): the cobra head's lens under the head on the 9 m reference pole (scaled in height by the pole's
+  // own), a post-top lantern's glass centred 4.1 m up on its reference post. Round 224 (Mike, a South Street night capture:
+  // "the lights do not align with the lamppost where they should"): the realism pass drew the cobra's luminaire 2.3 m out
+  // with its underside at 8.93 m (COBRA_HEAD, the mesh's own numbers), but POLE_HEAD kept the old box head's (1.5, 8.81),
+  // so the lit lens, the glow, the glare and the pool on the street all stood 0.8 m short of the head, half way along the
+  // arm. Both now read COBRA_HEAD; the wood pole's head box is laid at POLE_HEAD too, so it follows
+  const COBRA_HEAD = { x: 2.3, y: 9.05, rx: 0.44, ry: 0.12, rz: 0.2 };   // the luminaire: a flattened sphere's centre and radii
+  const POLE_HEAD = { arm: COBRA_HEAD.x, y: COBRA_HEAD.y - COBRA_HEAD.ry, lantern: 4.1 };
   const lanternSy = (hm) => clamp(hm / POLE_HEAD.lantern, 0.85, 1.5);
   // the realism round's near meshes (REAL; a phone's too since Round 205): the lanterns and the wood poles beside the cobra heads, the lit
   // lenses and glass, and the glare round each near luminaire (uGlare: x the pixels a metre at one metre, y its size)
@@ -52531,7 +52536,7 @@ float pinOccGate() {
         new THREE.CylinderGeometry(0.2, 0.23, 0.5, 8).translate(0, 0.25, 0),
         new THREE.CylinderGeometry(0.075, 0.13, 8.5, 8).translate(0, 4.75, 0),
         seg([0, 8.45, 0], [0.55, 8.88, 0], 0.05, 6), seg([0.55, 8.88, 0], [1.3, 9.07, 0], 0.045, 6), seg([1.3, 9.07, 0], [1.95, 9.1, 0], 0.04, 6),
-        new THREE.SphereGeometry(1, 12, 6).scale(0.44, 0.12, 0.2).translate(2.3, 9.05, 0),
+        new THREE.SphereGeometry(1, 12, 6).scale(COBRA_HEAD.rx, COBRA_HEAD.ry, COBRA_HEAD.rz).translate(COBRA_HEAD.x, COBRA_HEAD.y, 0),   // the luminaire POLE_HEAD lights (Round 224)
       ]) : mergePlain([
         new THREE.CylinderGeometry(0.07, 0.13, 9, 5).translate(0, 4.5, 0),
         new THREE.CylinderGeometry(0.05, 0.05, 1.7, 4).rotateZ(Math.PI / 2).translate(0.8, 8.84, 0),

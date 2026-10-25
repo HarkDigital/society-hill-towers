@@ -12922,3 +12922,20 @@ Measured headless on the phone path (740 by 360 at 1.25, touch): tier 0 897 MB G
 by side rendered with no console errors and nothing failed. `tests/test_r4.py`, `test_sky.py`, `test_r8.py`, `test_wind.py`,
 `test_r9.py`.
 
+## Round 224 — the cobra heads' light at the cobra heads (Oct 25)
+
+Mike, with Round 223's South Street night capture: "In this shot you can see the lights do not align with the lamppost
+where they should." On every cobra-head pole the lit lens and its glow hung about half way along the arm, well short of the
+luminaire at its end. Not a new fault: the realism pass (Round 188, night#5) rebuilt the cobra as a tapered shaft, a davit
+arm in three runs and a flattened luminaire 2.3 m out with its underside at 8.93 m on the 9 m reference pole, but
+`POLE_HEAD`, which places everything that is the light (the lit lens, the glow `headAt` lays at the build, the glare and a
+phone's near glow `poleReconcile` lays, and the lamp's pool in the light maps, which take their centres from the glow),
+kept the old box head's 1.5 m and 8.81 m. So every cobra's light stood 0.8 m short of its head and 12 cm low.
+
+Now one set of numbers, `COBRA_HEAD` (the luminaire's centre and radii), builds the mesh's head and gives `POLE_HEAD` its arm
+and height (the underside), so they cannot drift apart again. The wood poles' heads are laid at `POLE_HEAD` too, so they move
+out to 2.3 m with their bracket arm, and the lanterns (their own 4.1 m glass) and `?real=0` (the glow at the shaft's top, the
+old box head) are unchanged. Every device and tier. The captures at Mike's pose (South Street at 21:30), Walnut Street and
+the phone path show each lens under its luminaire at the arm's end. `tests/test_lamp_head.py` holds the lens inside the
+luminaire's footprint and 5 mm under it.
+
