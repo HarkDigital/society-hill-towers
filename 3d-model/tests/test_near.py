@@ -26,8 +26,10 @@ class NearRule(unittest.TestCase):
                        "if ((e.isM ? HMARK.on : PUBART.on) && nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);",   # markers and art (behind their J and O layers since Round 83)
                        "const inv = closureInv, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = NEAR_R;"):   # closures
             self.assertIn(anchor, s, 'a ground layer lost its half-mile gate: ' + anchor[:50])
-        # Round 204: the pins over them draw within PIN_R, the 0.2 mile, never past NEAR_R
-        self.assertIn('const PIN_R = 321.87;', s)
+        # Round 204: the pins over them draw within PIN_R, never past NEAR_R. Round 226 (Mike: "set it back to what it
+        # was"): PIN_R is the half mile again, not Round 204's 0.2 mile
+        self.assertIn('const PIN_R = 804.67;', s)
+        self.assertNotIn('const PIN_R = 321.87;', s)
         self.assertIn('r = Math.min(PIN_R, NEAR_R);', s)
         for anchor in ("if (bi < 1024 && pinNear(v.dx, v.gy + spec.h + 0.6, v.dz)) {",                            # SEPTA badges
                        "if (!pinNear(_sp.x, _sp.y, _sp.z)) continue;   // Round 204: the badge within PIN_R",       # Indego badges
@@ -36,7 +38,7 @@ class NearRule(unittest.TestCase):
                        "if (rec.o < 3 || nf >= CLOSURE_PIN_CAP || !pinNear(rec.mx, rec.my + 2.2, rec.mz)) continue;",   # closures
                        "if (!pinNear(_sp.x, _sp.y, _sp.z)) continue;   // Round 204: the pin within PIN_R, the post",   # markers and art
                        "if (!pinNear(_tp.x, _tp.y, _tp.z)) continue;   // Round 204"):                           # stops, libraries
-            self.assertIn(anchor, s, 'a pin lost its 0.2 mile gate: ' + anchor[:50])
+            self.assertIn(anchor, s, 'a pin lost its PIN_R gate: ' + anchor[:50])
         self.assertEqual(s.count("if (!pinNear(_tp.x, _tp.y, _tp.z)) continue;   // Round 204"), 2)
         # flights and ships never ask
         a = s.index('function updateFlights('); b = s.index('function updateShips(')

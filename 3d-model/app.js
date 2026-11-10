@@ -38507,7 +38507,7 @@ if (uOlLamp > 0.001) {
   // over the ground things (the SEPTA and Indego badges, the Amtrak and PATCO pins, the closures, the markers and the art, the
   // stops and stations, the libraries and rec centres) draw within PIN_R; what they stand over keeps NEAR_R. Flights keep their
   // range and the ships their mile. Never past NEAR_R (__dbg.near can pull it in)
-  const PIN_R = 321.87;   // 0.2 mile
+  const PIN_R = 804.67;   // half a mile again (Round 226, Mike: "it almost looks like nothing is happening. set it back to what it was"; Round 204's 0.2 mile is gone)
   const pinNear = (x, y, z) => { const dx = x - camera.position.x, dy = y - camera.position.y, dz = z - camera.position.z, r = Math.min(PIN_R, NEAR_R); return dx * dx + dy * dy + dz * dz <= r * r; };
   // the ground pins (Round 82): the aircraft badge's casing in a layer's colours with a glyph inside,
   // one billboard per instance, masked out of the bloom and depth-tested against the city
