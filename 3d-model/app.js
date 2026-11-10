@@ -25307,6 +25307,14 @@ if (uOlLamp > 0.001) {
   const COL_STAT = {};
   function colStat(key, c) { const a = COL_STAT[key] || (COL_STAT[key] = [0, 0, 0, 0]); if (c) { a[0] += c.r; a[1] += c.g; a[2] += c.b; } a[3]++; }
   let wideColK = 0;
+  // Round 226 (Camden at its measured heights): a record a heights-only repack lifts over the 45 m line leaves the
+  // reservoir's population, and every later record's slot draw reads the running count. Measured on the page without
+  // this: One Port Center on Camden's waterfront went from a default 13 m to its LiDAR roof at 54.2, wideColK from
+  // 111,992 to 111,991, and 3 of the 1,024 slots changed colour (about 530 of the far ring's 179,776 low walls and
+  // 145 of the towns'). A record named here by a scene point inside its footprint still counts, as a demolished
+  // house does, so the far ring's draw stays as it was (tests/test_wide_repack.py holds this list to the repack's)
+  const WIDE_COLK_KEEP = [[1290, 125]];
+  Object.defineProperty(COL_STAT, 'wideColK', { enumerable: true, get: () => wideColK });   // __dbg.colStats().wideColK: the count a repack must leave as it was
   function wideColSample(c, i) {   // a deterministic reservoir: every eligible wall has the same chance to stand for the tier
     wideColK++;
     if (WIDE_COLS.length < WIDE_COLS_N) { WIDE_COLS.push(c.clone()); return; }
@@ -27935,6 +27943,7 @@ if (uOlLamp > 0.001) {
       let photo = false;
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; photo = true; } }
       if (h <= 45 && t <= 6) { wideColSample(c, i); colStat('wide', c); colStat(photo ? 'widePhoto' : 'widePlain', c); }   // the tier's colours, for the far ring's draw (Round 57)
+      else if (t <= 6 && WIDE_COLK_KEEP.some((q) => Math.abs(q[0] - cx) < 60 && Math.abs(q[1] - cz) < 60 && pointInPoly(q[0], q[1], poly))) wideColK++;   // Round 226: lifted over 45 m by a measured height, still counted
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
       let spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
       // Round 195 (CMR): the Comcast Center's east wing sits 39 m from its spec's point, past its 35 m radius, and was drawn

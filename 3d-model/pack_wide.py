@@ -22,14 +22,25 @@ nPalette, bytesPerRecord), the palette as nPalette sRGB byte triples, then the r
 planar in wide.b64's building order (parts included): nBuildings palette index bytes (255
 for none), then, when bytesPerRecord is 2, nBuildings facade hint bytes (the bake's trim
 class in bits 0-1 and window class in bits 2-3, 0 for a building without a colour). A
-fourth header word of 0 is the old one-byte layout, indices only."""
-import argparse, json, math, os, struct, base64, sys
+fourth header word of 0 is the old one-byte layout, indices only.
+A heights-only repack (new LiDAR heights from lidar_join.py and nothing else) runs with
+--against <a copy of the wide.b64 it replaces>: the page seeds every record's look from its
+record number, so the pack is refused unless pack_common.repack_diff finds the same records
+in the same order with only height words (and the storey pitch they carry) changed, and
+wide_repack.json lists every changed record with both blobs' sha256 (tests/test_wide_repack.py
+holds the committed wide.b64 to it)."""
+import argparse, hashlib, json, math, os, struct, base64, sys
 from philly_frame import LON0, LAT0, KX, KZ
 
 ap = argparse.ArgumentParser(description='scene_wide.json -> wide.b64 (outer districts)')
 ap.add_argument('--allow-missing', action='store_true',
                 help='pack even when an optional input (scene_south.json, parts_wide.json, '
                      'wide_landmarks_research.json) is missing; what it carried is dropped')
+ap.add_argument('--against', metavar='OLD_WIDE_B64',
+                help='a repack that must move heights and nothing else (Round 226): compare the new pack with this '
+                     'earlier wide.b64 record by record, write the changed records to wide_repack.json, and write '
+                     'NOTHING (exit 1) if a record count, the order, a ring, a type, a roof word, a road, an area or '
+                     'wide_walls.b64 differs. Copy the committed wide.b64 aside first and pass the copy')
 ARGS = ap.parse_args()
 
 CORE = (-640, 770, -520, 850)        # x0, x1, z0, z1 of the detailed core extract
@@ -235,6 +246,7 @@ def roof_word(b, cx, cz):
     return v - 65536 if v > 32767 else v
 
 from pack_common import dedupe_stacked, inset_ring, nudge_coplanar   # Round 71: shared with pack_city.py and pack_outskirts.py
+from pack_common import repack_diff   # Round 226: the heights-only guard behind --against
 
 body = []
 recs = []                             # (cx, cz, area, h, minH, (record, wall byte, hint byte)) before the stacked-part dedupe
@@ -362,7 +374,7 @@ if SAT:
 print(f'roof forms attached: {n_form} of {nb} buildings', flush=True)
 buf = struct.pack('<4i', 0x5348545D, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
-open('wide.b64', 'w').write(b64)
+wb = None
 if _walls:
     pal = [tuple(int(hx[i:i + 2], 16) for i in (1, 3, 5)) for hx in _walls[0]]
     walls = [w if w < len(pal) else 255 for w in walls]
@@ -371,6 +383,27 @@ if _walls:
     bpr = 2 if _hinted else 0
     wb = struct.pack('<4i', 0x53485457, nb, len(pal), bpr) + bytes(v for c in pal for v in c) + bytes(walls) \
         + (bytes(hints) if _hinted else b'')
+if ARGS.against:
+    # Round 226: a heights-only repack. Nothing is written unless the new pack is the old one with height words
+    # changed (and the storey pitch they carry), record for record, and the wall colours come out byte for byte
+    _old = base64.b64decode(open(ARGS.against).read())
+    _changes, _problems = repack_diff(_old, buf)
+    if wb is not None and os.path.exists('wide_walls.b64') and base64.b64decode(open('wide_walls.b64').read()) != wb:
+        _problems.append('wide_walls.b64 would change (it rides wide.b64\'s record order and a heights-only repack leaves it as it is)')
+    if _problems:
+        print(f'ERROR: --against {ARGS.against}: this is not a heights-only repack; wide.b64, wide_walls.b64 and '
+              f'wide_repack.json NOT written. {len(_problems)} difference(s) beside the heights:', file=sys.stderr, flush=True)
+        for _p in _problems[:20]:
+            print('   ' + _p, file=sys.stderr, flush=True)
+        sys.exit(1)
+    with open('wide_repack.json', 'w') as _f:
+        _f.write('{"against":"%s","packed":"%s","cols":["record","cx","cz","old h word","new h word","old attr word","new attr word"],"changes":[\n'
+                 % (hashlib.sha256(_old).hexdigest(), hashlib.sha256(buf).hexdigest())
+                 + ',\n'.join(json.dumps(c, separators=(',', ':')) for c in _changes) + '\n]}\n')
+    print(f'--against: the same {nb} records in the same order; {len(_changes)} height word(s) changed, '
+          f'{sum(1 for c in _changes if c[5] != c[6])} with their storey pitch -> wide_repack.json', flush=True)
+open('wide.b64', 'w').write(b64)
+if wb is not None:
     open('wide_walls.b64', 'w').write(base64.b64encode(wb).decode('ascii'))
     print(f'wall colours: {sum(1 for w in walls if w < 255)} of {nb} buildings from Mapillary block faces'
           + (f', {sum(1 for h in hints if h)} with a facade hint byte' if _hinted else '')

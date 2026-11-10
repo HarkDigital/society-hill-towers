@@ -38,13 +38,20 @@ Rules:
     max(tag, measured) since it still sees real OSM tags
   - skip: t in (ship, stadium, arena), entries with minH (3D parts), custom towers
   - clamp 2.5..550 m
+  - east of the Delaware (Round 226): the City's footprints stop at the city line, so a scene
+    building the join above leaves unmeasured, standing outside the city line (city_limit.json)
+    and east of EAST_X, takes the citywide roof pass's own height where that pass measured
+    its OSM way (lidar_city_roofs.json: P90 above ground for a flat roof, the ridge for a
+    pitched one); see roof_pass_height. The talls' ratchet applies to it as to every other
+    measure. Nothing west of the river takes a height from this source, and every row it
+    gives is written to lidar_east_heights.json
 Frame: philly_frame.py (the scene's own projection). This script used to hardcode
 KX=85350, which put the city footprints up to ~1.1 m east of the far-ring ways
 they were overlapped with (a few % of coverage on narrow rowhouses); the committed
 lidar_city_heights.json and the patched scenes keep that until the next rerun.
 Run with the shapely venv python."""
 import json, math, os, sys
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 from shapely.strtree import STRtree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -60,12 +67,29 @@ SPIKE_AGREE = 0.25         # ... while approx_hgt agrees with that roof within 2
 SPIKE_COVER = 0.5          # the flat-roofed way covers at least half the footprint
 WORSHIP_T = 'worship'
 
-def flat_roof_ways():
-    """{way id: (scene-frame Polygon, P90 AGL m)} for every OSM building way the citywide LiDAR roof pass
-    (lidar_city_roofs.json, fetch_lidar_roofs.py) measured flat: P90 - P10 under 1 m over its cells, or a level
-    roof with bulkheads. Polygons from whichever OSM raws are on disk (the pass's own rings are UTM)."""
+# Round 226: Camden at its measured heights. The City's footprint heights end at the city line, so every building east
+# of the Delaware stood at process_osm's default for its kind: of the 1,195 buildings of scene_wide.json between
+# x 1,250 and 2,400 and z -1,400 and 3,600, 614 at exactly 10.5 m, 180 at 13 and 163 at 11, one flat shelf of boxes
+# behind the Battleship New Jersey. The 2022 flight's tiles reach about 750 m into New Jersey (scene x 2,010 on the
+# core's row) and the citywide roof pass (fetch_lidar_roofs.py) measured the OSM ways under them, forms and heights
+# both; the packers read lidar_city_roofs.json for the forms only and this script for the spike check only.
+# How the two sources compare, on the 7,353 wide-scene buildings west of the river that both measure: the pass reads a
+# median 1.5 m under the City's footprint (the City gives max_hgt, the pass a P90 or a P95 of the roof's own cells),
+# within 3 m on 71%, and over it by more than 5 m on 20 of them (0.27%). It under-reads, it does not spike.
+EAST_X = 1000.0            # a belt under the city line test: nothing west of this reads the roof pass, whatever the
+                           # line file says (Camden's bank lies between x 1,000 and 1,250: the battleship's berth is at
+                           # 996, the American Water building at 1,192; 38 of the wide scene's New Jersey buildings
+                           # stand west of 1,250, the water's edge the river walk looks straight at)
+ROOF_COVER = 0.5           # the building and its way cover at least half of each other: one building, one way
+
+def roof_ways():
+    """{way id: (scene-frame Polygon, top AGL m, form)} for the OSM building ways the citywide LiDAR roof pass
+    (lidar_city_roofs.json, fetch_lidar_roofs.py) measured: every flat one (form 0: P90 - P10 under 1 m over its
+    cells, or a level roof with bulkheads; top = P90) and, east of EAST_X only, the pitched ones (form 1 gable, 2 hip;
+    top = the ridge, P95), which nothing west of the river reads. Polygons from whichever OSM raws are on disk (the
+    pass's own rings are UTM)."""
     roofs = json.load(open('lidar_city_roofs.json')) if os.path.exists('lidar_city_roofs.json') else {}
-    flat = {int(k): v[2] for k, v in roofs.items() if v[0] == 0}
+    meas = {int(k): (v[2], v[0]) for k, v in roofs.items() if v[0] in (0, 1, 2)}
     out = {}
     for f in ('osm_wide_raw.json', 'osm_south_raw.json', 'osm_city_raw.json'):
         if not os.path.exists(f):
@@ -73,21 +97,60 @@ def flat_roof_ways():
         els = json.load(open(f))['elements']
         nodes = {e['id']: (e['lon'], e['lat']) for e in els if e.get('type') == 'node'}
         for e in els:
-            if e.get('type') != 'way' or e['id'] not in flat or e['id'] in out:
+            if e.get('type') != 'way' or e['id'] not in meas or e['id'] in out:
                 continue
             g = e.get('geometry')
             pts = ([((q['lon'] - LON0) * KX, (LAT0 - q['lat']) * KZ) for q in g] if g else
                    [((nodes[n][0] - LON0) * KX, (LAT0 - nodes[n][1]) * KZ) for n in e.get('nodes', []) if n in nodes])
             if len(pts) < 4:
                 continue
+            top, form = meas[e['id']]
+            if form != 0 and max(q[0] for q in pts) <= EAST_X:
+                continue
             try:
                 pg = Polygon(pts).buffer(0)
             except Exception:
                 continue
             if pg.area > 20:
-                out[e['id']] = (pg, flat[e['id']])
+                out[e['id']] = (pg, top, form)
         del els, nodes
     return out
+
+def flat_roof_ways(ways=None):
+    """{way id: (scene-frame Polygon, P90 AGL m)}: the flat-roofed ways of roof_ways(), the spike check's witnesses."""
+    ways = roof_ways() if ways is None else ways
+    return {wid: (pg, top) for wid, (pg, top, form) in ways.items() if form == 0}
+
+def city_line():
+    """Philadelphia's own line in the scene frame (city_limit.json's `city`, fetch_boundary.py). It runs down the
+    middle of the Delaware, so 'outside it and east of EAST_X' is New Jersey. Fatal without the file: a silent skip
+    would put every building east of the river back at its default."""
+    if not os.path.exists('city_limit.json'):
+        sys.exit('ERROR: city_limit.json missing - the roof pass heights east of the Delaware need the city line '
+                 '(fetch_boundary.py)')
+    pg = Polygon(json.load(open('city_limit.json'))['city'])
+    return pg if pg.is_valid else pg.buffer(0)
+
+def east_of_river(cx, cz, line):
+    """True for a point on the New Jersey side: east of EAST_X and outside the city line (north of about z -2,400
+    the river bends east and the same x is Fishtown and Kensington, which the City's footprints measure)."""
+    return cx > EAST_X and not line.contains(Point(cx, cz))
+
+def roof_pass_height(pg, east_tree, east_list):
+    """(top AGL m, way id, form) from the roof pass for a scene building's polygon, or None. The scene's buildings ARE
+    the OSM ways, so the rule is identity rather than a blend: the way that overlaps the building most, with the
+    overlap at least ROOF_COVER of BOTH (a kiosk inside a big way's outline, or a big building over a small way, is
+    not that way's measurement and keeps its default)."""
+    best = None
+    for j in east_tree.query(pg):
+        wid, wpg, top, form = east_list[j]
+        try:
+            ia = pg.intersection(wpg).area
+        except Exception:
+            continue
+        if ia >= ROOF_COVER * pg.area and ia >= ROOF_COVER * wpg.area and (best is None or ia > best[0]):
+            best = (ia, top, wid, form)
+    return None if best is None else (max(CLAMP_LO, min(CLAMP_HI, float(best[1]))), best[2], best[3])
 
 def spike_check(pg, h, a, flat_tree, flat_list):
     """True when this footprint's max_hgt is a CONFIRMED spike (Round 160). The Reading Terminal headhouse's City
@@ -107,9 +170,20 @@ def spike_check(pg, h, a, flat_tree, flat_list):
     return False
 
 print('loading flat LiDAR roofs...', flush=True)
-_flat = list(flat_roof_ways().values())
+_ways = roof_ways()
+_flat = list(flat_roof_ways(_ways).values())
 flat_tree = STRtree([w[0] for w in _flat])
 print(f'{len(_flat)} flat-roofed ways', flush=True)
+CITY_LINE = city_line()
+# the roof pass's ways on the New Jersey side, flat and pitched: the only ones roof_pass_height reads
+east_list = []
+for _wid, (_pg, _top, _form) in _ways.items():
+    _c = _pg.centroid
+    if east_of_river(_c.x, _c.y, CITY_LINE):
+        east_list.append((_wid, _pg, _top, _form))
+east_tree = STRtree([w[1] for w in east_list])
+print(f'{len(east_list)} roof-pass ways east of the Delaware', flush=True)
+del _ways
 
 print('loading city footprints...', flush=True)
 fpd = json.load(open('lidar_cache/phl_footprints_local.json'))['fps']
@@ -195,6 +269,7 @@ def measure(poly_pts, holes_pts=None, use_max=False):
 report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'confirmed_spikes': len(spiked), 'sets': {}}
 spike_log = []   # (set, name, cx, cz, what the join gave before Round 160, what it gives now)
 deltas = []  # (|dh|, set, name, cx, cz, old, new)
+east_rows = []   # Round 226: [set, building index, way id, form, old h, new h, cx, cz, name], every height the roof pass gave
 
 def snapshot_path(path):
     """lidar_cache/<scene>.pre_lidar.json: the scene's heights as they were before any LiDAR pass."""
@@ -218,7 +293,7 @@ def patch_scene(path, tag):
         sys.exit(f'ERROR: {snap_path} no longer lines up with {path} (building count or order differs): '
                  f'the scene was regenerated since the snapshot - delete the snapshot and rerun')
     st = {'total': 0, 'measured': 0, 'protected': 0, 'unmeasured': 0, 'skipped': 0}
-    for b, b0 in zip(cb, sb):
+    for bi, (b, b0) in enumerate(zip(cb, sb)):
         poly = b.get('poly')
         if not poly or len(poly) < 3 or b.get('t') in SKIP_T or b.get('minH'):
             st['skipped'] += 1
@@ -228,8 +303,34 @@ def patch_scene(path, tag):
         worship = b.get('t') == WORSHIP_T
         h, cov, touched = measure(poly, b.get('holes'), use_max=worship)
         if h is None:
-            st['unmeasured'] += 1
-            b['h'] = old
+            # Round 226: east of the Delaware the roof pass's own measurement, where it has one for this building's way
+            cx = sum(p[0] for p in poly) / len(poly)
+            cz = sum(p[1] for p in poly) / len(poly)
+            rp = None
+            if east_of_river(cx, cz, CITY_LINE):
+                try:
+                    pg = Polygon(poly, b.get('holes') or None)
+                    if not pg.is_valid:
+                        pg = pg.buffer(0)
+                    rp = None if pg.is_empty or pg.area < 2 else roof_pass_height(pg, east_tree, east_list)
+                except Exception:
+                    rp = None
+            if rp is None:
+                st['unmeasured'] += 1
+                b['h'] = old
+                continue
+            hr, wid, form = rp
+            # the same ratchet as below: a tall (over 30 m, tagged in practice) is raised by a measurement, never
+            # lowered (Camden Tower is tagged 37.2 m and the pass reads 28.4)
+            if old > 30 and hr < old:
+                st['roof_pass_protected'] = st.get('roof_pass_protected', 0) + 1
+                b['h'] = old
+                continue
+            st['roof_pass'] = st.get('roof_pass', 0) + 1
+            b['h'] = round(hr, 1)
+            east_rows.append([tag, bi, wid, form, old, b['h'], round(cx), round(cz), b.get('name')])
+            if abs(hr - old) > 0.05:
+                deltas.append((round(abs(hr - old), 1), tag, b.get('name'), round(cx), round(cz), old, round(hr, 1)))
             continue
         # Round 160: the snapshot is not pristine everywhere (it was frozen from a scene an earlier join had already
         # patched in place: the Reading Terminal link reads 125.1 there, though OSM tags it two storeys), so the
@@ -262,6 +363,15 @@ def patch_scene(path, tag):
 # --- wide + south scenes (patched in place; pack_wide.py reads them) ---
 patch_scene('scene_wide.json', 'wide')
 patch_scene('scene_south.json', 'south')
+# Round 226: the roof pass's heights east of the river, row by row (tests/test_wide_repack.py holds wide.b64 to them)
+with open('lidar_east_heights.json', 'w') as f:
+    f.write('{"rule":"outside the city line and east of x %g, unmeasured by the City footprints, the roof pass way covering '
+            'at least %g of the building and the building of it","cols":["set","building","way","form","old","new","cx","cz","name"],"rows":[\n'
+            % (EAST_X, ROOF_COVER) + ',\n'.join(json.dumps(r, separators=(',', ':')) for r in east_rows) + '\n]}\n')
+print(f'lidar_east_heights.json: {len(east_rows)} heights from the roof pass east of the Delaware', flush=True)
+report['east_roof_pass'] = {'ways': len(east_list), 'heights': len(east_rows),
+                            'changed': sum(1 for r in east_rows if abs(r[5] - r[4]) > 0.05),
+                            'over_20m': sum(1 for r in east_rows if r[5] > 20)}
 
 # --- core: measure only, lidar_core.py patches scene.json with LAZ refinement ---
 core = json.load(open('scene.json'))
