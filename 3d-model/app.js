@@ -45771,7 +45771,8 @@ float pinOccGate() {
   //   THE VIEW comes from the walker's heading against the line to the eye: the front inside 45 degrees of walking at
   // the eye, the back inside 45 of walking away, the side between, mirrored when the walker's way is toward the viewer's
   // left. No view snaps: across PPL.hand degrees either side of a line the two pictures hand over through a per-pixel
-  // dither (both cells ride every instance).
+  // dither (both cells ride every instance). The plan asked for about 12 degrees in all; at 12 a passer 7 m to the side
+  // stood half one picture and half the other for 0.8 s (the captures), so it is 6: a quick dissolve, not a ghost.
   //   THE STEP: the fill's phase is one gait cycle of two steps, so stride, pass, stride, pass. The second stride is the
   // other leg's: the front and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on
   // one side (p01's tote must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet
@@ -45794,7 +45795,7 @@ float pinOccGate() {
   const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\b/.test(location.search);
   const PEOPLE_SYM = { p02: 1, p03: 1 };   // nothing carried on one side: the second stride may be the first one mirrored
   const PPL = { made: false, card: null, shade: null, blob: null, out: null, iv: null, ivb: null, fade: null, figs: null, n: 0, atlas: null, loading: false, retryAt: 0, failed: 0,
-    hand: 6, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
+    hand: 3, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
     uTex: { value: null }, uPK: { value: new THREE.Vector4(0.03, 900, 256, 0.0) }, uPL: { value: new THREE.Vector4(0.42, 0.9, 0, 0) }, uPS: { value: new THREE.Vector4(0, 0.035, 0, 0) } };
   const PEOPLE_BAYER = 'float pBay(vec2 p) { vec2 cp = mod(floor(p), 4.0); float low = mod(mod(cp.x, 2.0) * 2.0 + mod(cp.y, 2.0) * 3.0, 4.0); float high = mod(floor(cp.x / 2.0) * 2.0 + floor(cp.y / 2.0) * 3.0, 4.0); return (low * 4.0 + high + 0.5) / 16.0; }';
   // every figure's cells as the shader reads them: view (front, back, side) by frame (stride, pass), each u0, v0 (the

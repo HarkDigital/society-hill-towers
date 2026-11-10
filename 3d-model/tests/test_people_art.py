@@ -2,8 +2,8 @@
 
 fetch_people_art.py makes one character sheet a figure (six pictures of one person: front, back and side, each at the
 contact and the passing moment of a step) and bake_people_art.py packs every figure into one atlas with a phone's half
-and a computer's sharp copy. Nothing in app.js reads the manifest yet; these checks hold the shape the renderer was told
-it would find:
+and a computer's sharp copy. The walkers' drawing reads the manifest under ?people=1 (tests/test_people_draw.py); these checks hold the shape it
+is told it will find:
 
 - people_art.json's shape, key for key, and one figure a record of the fetch's FIGURES, in its order;
 - every cell an inner rect of 128 by 256 inside the atlas with its 8 px gutter, no two cells' gutters overlapping, every
