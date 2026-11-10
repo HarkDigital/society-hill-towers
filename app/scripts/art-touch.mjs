@@ -20,6 +20,11 @@ export const KEEP_FULL = new Set([]);
 // 'art/<kind>/<name>.<hash>.<ext>': the kind, and the folder and name without the hash, which is what a twin shares
 const artKind = (p) => p.split('/')[1];
 const artStem = (p) => { const cut = p.lastIndexOf('/') + 1; return p.slice(0, cut) + p.slice(cut).split('.')[0]; };
+// Round 227 (the walking people's atlas): a record may also carry a sharp copy, `<name>-sharp` beside `<name>` and
+// `<name>-half`, twice the full size, for a computer to draw near figures from. It is asked for as
+// artSrc(rec.xSharp, rec.xHalf), so a phone takes the half in its place, and the app never carries it: not even for a
+// kind in KEEP_FULL, which brings back the full-size files and nothing larger.
+const SHARP = '-sharp';
 
 // Every art path a built page names, sorted: any quoted string that begins art/, which is build.py's own rule for the
 // manifests it inlines (art_paths), so the list is what THIS page can ask for and nothing else
@@ -30,10 +35,14 @@ export function artNamed(page) {
 }
 
 // The named files split into what the app carries and what it leaves out: a file is left out when its -half twin is named
-// too and its kind keeps no full-size files
+// too and its kind keeps no full-size files; a -sharp copy, whose twin is its record's <name>-half, whatever its kind keeps
 export function artTouch(named, keepFull = KEEP_FULL) {
   const stems = new Set(named.map(artStem));
   const carry = [], leave = [];
-  for (const p of named) (stems.has(artStem(p) + '-half') && !keepFull.has(artKind(p)) ? leave : carry).push(p);
+  for (const p of named) {
+    const stem = artStem(p), sharp = stem.endsWith(SHARP);
+    const half = stems.has((sharp ? stem.slice(0, -SHARP.length) : stem) + '-half');
+    (half && (sharp || !keepFull.has(artKind(p))) ? leave : carry).push(p);
+  }
   return { carry, leave };
 }
