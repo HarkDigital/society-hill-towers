@@ -45834,7 +45834,7 @@ float pinOccGate() {
       .replace('#include <beginnormal_vertex>', 'vec3 pLP, pNrm; pCard(pLP, pNrm);\n#include <beginnormal_vertex>')
       .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * pNrm;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = pLP;')
-      .replace('#include <fog_vertex>', '#include <fog_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');   // nobody: clipped whole
+      .replace('#include <project_vertex>', '#include <project_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');   // nobody: every corner at one point, so no fragment whatever the depth mode makes of z
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform sampler2D tPeople; uniform vec4 uPL; varying vec4 pUv; varying vec3 pK;\n' + PEOPLE_BAYER)
       .replace('#include <map_fragment>', '#include <map_fragment>\n' + [
@@ -45875,11 +45875,11 @@ float pinOccGate() {
           'vec4 mvPosition = viewMatrix * wpS;',
           'gl_Position = projectionMatrix * mvPosition;',
           'pSUv = vec4(aRS.xy + aRS.zw * vec2(position.x + 0.5, pYy), position.x + 0.5, pYy); pSF = aCarFade; vShXZ = wpS.xz;',
+          'if (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);',   // nobody: every corner at one point
         ].join('\n'))
         // a log depth buffer ignores a polygon offset: the flat shade is drawn a hair toward the eye (the vehicles' line, both depth modes)
         .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif' + (ZREV.on ? '\ngl_Position.z /= 0.9993;' : ''))
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif')
-        .replace('#include <fog_vertex>', '#include <fog_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nuniform float uShadowA, uShadeOut; uniform vec4 uCoreBox, uPS; uniform sampler2D tPeople; varying vec2 vShXZ; varying vec4 pSUv; varying float pSF;\n' + PEOPLE_BAYER)
         .replace('gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );', [
