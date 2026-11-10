@@ -7,6 +7,7 @@ line, the button and the bar's last step are set at the end of the first drawn f
 a page that gets no animation frame (a hidden tab, the Browser pane, the capture skill's render.mjs, which holds
 requestAnimationFrame and waits for this button) draws that frame itself from a timer ENTER_WAIT ms after the build and
 then lights the button (enterArm).
+The timer is armed first in the block after build(), so a throw later in that block cannot leave the button dark.
 
 What must hold:
 - build() no longer touches the button, its text, the Ready line or the bar's 100; the ready beacon stays in build();
@@ -72,7 +73,7 @@ class Lighting(unittest.TestCase):
     def test_an_animation_frame_lights_it_and_the_timer_then_does_nothing(self):
         r = harness(r'''
 out.before = state();
-enterArm();                       // the block after build(): beside requestAnimationFrame(frame)
+enterArm();                       // the block after build(): its first act, ahead of requestAnimationFrame(frame)
 out.armed = { timers: timers.length, ms: timers[0].ms, id: PERF.enterTimer, lit: ENTER.lit };
 frame(16.7);                      // the first animation frame runs first (the timer waits behind its task)
 out.afterFrame = state();
@@ -147,10 +148,18 @@ class Wiring(unittest.TestCase):
         self.assertTrue(f.rstrip().endswith('}'))
         self.assertEqual(f.rstrip().splitlines()[-2].split('   //')[0], '    if (!ENTER.lit) enterLight();', 'the last thing the frame does')
 
-    def test_the_fallback_is_armed_beside_the_first_animation_frame(self):
+    def test_the_fallback_is_armed_before_anything_in_the_block_can_throw(self):
+        # the review: armed last, a throw earlier in the block (applyHashView on a copied link is the one unguarded call
+        # outside ?dev) left a button that never lit and a veil stuck on the last step's line, where build() itself used
+        # to light it. Armed first, the timer still cannot run before the block has ended (a timer is its own task)
         tail = SRC[SRC.index('  build().then(() => {'):]
         self.assertEqual(SRC.count('enterArm();'), 1)
-        self.assertIn('    requestAnimationFrame(frame);\n    enterArm();', tail)
+        first = [l for l in tail.splitlines()[1:] if l.strip() and not l.lstrip().startswith('//')][0]
+        self.assertEqual(first, '    enterArm();', 'the first statement of the block after build()')
+        for later in ("    if (/[?&]dev\\b/.test(location.search)) {", '    try { vdepthInit(); }', '    if (hashView.p) applyHashView(hashView.p);',
+                      '    prefsReady = true;', '    requestAnimationFrame(frame);'):
+            self.assertLess(tail.index('    enterArm();'), tail.index(later), later)
+        self.assertEqual(tail.count('requestAnimationFrame(frame);'), 1)   # the loop still starts here, once
         arm = cut('  function enterArm() {', '\n  }\n')
         self.assertIn('      if (ENTER.lit) return;', arm)
         self.assertIn('      try { frame(performance.now(), true); } catch (e) {', arm)

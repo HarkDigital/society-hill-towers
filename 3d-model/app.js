@@ -50092,6 +50092,16 @@ float pinOccGate() {
   // linked that was released before the first frame ended, which is what a double compile looks like.
   // Nothing in any shader changes: every program's source is what the first frame compiled before (the proof: the set
   // of source hashes of everything linked, old page against new, on the computer and the phone path).
+  // What this does NOT do (the review, MEASURED headless): it ends the second compiles, not the first frame's first
+  // ones. Whatever the steps after the last flush build is still compiled by the first frame, once, with the weather. On
+  // a computer and at tiers 0 and 1 that is no weather-hooked program at all (the first frame links 27 and 18 programs,
+  // the sky and water bakes, the post chain, the depth materials and a pin, none of them these; a log-depth phone adds
+  // the facade's vertex-depth twin, which vdepthInit makes after the build by design). Tier 2 has five flushes,
+  // the last well before its last steps, and its first frame still links ten: the lane roads, two lot and two ground
+  // variants, the deck walls, the storefront panels and awnings, the tree cards and the bare patch (the old page linked
+  // 26 there, so 16 go, not all). At 0.24 s a cold program that is about 2.4 s still in a tier 2 phone's first frame
+  // (INFERRED), now under an unlit button (enterLight). Taking them wants a draw before Ready, which is the plan's
+  // upload-only flush and warm frame (COMPILE-4), not this round. PERF.prog.f1 less PERF.flush.p1 is the figure to watch.
   const WX_OWN = new WeakMap();   // material -> { own: the hook under the weather's (null: it had none), laid: the hook laid }
   const wxOwnHook = (m) => { const e = WX_OWN.get(m); return e && e.own ? e.own : m.onBeforeCompile; };
   PERF.wxHook = { n: 0, ms: 0, mats: 0, over: 0 };   // the calls, their summed ms, the materials hooked, the hooks found laid over the weather's
@@ -51596,8 +51606,8 @@ float pinOccGate() {
   // line with its pulse. The ready beacon and PERF.ready stay where they were, at build()'s end.
   // A page that draws no frame on its own must still open: a hidden tab gets no animation frame (a visitor who waits a
   // long load out in another tab), nor does the Browser pane, and the capture skill's render.mjs holds
-  // requestAnimationFrame and waits for this button. So the block after build() arms a timer beside its
-  // requestAnimationFrame (enterArm): if no frame has ended ENTER_WAIT ms on, it draws the first frame itself through
+  // requestAnimationFrame and waits for this button. So the block after build() arms a timer as its first act, ahead
+  // of its requestAnimationFrame (enterArm): if no frame has ended ENTER_WAIT ms on, it draws the first frame itself through
   // the once path, from its own task, and then lights the button, so a hidden tab's visitor comes back to a button that
   // answers and not to one that freezes on the tap. A visible page's first animation frame comes within a refresh and
   // runs before the timer can (a timer waits behind the frame's task however long that is), so there the timer finds
@@ -52678,7 +52688,7 @@ float pinOccGate() {
     // districts' streets, the lots and yards, the overpass decks, the towns' roads and areas) was drawn unculled in this
     // frame, behind the veil, as the merged meshes they replace were: uploaded and freed now, and culled from here on
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
-    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: the wx programs no longer compile in it, wxHookAll)
+    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: no wx program compiles in it a second time, wxHookAll; tier 2's ten first compiles still do, see there)
     if (PERF.prog.f1 < 0) progLost();   // Round 226: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
     if (!ENTER.lit) enterLight();   // Round 226: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
   }
@@ -52716,6 +52726,11 @@ float pinOccGate() {
   // ms where there was one (cl: CLOUD3D.ms, '' on a phone or after a refused bake)
   beacon('boot', { ms: Math.round(performance.now() - PERF.t0), cl: (() => { try { return typeof CLOUD3D.ms === 'number' ? CLOUD3D.ms : ''; } catch (e) { return ''; } })() });
   build().then(() => {
+    // Round 226: the fallback that lights Enter is armed before anything else here (enterLight's notes). Its timer cannot
+    // run until this block has ended, so arming it first costs nothing, and a throw anywhere below (applyHashView on a
+    // copied link is the one unguarded call outside ?dev: the review) still leaves a button that lights, as build()'s own
+    // lighting did before this round, in place of a veil stuck on the last step's line
+    enterArm();
     // Round 226: the weather's hooks are no longer laid here. This block wrapped the facade, the flats and every plain lit
     // material after Ready and disposed each one, so everything the flushes had compiled behind the veil compiled a second
     // time in the first frame, with the button already lit (wxHookAll, beside the weather's patches, lays them before each
@@ -52790,8 +52805,7 @@ float pinOccGate() {
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
-    requestAnimationFrame(frame);
-    enterArm();   // Round 226: Enter lights at that frame's end; a page that gets no animation frame draws it from a timer (enterLight)
+    requestAnimationFrame(frame);   // Round 226: Enter lights at this frame's end (enterLight); enterArm, at this block's head, is the page's way in when no animation frame comes
     if (window.__dbg && window.__dbg.facade) { const f0 = window.__dbg.facade; window.__dbg.facade = () => Object.assign(f0(), { pitched: PITCH_N }); }   // the realism pass: the packed tiers' pitched roofs beside the facade's state
   });
 })();
