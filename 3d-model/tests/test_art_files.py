@@ -59,6 +59,7 @@ MANIFESTS += ('moshulu_art.json',)   # the Moshulu's hull plating and teak deck 
 MANIFESTS += ('olympia_art.json',)   # the cruiser Olympia's plating, superstructure, deck and buff (Round 215)
 MANIFESTS += ('blade_art.json',)   # the blade signs' six blanks (the realism round two, R9)
 MANIFESTS += ('bridge_art.json',)   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage (Round 195)
+MANIFESTS += ('people_art.json',)   # the walking people's atlas, three test figures (Round 227)
 
 
 class Files(unittest.TestCase):
@@ -75,7 +76,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
@@ -104,6 +105,8 @@ class Files(unittest.TestCase):
             if p.startswith('art/glass/rooms.'):   # Round 192's review: the glass's room pictures are a computer's (a phone never draws them)
                 continue
             kind, name = p.split('/')[1], p.split('/')[2].split('.')[0]
+            if name.endswith('-sharp'):   # Round 227: a sharp copy is a computer's; a phone takes its record's half
+                name = name[:-6]
             self.assertTrue(any(q.startswith('art/%s/%s-half.' % (kind, name)) for q in named), p)
 
 
