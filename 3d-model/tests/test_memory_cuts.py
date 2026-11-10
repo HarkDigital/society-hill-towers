@@ -15,7 +15,9 @@ what a phone never reads:
 - a phone's pole inventory is typed arrays (since Round 218 every tier keeps it, for its pole meshes);
 - the ground registry's normals go when the last conformDrape is done;
 - the El's sleepers are gathered without a 28,344-argument spread and its ties' matrices go at upload;
-- every material the post-build weather pass re-hooks is disposed, so r149 releases the program it had compiled.
+- (until Round 226: every material the post-build weather pass re-hooked was disposed, so r149 released the program it
+  had compiled. The weather's hooks are now laid before the first compile, wxHookAll, so no program is compiled without
+  them and none is left to release: tests/test_wx_hook.py. What r149's dispose releases is still pinned below.)
 
 The lamp grid, the SDF band loop, the texture helper and the pin tap test are cut from app.js and run under Node."""
 import json
@@ -454,14 +456,24 @@ class FreedArrays(unittest.TestCase):
 
 
 class ProgramRelease(unittest.TestCase):
-    def test_rehooked_materials_are_disposed(self):
+    def test_no_material_is_rehooked_after_it_compiled(self):
+        # Round 158 disposed every material the block after build() re-hooked, so the variant compiled behind the veil
+        # was released when the first frame compiled the weather's. Round 226 moved the hooks ahead of the first compile
+        # (wxHookAll: before every flush's render, and once as build() ends), so there is no second variant to release:
+        # the block hooks nothing and disposes nothing, and the hooking itself never disposes
         src = (ROOT / 'app.js').read_text()
         s = cut(src, '  build().then(() => {', "    if (/[?&]dev\\b/.test(location.search)) {")
-        self.assertLess(s.index("cityMat.customProgramCacheKey = () => 'fabric|wx';"), s.index('cityMat.dispose();'))
-        self.assertLess(s.index("coreMat.customProgramCacheKey = () => 'fabric-core|wx';"), s.index('coreMat.dispose();'))
-        self.assertEqual(s.count('m.dispose();'), 2)             # the wrapped wxSurf flats and the hookless standard materials
-        self.assertLess(s.index("m.customProgramCacheKey = () => 'wx|' + prev.toString();"), s.index('m.dispose();'))
-        self.assertLess(s.index('m.onBeforeCompile = wxSurfacePatch;'), s.rindex('m.dispose();'))
+        for gone in ('onBeforeCompile', 'customProgramCacheKey', '.dispose()'):
+            self.assertNotIn(gone, s, gone)
+        hook = cut(src, '  function wxHookAll(last) {', '\n  }\n')
+        self.assertIn("facade(cityMat, 'fabric|wx');\n    facade(coreMat, 'fabric-core|wx');", hook)
+        self.assertIn("m.customProgramCacheKey = () => 'wx|' + prev.toString();", hook)
+        self.assertIn('m.onBeforeCompile = wxSurfacePatch;', hook)
+        self.assertNotIn('dispose', hook)
+        flush = cut(src, '  const flushUploads = (all) => {', '\n  };')
+        self.assertLess(flush.index('wxHookAll();'), flush.index('renderer.render(scene, camera)'))   # hooked before the render that compiles it
+        b = cut(src, '  async function build() {', '\n  }\n')
+        self.assertLess(b.index('for (const s of buildSteps)'), b.index('wxHookAll(true);'))            # and what the last steps made, before the first frame
 
     def test_r149_dispose_releases_programs_only(self):
         three = (ROOT / 'three.min.js').read_text()

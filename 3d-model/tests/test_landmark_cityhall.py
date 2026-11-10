@@ -114,7 +114,8 @@ class Wiring(unittest.TestCase):
 
     def test_the_old_block_stands_for_real_0(self):
         blk = cut(SRC, '      cityHall: {', '      // --- Philadelphia Museum of Art')
-        for line in ('        const hallMat=cityMat.clone(),hallFacade=cityMat.onBeforeCompile;', '        if (VDEPTH_WANT) vdepthTwin(hallMat);',
+        # (Round 226: the facade's hook is read through wxOwnHook, since the weather's is laid over it by the first flush now)
+        for line in ('        const hallMat=cityMat.clone(),hallFacade=wxOwnHook(cityMat);', '        if (VDEPTH_WANT) vdepthTwin(hallMat);',
                      "        hallMat.customProgramCacheKey=()=> 'city-hall-soft-flood';",
                      '        appendBuilding(hallChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);'):
             self.assertIn(line, blk)

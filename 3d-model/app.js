@@ -14246,7 +14246,7 @@ vec2 wRing(vec2 rc, float tt) {
   // and ?vdepth=<metres> sets the floor on any device (the A/B hatch); __dbg.vdepth() reports it, __dbg.vdepth(m, k) sets
   // it, 0 off.
   // A twin shares everything with its original: the hook is the original's own, called at compile time (so the weather
-  // chained on after the build is in it), every uniform object a hook sets is the same object, the program key is the
+  // laid over it is in it: wxHookAll, before the first flush since Round 226), every uniform object a hook sets is the same object, the program key is the
   // original's plus '|vdepth', and the material properties the frames write (the curtain wall's night emissive) are
   // copied across every frame. Each twin is made right after its original (vdepthTwin at cityMat, coreMat, City Hall's and
   // the curtain wall's creation): three orders the opaque draws by material id, so the far facades keep their place among
@@ -15247,7 +15247,10 @@ vec2 wRing(vec2 rc, float tt) {
     if (kind < 0) return;
     const kU = { value: kind };
     // a material with a hook of its own (a rebuild's lamp wash) keeps it, ahead of this one, under its own key; the weather
-    // passes it by as before (its re-hook keys a wrapped hook by the wrapper's source, which would merge different hooks)
+    // passes it by as before (its re-hook keys a wrapped hook by the wrapper's source, which would merge different hooks).
+    // Round 226: the weather's hooks are laid before each flush now (wxHookAll), so this must run before the material's first
+    // flush, as it does (a rebuild's meshes are detailed before they join the scene): a plain material the weather had
+    // already hooked would read here as one with a hook of its own and lose its place in the weather's wrap
     const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
     const ownKey = own ? m.customProgramCacheKey() : null;
     m.onBeforeCompile = (sh, r) => {
@@ -27147,12 +27150,14 @@ if (uOlLamp > 0.001) {
     const F = PERF.flush, tf = performance.now();   // Round 220: this flush's count, ms and programs (fl, flms and flp on the ready beacon)
     if (F.p0 < 0) F.p0 = renderer.info.programs.length;
     packResident(groupCity);   // everything this render uploads goes up packed (see packResident)
+    wxHookAll();   // Round 226: the weather's hooks on whatever this render compiles first, so the first frame compiles none of it again
     // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
     // into the float target so every program compiles once, in the variant the frames use
     if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
     F.n++; F.ms += performance.now() - tf; F.p1 = renderer.info.programs.length;
+    progNote();   // Round 226, ?dev: what this flush linked, for PERF.prog.lost
   };
   // Round 220 (the measurement round): the flushes behind the veil, n renders and their summed ms, with the programs before the
   // first and after the last (p0 and p1: what the flushes themselves compiled; -1 until one has run), and PERF.staged, what
@@ -29280,7 +29285,7 @@ if (uOlLamp > 0.001) {
           pennAt(new THREE.CylinderGeometry(0.42, 0.36, 0.5, 8), -pex * 1.15 + nex * 0.3, y0 + 7.0, -pez * 1.15 + nez * 0.3, cBronzeD);   // the cuff
           pennAt(new THREE.BoxGeometry(0.9, 1.1, 0.5).rotateY(Math.atan2(-nez, nex)), -pex * 1.1 + nex * 0.75, y0 + 6.6, -pez * 1.1 + nez * 0.75, cBronze);   // the charter scroll
         }
-        const hallMat=cityMat.clone(),hallFacade=cityMat.onBeforeCompile;
+        const hallMat=cityMat.clone(),hallFacade=wxOwnHook(cityMat);   // Round 226: the facade's own hook, under the weather's the first flush has laid by now (as it read before the hooks moved)
         if (VDEPTH_WANT) vdepthTwin(hallMat);   // Round 168: beside its original in the draw order
         hallMat.onBeforeCompile=(sh,r)=>{
           hallFacade(sh,r);
@@ -49788,8 +49793,8 @@ float pinOccGate() {
     carMapPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // the realism pass: the headlights' pools on the paved surfaces (CARMAP)
     vegBudget(shader, forced ? 'ground' : paved ? 'paved' : 'surface');   // last: within the GPU's texture units, whatever the passes added
   }
-  // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
-  // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)
+  // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the weather's
+  // wrap (wxHookAll, before the flush that first draws it since Round 226, keys the wrapped program, gotcha 15)
   const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.userData.wxSurf = true; m.onBeforeCompile = surfTexPatch; return m; };
   // the realism pass: the sidewalks' material, surfMat with the walk classifier (concrete slabs, or herringbone where brick)
   const walkMat = (o) => { const m = surfMat(o); m.onBeforeCompile = (sh, r) => surfTexPatch(sh, 'walk'); m.customProgramCacheKey = () => 'walks'; return m; };
@@ -50031,6 +50036,87 @@ float pinOccGate() {
     const ig = fs.indexOf('float isGreen = '), wg = fs.indexOf('  wxGreen = ' + WX_GREEN_COL + ';');
     if (ig !== -1 && wg !== -1 && ig < wg) fs = fs.replace('  wxGreen = ' + WX_GREEN_COL + ';', '  wxGreen = isGreen;');
     shader.fragmentShader = fs;
+  }
+  // ---- Round 226 (Stage 1 of the Nov 10 plan): the weather's hooks, laid before the first compile. Until now they were
+  // laid in the block after build(): by then every material had compiled once without them in a flush (flushUploads draws
+  // the whole scene behind the veil), so the block re-keyed and disposed the facade, the ground and street flats and every
+  // plain lit material, and the first frame compiled all of them again with the weather, after Ready, with the button lit
+  // and the page unable to answer a tap. MEASURED on cold devices: that first frame froze 8.5 to 9.1 s on Apple devices
+  // and 29 s on a Windows PC, and at 0.24 to 0.41 s a cold program the 10 to 25 programs compiled twice are 2.4 to 10 s
+  // of it (INFERRED). wxHookAll lays the same wrappers under the same keys, and is idempotent: it runs before every
+  // flush's render (flushUploads) and once more as build() ends, for what the steps after the last flush made, so a
+  // material is wrapped after its creation-time hook and before its first compile, and each program compiles once, in
+  // the variant the frames use. What it does, as the block did:
+  //   the facade (cityMat, coreMat): the facade shader first, then the weather, keyed 'fabric|wx' and 'fabric-core|wx';
+  //   a flat that carries userData.wxSurf (surfMat, groundSurfMat and any hook built on them): WRAPPED, so the shader
+  //     runs the material's own patch first and the snow lands over it (the later replace lands earlier in the shader),
+  //     keyed on the wrapped hook (gotcha 15), with the gutters after every hook (wxSurfaceLate);
+  //   every other MeshStandardMaterial in the scene with no hook of its own and no flat shading (a flat-shaded program
+  //     declares no vNormal, which the weather reads): the bare patch.
+  // Materials with their own onBeforeCompile (water, vehicles, glass, street text, poles) are left alone, as is anything
+  // made after the build (planes, ships, live vehicles). A hooked material is remembered in a WeakMap, never in userData
+  // (clone copies userData and drops the hook, so a clone would read as hooked and never be), with the hook it had
+  // before: a hook read off a wrapped material carries the weather, so whatever builds a material on another's hook
+  // after the first flush reads it through wxOwnHook (City Hall's clone of the facade does, or its program would take
+  // the weather's lines twice). The rule for a later round: lay a material's own hook where the material is made, before
+  // the flush that first draws it. A hook laid over the weather's after that (landmarkDetail would be one, if a rebuild
+  // ever reused a material already in the scene: it runs before its meshes join the scene, so today it never is) is
+  // counted in PERF.wxHook.over and warned of under ?dev, and under ?dev PERF.prog.lost lists every program a flush
+  // linked that was released before the first frame ended, which is what a double compile looks like.
+  // Nothing in any shader changes: every program's source is what the first frame compiled before (the proof: the set
+  // of source hashes of everything linked, old page against new, on the computer and the phone path).
+  const WX_OWN = new WeakMap();   // material -> { own: the hook under the weather's (null: it had none), laid: the hook laid }
+  const wxOwnHook = (m) => { const e = WX_OWN.get(m); return e && e.own ? e.own : m.onBeforeCompile; };
+  PERF.wxHook = { n: 0, ms: 0, mats: 0, over: 0 };   // the calls, their summed ms, the materials hooked, the hooks found laid over the weather's
+  PERF.prog = { f1: -1, lost: [] };                  // the programs after the first frame; under ?dev, the ones a flush linked and the first frame no longer has
+  const PROG_SEEN = /[?&]dev\b/.test(location.search) ? new Map() : null;
+  function progNote() {   // ?dev: every program there is now, by id (r149 never reuses one), with the end of its key
+    if (PROG_SEEN) for (const p of renderer.info.programs) if (!PROG_SEEN.has(p.id)) PROG_SEEN.set(p.id, p.name + ' ' + String(p.cacheKey).slice(-56).replace(/\s+/g, ' '));
+  }
+  function progLost() {   // at the first frame's end
+    PERF.prog.f1 = renderer.info.programs.length;
+    if (!PROG_SEEN) return;
+    const live = new Set(renderer.info.programs.map((p) => p.id));
+    for (const [id, name] of PROG_SEEN) if (!live.has(id)) PERF.prog.lost.push(name);
+    PROG_SEEN.clear();
+    if (PERF.prog.lost.length) console.warn('programs linked behind the veil and released before Enter (a double compile): ' + PERF.prog.lost.join('; '));
+  }
+  function wxHookAll(last) {
+    const t0 = performance.now(), H = PERF.wxHook;
+    const facade = (m, key) => {
+      if (WX_OWN.has(m)) return;
+      const prev = m.onBeforeCompile;
+      m.onBeforeCompile = (sh, r) => { prev(sh, r); wxSurfacePatch(sh); };
+      m.customProgramCacheKey = () => key;
+      WX_OWN.set(m, { own: prev, laid: m.onBeforeCompile }); H.mats++;
+    };
+    facade(cityMat, 'fabric|wx');
+    facade(coreMat, 'fabric-core|wx');
+    const over = last ? new Set() : null;
+    scene.traverse((o) => {
+      const ms = o.material;
+      for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) {
+        if (!m.isMeshStandardMaterial) continue;
+        const had = WX_OWN.get(m);
+        if (had) { if (over && m.onBeforeCompile !== had.laid) over.add(m); continue; }
+        if (m.userData.wxSurf) {
+          const prev = m.onBeforeCompile;
+          m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); wxSurfaceLate(sh); };
+          m.customProgramCacheKey = () => 'wx|' + prev.toString();
+          WX_OWN.set(m, { own: prev, laid: m.onBeforeCompile }); H.mats++;
+          continue;
+        }
+        if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;
+        if (m.flatShading) continue;
+        m.onBeforeCompile = wxSurfacePatch;
+        WX_OWN.set(m, { own: null, laid: wxSurfacePatch }); H.mats++;
+      }
+    });
+    if (over && over.size) {
+      H.over = over.size;
+      if (PROG_SEEN) console.warn('wxHookAll: ' + over.size + ' material(s) took a hook over the weather\'s after their first flush: ' + [...over].slice(0, 8).map((m) => m.name || m.type).join(', '));
+    }
+    H.n++; H.ms += performance.now() - t0;
   }
   // decorrelated per-particle gate so density scales without bunching to one side of the box
   const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
@@ -51453,6 +51539,7 @@ float pinOccGate() {
       if (isTouch || BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1], ...PERF.stepExtra(s.msg) });   // Round 220: the step's phases ride its beacon
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
+    wxHookAll(true);   // Round 226: and hooked for the weather before it (the last call: it also counts any hook laid over the weather's)
     PERF.ready = Math.round(performance.now() - PERF.t0);
     bootMark('ready');
     // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived.
@@ -52527,7 +52614,8 @@ float pinOccGate() {
     // districts' streets, the lots and yards, the overpass decks, the towns' roads and areas) was drawn unculled in this
     // frame, behind the veil, as the merged meshes they replace were: uploaded and freed now, and culled from here on
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
-    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body (the wx programs compile in it), for the enter beacon
+    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: the wx programs no longer compile in it, wxHookAll)
+    if (PERF.prog.f1 < 0) progLost();   // Round 226: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
   }
 
   setHint();
@@ -52563,52 +52651,10 @@ float pinOccGate() {
   // ms where there was one (cl: CLOUD3D.ms, '' on a phone or after a refused bake)
   beacon('boot', { ms: Math.round(performance.now() - PERF.t0), cl: (() => { try { return typeof CLOUD3D.ms === 'number' ? CLOUD3D.ms : ''; } catch (e) { return ''; } })() });
   build().then(() => {
-    // weather-surface pass. The materials already compiled during build (flushUploads renders
-    // the scene behind the veil); the hooks assigned here land through the first frame's
-    // refreshEnv (lastEnvEl starts at 999), which swaps scene.environment and makes r149
-    // refetch every program. Chain cityMat (facade shader first, then the weather); WRAP the
-    // flats that carry `userData.wxSurf` (surfMat, groundSurfMat and any hook built on them),
-    // so the shader runs their own patch first and the snow lands over it (the later replace
-    // lands earlier in the shader), keyed on the wrapped hook (gotcha 15); then every hookless
-    // standard material in the built scene. Other materials with their own onBeforeCompile
-    // (water, vehicles, glass, street text, poles) are left alone, as is anything created
-    // later (planes, ships, live vehicles).
-    // Round 158 (the phones' memory): every material re-hooked here is disposed at once. r149 keeps each program a
-    // material has compiled in that material's own programs map and releases them only on its 'dispose' event, so the
-    // variant compiled behind the veil stayed resident beside the wx one the first frame compiles (its source strings in
-    // the page, ANGLE's translation and the Metal library in the GPU process). The event releases the material's programs
-    // (deleted once no other material holds them) and forgets its renderer properties; its textures and every geometry are
-    // untouched, and the next render finds no programs map and compiles the new key, as the first frame did anyway. A
-    // material never compiled has no listener, so its dispose does nothing
-    {
-      const prevCity = cityMat.onBeforeCompile;
-      cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
-      cityMat.customProgramCacheKey = () => 'fabric|wx';
-      cityMat.dispose();
-      const prevCore = coreMat.onBeforeCompile;
-      coreMat.onBeforeCompile = (sh, r) => { prevCore(sh, r); wxSurfacePatch(sh); };
-      coreMat.customProgramCacheKey = () => 'fabric-core|wx';
-      coreMat.dispose();
-      const seen = new Set([cityMat, coreMat]);
-      scene.traverse((o) => {
-        const ms = o.material;
-        for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) {
-          if (!m.isMeshStandardMaterial || seen.has(m)) continue;
-          seen.add(m);
-          if (m.userData.wxSurf) {
-            const prev = m.onBeforeCompile;
-            m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); wxSurfaceLate(sh); };
-            m.customProgramCacheKey = () => 'wx|' + prev.toString();
-            m.dispose();
-            continue;
-          }
-          if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;
-          if (m.flatShading) continue;
-          m.onBeforeCompile = wxSurfacePatch;
-          m.dispose();
-        }
-      });
-    }
+    // Round 226: the weather's hooks are no longer laid here. This block wrapped the facade, the flats and every plain lit
+    // material after Ready and disposed each one, so everything the flushes had compiled behind the veil compiled a second
+    // time in the first frame, with the button already lit (wxHookAll, beside the weather's patches, lays them before each
+    // flush's render and once as build() ends; nothing is disposed, since nothing was compiled without them)
     if (/[?&]dev\b/.test(location.search)) {
       devHud = document.createElement('div');
       devHud.id = 'devhud';
@@ -52666,7 +52712,7 @@ float pinOccGate() {
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), bolts: (on) => { if (on !== undefined) BOLTS_OFF.on = !on; return !BOLTS_OFF.on; }, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
-    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
+    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's hooks (Round 226: build()'s last wxHookAll), so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f, ZPROBE.k], crumb: ZPROBE.crumb, android: ZPROBE.android, fail: ZREV.fail || '', real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
       logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus, tested: ZREV.tested || 0,
