@@ -14,7 +14,12 @@ phone and behind ?gpumem=1 on a computer, installed on both context prototypes b
 - the peak and the loading message under it are kept; the sizes live in WeakMaps only;
 - the install sits before the reversed-Z probe's throwaway context, the first getContext in the file;
 - bootCtx's crumb carries gb, gpuMemField gives the beacon fields and PERF.gpuMem the probe, and the phone's reversed-Z
-  target records its own bytes for gbm."""
+  target records its own bytes for gbm.
+
+Round 226 (measurement round two): the accounting is on for a computer too (?gpumem=0 turns it off), the sum rides the
+beacons apart as gbs (buffers, textures, renderbuffers), and the textures a framebuffer has attached are summed on their
+own (GPUMEM.att(), gbs's fourth number): the render targets' colour and depth textures are textures to the hook, and the
+art is the textures without them."""
 import json
 from pathlib import Path
 import shutil
@@ -225,7 +230,8 @@ class Wiring(unittest.TestCase):
 
     def test_installed_before_the_first_context(self):
         s = self.s
-        self.assertIn("const GPUMEM = { on: isTouch || /[?&]gpumem=1\\b/.test(location.search), buf: 0, tex: 0, rb: 0, peak: 0, peakAt: '', zrev: 0 };", s)
+        # Round 226: on for every device (a computer had never reported its bytes), ?gpumem=0 the way out, and att the attached textures' sum
+        self.assertIn("const GPUMEM = { on: !/[?&]gpumem=0\\b/.test(location.search), buf: 0, tex: 0, rb: 0, peak: 0, peakAt: '', zrev: 0, att: () => 0 };", s)
         install = 'if (GPUMEM.on) gpuMemInstall(GPUMEM, [window.WebGLRenderingContext, window.WebGL2RenderingContext], gpuMemWhere);'
         self.assertIn(install, s)
         i = s.index(install)
@@ -259,19 +265,64 @@ class Wiring(unittest.TestCase):
         f = cut_function(self.s, 'gpuMemField')
         js = f + r'''
 const early = gpuMemField();   // before GPUMEM's line has run: the TDZ, and the error beacon can fire then
-const GPUMEM = { on: true, buf: 3 * 1048576, tex: 5 * 1048576, rb: 7 * 1048576, peak: 20 * 1048576, peakAt: 'Raising the far ring', zrev: 0 };
+const GPUMEM = { on: true, buf: 3 * 1048576, tex: 5 * 1048576, rb: 7 * 1048576, peak: 20 * 1048576, peakAt: 'Raising the far ring', zrev: 0, att: () => 2 * 1048576 };
 const a = gpuMemField();
 GPUMEM.zrev = 1170 * 2532 * 4 * 12;
 const b = gpuMemField();
+delete GPUMEM.att;   // a state made before the attachments were kept still reports
+const d = gpuMemField();
 GPUMEM.on = false;
 const c = gpuMemField();
-console.log(JSON.stringify({ early, a, b, c }));
+console.log(JSON.stringify({ early, a, b, c, d }));
 '''
         out = run_node(js)
         self.assertEqual(out['early'], {})
-        self.assertEqual(out['a'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': ''})
-        self.assertEqual(out['b'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': 136})
+        # Round 226: gbs, the sum apart (buffers, textures, renderbuffers, the attached part of the textures), whole MB joined by dots
+        self.assertEqual(out['a'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': '', 'gbs': '3.5.7.2'})
+        self.assertEqual(out['b'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': 136, 'gbs': '3.5.7.2'})
+        self.assertEqual(out['d']['gbs'], '3.5.7.0')
         self.assertEqual(out['c'], {})
+
+    @unittest.skipUnless(NODE, 'node not on PATH')
+    def test_attached_textures_are_summed_apart(self):
+        # Round 226: a texture a framebuffer has attached is a render target's; its bytes stay in the texture sum (the
+        # totals are what they were) and are also summed on their own, by its size record, until the texture is deleted
+        f = cut_function(self.s, 'gpuMemInstall')
+        self.assertIn('const atts = new Set();', f)
+        self.assertIn('P.framebufferTexture2D = function (target, attachment, textarget, t) { if (t) atts.add(texMap(t)); return ft.apply(this, arguments); };', f)
+        self.assertIn('tsz.delete(t); atts.delete(m); }', f)
+        js = FAKE.replace('class FakeGL2 {', "class FakeGL2 {\n  framebufferTexture2D() { this.calls.push(['framebufferTexture2D']); return 'fb'; }") + f + r'''
+const G = { on: true, buf: 0, tex: 0, rb: 0, peak: 0, peakAt: '', zrev: 0 };
+gpuMemInstall(G, [FakeGL1, FakeGL2], () => '');
+const gl = new FakeGL2(), T2 = 0x0DE1, RGBA = 0x1908, UBYTE = 0x1401, RGBA8 = 0x8058, out = {};
+const art = {}, shadow = {}, post = {}, late = {};
+gl.t2 = art; gl.texStorage2D(T2, 1, RGBA8, 1024, 1024);
+out.none = [G.tex, G.att()];
+gl.t2 = shadow; gl.texImage2D(T2, 0, RGBA, 512, 512, 0, RGBA, UBYTE, null);
+out.ret = gl.framebufferTexture2D(0x8D40, 0x8CE0, T2, shadow, 0);
+gl.framebufferTexture2D(0x8D40, 0x8CE0, T2, shadow, 0);   // attached again (a cube face as it is drawn): once
+out.one = [G.tex, G.att()];
+gl.framebufferTexture2D(0x8D40, 0x8CE0, T2, late, 0);     // attached before it is sized
+gl.t2 = late; gl.texStorage2D(T2, 1, RGBA8, 256, 256);
+gl.t2 = shadow; gl.texImage2D(T2, 0, RGBA, 1024, 1024, 0, RGBA, UBYTE, null);   // the target resized
+out.resized = [G.tex, G.att()];
+gl.framebufferTexture2D(0x8D40, 0x8CE0, T2, null, 0);     // a detach names no texture
+gl.deleteTexture(shadow);
+out.deleted = [G.tex, G.att()];
+gl.deleteTexture(late); gl.deleteTexture(art);
+out.end = [G.tex, G.att()];
+out.gl1 = typeof FakeGL1.prototype.framebufferTexture2D;
+console.log(JSON.stringify(out));
+'''
+        o = run_node(js)
+        MB4 = 1024 * 1024 * 4
+        self.assertEqual(o['none'], [MB4, 0])
+        self.assertEqual(o['ret'], 'fb')
+        self.assertEqual(o['one'], [MB4 + 512 * 512 * 4, 512 * 512 * 4])
+        self.assertEqual(o['resized'], [MB4 + MB4 + 256 * 256 * 4, MB4 + 256 * 256 * 4])
+        self.assertEqual(o['deleted'], [MB4 + 256 * 256 * 4, 256 * 256 * 4])
+        self.assertEqual(o['end'], [0, 0])
+        self.assertEqual(o['gl1'], 'undefined', 'a prototype without the call is left without it')
 
 
 if __name__ == '__main__':

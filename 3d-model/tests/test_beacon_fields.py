@@ -6,7 +6,12 @@ checkpoint goes out before build(); the ready beacon carries the build's facts (
 the flushes, what is still staged, the tower skins, the storefront wait and the prefetch's Blob); the enter beacon the
 first frames' (enterFacts: frameNo, the first frame's ms, the tap's latency, the mirror's warm); and the perf, settled and
 late beacons the ladder's first change and the pin images' causes (runFacts). Each function runs under Node against
-stubbed state, the way tests/test_recovery.py runs beacon() through the TDZ; the text of the wiring is pinned."""
+stubbed state, the way tests/test_recovery.py runs beacon() through the TDZ; the text of the wiring is pinned.
+
+Round 226 (measurement round two): every beacon also carries ws, fs and rs (the navigation's workerStart, fetchStart and
+responseStart: under the service worker the sizes describe the worker's stream, not the wire) and whatever measFacts(st)
+gives its checkpoint, spread in after readyFacts and before the call's own fields (tests/test_measure_two.py runs
+measFacts itself); the longest beacon is composed here whole, at its worst, against nginx's 8 KB request line."""
 import json
 from pathlib import Path
 import unittest
@@ -46,6 +51,8 @@ class BeaconFields(unittest.TestCase):
         self.assertEqual(s.count('function beacon(st, extra) {'), 1, 'the signature the other tests cut')
         # the recovery test still gets a beacon() that stands alone (readyFacts is read through safe)
         self.assertIn("if (st === 'ready') Object.assign(q, safe(() => readyFacts(safe), {}));", b)
+        # Round 226: and measurement round two's facts for the checkpoint, through safe too (measFacts is made far below)
+        self.assertIn("\n    Object.assign(q, safe(() => measFacts(st), {}));", b)
 
     def test_the_delivery_fields_and_the_preview(self):
         script = r'''
@@ -64,7 +71,7 @@ BOTH
   const bootPrev = null;
   const zcField = () => 'r.1111.p';
   // a validated 304: a header-sized transfer, the whole body from the cache
-  NAV = { type: 'navigate', transferSize: 812, encodedBodySize: 13050000, decodedBodySize: 30440000, requestStart: 12.5, responseEnd: 850.2, domInteractive: 1700.7, workerStart: 0 };
+  NAV = { type: 'navigate', transferSize: 812, encodedBodySize: 13050000, decodedBodySize: 30440000, requestStart: 12.5, responseEnd: 850.2, domInteractive: 1700.7, workerStart: 0, fetchStart: 3.4, responseStart: 41.6 };
   PAINT = [{ name: 'first-paint', startTime: 900 }, { name: 'first-contentful-paint', startTime: 1234.6 }];
   beacon('a');
   // a full transfer
@@ -74,6 +81,9 @@ BOTH
   // the old test: no bytes over the wire (a fresh cache hit)
   NAV = { type: 'reload', transferSize: 0, decodedBodySize: 26000000, workerStart: 0 };
   beacon('c');
+  // Round 226: a reload the service worker answered, 16 s to the first byte
+  NAV = { type: 'reload', transferSize: 300, encodedBodySize: 0, decodedBodySize: 30440000, requestStart: 30, responseEnd: 16400, domInteractive: 17000, workerStart: 12.4, fetchStart: 14.2, responseStart: 16012.7 };
+  beacon('w');
   // no navigation entry at all
   NAV = null;
   beacon('d');
@@ -99,7 +109,12 @@ BOTH
 console.log(JSON.stringify({ out, sent: sent.map((u) => Object.fromEntries(new URLSearchParams(u.split('?')[1]))) }));
 '''.replace('BOTH', self.both)
         o = run_node(self, script)
-        a, b, c, d = o['sent'][:4]
+        a, b, c, w, d = o['sent'][:5]
+        # Round 226: the three times that bracket the worker's stream, ms; 0 with no worker, '' where the browser reports none
+        self.assertEqual((a['ws'], a['fs'], a['rs']), ('0', '3', '42'))
+        self.assertEqual((w['sw'], w['ws'], w['fs'], w['rs'], w['net']), ('1', '12', '14', '16013', '16370'))
+        self.assertEqual((c['ws'], c['fs'], c['rs']), ('0', '', ''))
+        self.assertEqual((d['ws'], d['fs'], d['rs']), ('', '', ''))
         self.assertEqual((a['st'], a['hc'], a['tx'], a['enc'], a['dec'], a['net'], a['di'], a['fcp']), ('a', '1', '812', '13050000', '30440000', '838', '1701', '1235'))
         self.assertEqual((b['hc'], b['tx'], b['net'], b['fcp']), ('0', '14200000', '840', ''))
         self.assertEqual((c['hc'], c['tx'], c['enc'], c['dec'], c['net'], c['di'], c['nav']), ('1', '0', '', '26000000', '', '', 'r'))
@@ -108,8 +123,8 @@ console.log(JSON.stringify({ out, sent: sent.map((u) => Object.fromEntries(new U
         out = o['out']
         self.assertTrue(out['preview'].startswith('/b?st=ready&'))
         self.assertIn('&ms=7&fail=0&sf=built', out['preview'])
-        self.assertEqual(out['sentAfterPreview'], 4, 'a preview sends nothing')
-        self.assertEqual(out['readySent'], 5, 'nor does it count as the checkpoint')
+        self.assertEqual(out['sentAfterPreview'], 5, 'a preview sends nothing')
+        self.assertEqual(out['readySent'], 6, 'nor does it count as the checkpoint')
         self.assertIn('st=ready', out['previewAgain'], 'nor is it deduplicated')
         self.assertEqual(out['errSent'], 3, 'previews of err never spend the cap of three')
         self.assertTrue(out['returned'].startswith('/b?st=e&'))
