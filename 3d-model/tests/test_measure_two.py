@@ -6,13 +6,16 @@ Node against a scripted WebGL context whose calls advance a scripted clock, so e
 - the link timers: a program's two compiles, its link and its first status query are timed apart, then its introspection
   and the texture calls; the wraps are INSTANCE wraps, call straight through, count their own faults and come off whole
   (the prototype's method shows through again); the cold verdict is the median's, over ten programs, so one slow first
-  query after a batch of uploads does not make a load cold; only a cold load drains before a link;
+  query after a batch of uploads does not make a load cold; only a cold load drains, once before each program's first
+  shaderSource; a warm load's wraps come off at Ready and a cold load's after the one frame behind the unlit button;
 - a program's tag is its material type and custom key, never the type alone, in letters, digits and dashes;
-- the fences behind the flushes: never read in the task that made them, two bounds for one seen unsignalled;
+- the fences behind the flushes: never read in the task that made them, two bounds for one seen unsignalled; laid only
+  on a computer in Chromium, the call timed, and never again in a load once one call has waited (the review: WebKit's
+  fenceSync blocks until the GPU process has caught up, 0.3 to 2.7 s a load);
 - the frame's counters: stalls only after Enter and never across time hidden, the gap after a pin landing paired with
   the frame before, the eye's height bands;
 - the crumb every second after Ready: the same 'ready' step, inside the next load's pc cut, stopped by the clock before
-  the running crumb takes over and for good when the page is left;
+  the running crumb takes over and for good when the page is left, and never written from a tab that is not in front;
 - the geometry's bytes by family: noted before an upload frees the array, a shared buffer once;
 - measFacts by checkpoint, its characters (a query escapes none of them), no URL, and the longest beacon's length;
 - the wiring: where each call sits, a computer's lost context beaconed, the capture skill's beacons.py reading it all.
@@ -49,8 +52,10 @@ const HID = { n: 0, ms: 0, at: -1, bail: -1 };
 const YLD = { n: 0, ms: 0, max: 0, afN: 0, afMs: 0, af: false };
 const GPUMEM = { on: true, buf: 911 * 1048576, tex: 844 * 1048576, rb: 89 * 1048576 };
 const winL = {}, docL = {};
-const window = { addEventListener: (t, f) => { (winL[t] = winL[t] || []).push(f); } };
-const document = { hidden: false, addEventListener: (t, f) => { (docL[t] = docL[t] || []).push(f); } };
+const isTouch = __TOUCH__;
+const window = { addEventListener: (t, f) => { (winL[t] = winL[t] || []).push(f); }, chrome: __CHROME__ };
+let FOCUS = true, MW = 0;
+const document = { hidden: false, visibilityState: 'visible', hasFocus: () => FOCUS, addEventListener: (t, f) => { (docL[t] = docL[t] || []).push(f); } };
 class GL {
   constructor() { this.SYNC_GPU_COMMANDS_COMPLETE = 0x9117; this.SYNC_STATUS = 0x9114; this.SIGNALED = 0x9119; this.log = []; this.cost = {}; this.sig = new Set(); this.err = 0; this.fences = 0; this.deleted = 0; this.reads = 0;
     this.drawingBufferWidth = 2240; this.drawingBufferHeight = 1260; this.ext = ['WEBGL_compressed_texture_astc', 'EXT_texture_compression_bptc', 'WEBGL_compressed_texture_s3tc', 'KHR_parallel_shader_compile', 'OES_texture_float_linear']; this.asked = 0; }
@@ -79,7 +84,7 @@ class GL {
 const gl = new GL();
 const renderer = { getContext: () => gl, info: { programs: [] }, capabilities: { maxTextureSize: 16384, maxSamples: 4 } };
 const sceneObjs = [];
-const scene = { traverse: (f) => { for (const o of sceneObjs) f(o); }, updateMatrixWorld: () => { NOW += 0.25; } };
+const scene = { traverse: (f) => { for (const o of sceneObjs) f(o); }, updateMatrixWorld: () => { MW++; NOW += 0.25; } };
 const outerMeshes = [], LANE_MATS = [];
 let frameNo = 0;
 const ENTER = { lit: false }, DPR = { live: false }, PIN_OCC = { landN: 0, landMs: 0 };
@@ -105,8 +110,11 @@ const R = (v) => Math.round(v * 100) / 100;
 '''
 
 
-def node(test, body, search=''):
-    return run_node(test, PRELUDE.replace('SEARCH', json.dumps(search)) + BLOCK + body)
+def node(test, body, search='', touch=False, chrome=True):
+    """The block under Node: a computer in Chromium unless told otherwise (touch: a phone; chrome=False: an engine with no
+    window.chrome, WebKit or Firefox)."""
+    pre = PRELUDE.replace('SEARCH', json.dumps(search)).replace('__TOUCH__', 'true' if touch else 'false').replace('__CHROME__', '{ runtime: {} }' if chrome else 'undefined')
+    return run_node(test, pre + BLOCK + body)
 
 
 def r149_key(custom, defines=(), raw=False):
@@ -173,9 +181,15 @@ out.at10 = { cold: LINK.cold, med: LINK.med, dn: LINK.dn };
 gl.err = 1281;
 program(10, 20, 90, 0); program(10, 20, 90, 0);
 out.after = { cold: LINK.cold, dn: LINK.dn, d: LINK.d, de: LINK.de, q: LINK.q, n: LINK.n };
-// the drain goes before the link, never between the link and its first query
+// the drain goes before the program's first shaderSource, once a program: never after its own compiles (its shader
+// translation would be waited for in the drain) and never between the link and its first query
 const i = gl.log.lastIndexOf('getError');
-out.order = gl.log.slice(i, i + 3);
+out.order = gl.log.slice(i, i + 9);
+out.perProgram = gl.log.slice(gl.log.indexOf('getError')).filter((n) => n === 'getError' || n === 'linkProgram').join();
+// a shader made and never linked does not cost the next program its drain, nor earn it two
+gl.shaderSource({ lone: 1 }, 'z'); gl.compileShader({ lone: 1 });
+const dn0 = LINK.dn; program(10, 20, 90, 0);
+out.afterLone = LINK.dn - dn0;
 // a quick program later does not make a cold load warm
 for (let k = 0; k < 30; k++) program(0, 0, 1, 0);
 out.latched = LINK.cold;
@@ -184,12 +198,65 @@ console.log(JSON.stringify(out));
         self.assertEqual(o['early'], [-1] * 9, 'under ten programs there is no verdict')
         self.assertEqual(o['at10'], {'cold': 1, 'med': 130, 'dn': 0})
         self.assertEqual(o['after'], {'cold': 1, 'dn': 2, 'd': 6, 'de': 1, 'q': 12 * 90, 'n': 12}, 'the drain is timed apart, and an error it swallowed is counted')
-        self.assertEqual(o['order'], ['getError', 'linkProgram', 'getProgramInfoLog'])
+        self.assertEqual(o['order'], ['getError', 'shaderSource', 'compileShader', 'shaderSource', 'compileShader', 'attachShader', 'attachShader', 'linkProgram', 'getProgramInfoLog'],
+                         'the review: drained before the link, a cold program\'s own translation was waited for in the drain and its ms under-read a warm load\'s')
+        self.assertEqual(o['perProgram'], 'getError,linkProgram,getError,linkProgram', 'one drain a program')
+        self.assertEqual(o['afterLone'], 0, 'the lone shader took the drain; the program after it is drained by its own next first source')
         self.assertEqual(o['latched'], 1)
         # the line can be moved for a proof
         o = node(self, 'for (let k = 0; k < 10; k++) program(1, 1, 5, 0);\nconsole.log(JSON.stringify({ cold: LINK.cold, ms: COLD_MS, min: COLD_MIN }));', search='?dev=1&coldms=6')
         self.assertEqual(o, {'cold': 1, 'ms': 6, 'min': 10})
-        self.assertIn("const COLD_MS = +(/[?&]coldms=(\\d+)/.exec(location.search) || [0, 40])[1], COLD_MIN = 10;", BLOCK)
+        self.assertIn("const COLD_MS = +(/[?&]coldms=(\\d+)/.exec(location.search) || [0, 60])[1], COLD_MIN = 10;", BLOCK)
+        # the review: the line was 40, and a warm M2 Max under other work read a median of 37.6 to 45 ms in Chrome, cold with
+        # nothing to compile. 45 is warm now; the fastest cold load the beacons hold (88 ms a program, about 70 at the median) is cold
+        o = node(self, r'''
+const out = {};
+for (let k = 0; k < 12; k++) program(1, 1, 42, 0);   // two compiles of 1, a link of 1, a query of 42
+out.busy = [LINK.cold, LINK.med, LINK.dn];
+console.log(JSON.stringify(out));
+''')
+        self.assertEqual(o['busy'], [0, 45, 0])
+        o = node(self, 'for (let k = 0; k < 12; k++) program(1, 1, 67, 0);\nconsole.log(JSON.stringify([LINK.cold, LINK.med, COLD_MS]));')
+        self.assertEqual(o, [1, 70, 60])
+
+    def test_where_the_wraps_come_off(self):
+        """The review: a warm load's wraps come off at Ready, so nothing is installed on any path a warm load runs after its
+        build; a cold load's stay through the one frame drawn behind the unlit button, so the enter beacon says what that
+        frame linked on the loads the plan is about."""
+        body = r'''
+const own = () => Object.keys(gl).filter((k) => typeof gl[k] === 'function').length;
+const out = { before: [LINK.on, own()] };
+for (let k = 0; k < 12; k++) program(1, 1, Q, 0);
+const progs = () => LINK.recs.map((r, k) => ({ program: r.p, name: 'MeshStandardMaterial', cacheKey: 'k' + k }));
+renderer.info.programs = progs();
+PERF.ready = 29000; NOW = 30000; measReady();
+out.ready = [LINK.cold, LINK.on, own(), LINK.names.length, MEAS.ready.wr, gl.linkProgram === GL.prototype.linkProgram];
+// the first frame links three more
+for (let k = 0; k < 3; k++) program(1, 1, Q, 0);
+renderer.info.programs = out.before[0] && LINK.on ? progs() : renderer.info.programs.concat([{}, {}, {}]);
+out.frame = [LINK.recs.length, LINK.n];
+measLit();
+out.lit = [LINK.on, own(), MEAS.lit.prg, MEAS.lit.link.n];
+PERF.lit = 31000;
+out.enter = measFacts('enter');
+console.log(JSON.stringify(out));
+'''
+        w = node(self, body.replace('Q', '5'))
+        self.assertEqual(w['before'], [True, 13], 'thirteen of the fifteen names exist on this scripted context')
+        self.assertEqual(w['ready'], [0, False, 0, 0, False, True], 'a warm load: every wrap off at Ready, the prototype\'s method showing through')
+        self.assertEqual(w['frame'], [12, 12], 'and its first frame is not timed')
+        self.assertEqual(w['lit'], [False, 0, 15, 12])
+        self.assertEqual(w['enter'], {'cold': 0, 'f1p': 3, 'lit': 2000, 'eb': 0}, 'the count of programs still rides; no timer that was not running is reported as nought')
+        c = node(self, body.replace('Q', '90'))
+        self.assertEqual(c['ready'], [1, True, 13, 13, True, False], 'a cold load keeps them for the one frame behind the unlit button')
+        self.assertEqual(c['frame'], [15, 15])
+        self.assertEqual(c['lit'], [False, 0, 15, 15], 'and they come off as that frame ends')
+        self.assertEqual(c['enter']['f1k'], '3.6.3.270.0.0')
+        self.assertEqual(c['enter']['f1p'], 3)
+        r = cut(BLOCK, '  function measReady() {', '\n  }\n')
+        self.assertIn("      if (LINK.cold !== 1) LINK.off();", r)
+        self.assertLess(r.index('link: linkSnap()'), r.index('if (LINK.cold !== 1) LINK.off();'), 'the sums are read before the wraps go')
+        self.assertLess(r.index('if (LINK.cold !== 1) LINK.off();'), r.index('MEAS.ready.wr = LINK.on;'))
 
     def test_the_first_status_query_is_whichever_comes_first(self):
         # with checkShaderErrors off (a later round), three's first blocking call is getProgramParameter
@@ -323,13 +390,66 @@ console.log(JSON.stringify(out));
 ''')
         self.assertEqual(o['flush'], {'list': [[10, 1000, 60]], 'af': True, 'calls': ['fenceSync', 'flush'], 'q': 1, 'n': 1})
         self.assertEqual(o['pending'], {'q': 1, 'reads': 2, 'late': 0})
-        self.assertEqual(o['late'], {'n': 1, 'late': 1, 'lo': 400, 'hi': 1200, 'max': 400, 'at': 10, 'pend': 0, 'q': 0, 'deleted': 1},
+        self.assertEqual(o['late'], {'n': 1, 'late': 1, 'lo': 400, 'hi': 1200, 'max': 400, 'at': 10, 'pend': 0, 'cms': 0, 'st': 0, 'q': 0, 'deleted': 1},
                          'last seen unsignalled 400 ms after the flush, first seen passed at 1,200')
         self.assertEqual((o['quick']['n'], o['quick']['late'], o['quick']['lo'], o['quick']['q']), (2, 1, 400, 0))
-        self.assertEqual(o['ready'], {'n': 4, 'late': 1, 'lo': 400 + 1100, 'hi': 1200, 'max': 1100, 'at': 12, 'pend': 1, 'q': 0, 'reads': 1, 'deleted': 4},
+        self.assertEqual(o['ready'], {'n': 4, 'late': 1, 'lo': 400 + 1100, 'hi': 1200, 'max': 1100, 'at': 12, 'pend': 1, 'cms': 0, 'st': 0, 'q': 0, 'reads': 1, 'deleted': 4},
                          'Ready reads only the fence a later task had polled, and lets both go')
         self.assertEqual(o['cap'], [8, 12, 16])
         self.assertEqual(o['lost'], [0, 0], 'a read that throws drops the fence quietly')
+
+    def test_no_fence_where_the_call_waits(self):
+        """The review's must-fix. MEASURED in a WKWebView on this build: fenceSync waits there until the GPU process has
+        worked through what the flush queued, 264 to 865 ms a load on a computer's path and 527 and 2,680 ms on the
+        phone's, on warm loads, in no field. A fence is laid only on a computer in Chromium; the call is timed; and the
+        first call that waits is the load's last."""
+        none = r'''
+gl.cost = { fenceSync: 772, flush: 1 };
+MEAS.step = 12; renderer.info.programs = new Array(63);
+const t0 = NOW;
+for (let k = 0; k < 3; k++) { NOW += 1000; flushNote(NOW - 900, 60); }
+fencePoll(false); NOW += 5; fencePoll(true);
+console.log(JSON.stringify({ calls: gl.log.filter((n) => n === 'fenceSync' || n === 'flush').length, reads: gl.reads, fence: MEAS.fence, q: MEAS.fq.length, flushes: MEAS.flushes, af: YLD.af, waited: NOW - t0 - 3005, ok: FENCE_OK, err: MEAS.err }));
+'''
+        want = {'calls': 0, 'reads': 0, 'fence': {'n': 0, 'late': 0, 'lo': 0, 'hi': 0, 'max': 0, 'at': -1, 'pend': 0, 'cms': 0, 'st': 2}, 'q': 0,
+                'flushes': [[12, 900, 3], [12, 900, 3], [12, 900, 3]], 'af': True, 'waited': 0, 'ok': False, 'err': 0}
+        self.assertEqual(node(self, none, touch=True), want, 'a phone: no fenceSync, no flush, no poll, and the flush is still noted')
+        self.assertEqual(node(self, none, chrome=False), want, 'a computer in WebKit or Firefox: the same')
+        self.assertEqual(node(self, none, touch=True, chrome=False), want)
+        o = node(self, r'''
+const out = {};
+MEAS.step = 10; renderer.info.programs = new Array(63);
+// quick calls keep the instrument: each pair's ms is summed
+gl.cost = { fenceSync: 0.5, flush: 0.25 };
+NOW = 5000; flushNote(4000, 3); NOW = 6000; flushNote(5900, 63);
+out.quick = { ...MEAS.fence, q: MEAS.fq.length, ok: FENCE_OK };
+// one call that waits: it is timed, its fence is kept and still polled, and no other is laid in this load
+gl.cost = { fenceSync: 73, flush: 0 };
+NOW = 7000; flushNote(6900, 63);
+out.slow = { ...MEAS.fence, q: MEAS.fq.length };
+const calls = gl.log.filter((n) => n === 'fenceSync').length;
+gl.cost = { fenceSync: 1608 }; const t = NOW;
+for (let k = 0; k < 4; k++) flushNote(NOW - 10, 63);
+out.after = { ...MEAS.fence, q: MEAS.fq.length, more: gl.log.filter((n) => n === 'fenceSync').length - calls, waited: NOW - t, flushes: MEAS.flushes.length };
+for (const f of MEAS.fq) gl.sig.add(f.s);
+NOW += 3; fencePoll(false);
+out.polled = [MEAS.fq.length, gl.deleted];
+console.log(JSON.stringify(out));
+''')
+        self.assertEqual((o['quick']['n'], o['quick']['cms'], o['quick']['st'], o['quick']['q'], o['quick']['ok']), (2, 1.5, 0, 2, True))
+        self.assertEqual((o['slow']['n'], o['slow']['cms'], o['slow']['st'], o['slow']['q']), (3, 74.5, 1, 3), 'the slow call is counted and timed: on such an engine that number is the backlog')
+        self.assertEqual((o['after']['n'], o['after']['cms'], o['after']['st'], o['after']['more'], o['after']['waited'], o['after']['flushes']), (3, 74.5, 1, 0, 0, 7))
+        self.assertEqual(o['polled'], [0, 3], 'the fences already laid are still read and let go')
+        # a WebGL 1 context has no fenceSync
+        o = node(self, 'gl.fenceSync = undefined; flushNote(NOW - 5, 0); flushNote(NOW - 5, 0);\nconsole.log(JSON.stringify([MEAS.fence.st, MEAS.fence.n, MEAS.err, MEAS.flushes.length]));')
+        self.assertEqual(o, [3, 0, 0, 2])
+        # the text: the gate reads the device and the engine's own global, never the agent string, and the line is a few ms
+        self.assertIn("  const FENCE_OK = !isTouch && typeof window.chrome === 'object' && !!window.chrome, FENCE_SLOW_MS = 4;", BLOCK)
+        f = cut(BLOCK, '  function flushNote(tf, fp) {', '\n  }\n')
+        self.assertLess(f.index('YLD.af = true;'), f.index('if (F.st !== 0) return;'), 'the flush is noted whether or not a fence follows')
+        self.assertLess(f.index('if (F.st !== 0) return;'), f.index('gl.fenceSync('))
+        self.assertEqual(BLOCK.count('fenceSync('), 1)
+        self.assertIn('if (d >= FENCE_SLOW_MS) F.st = 1;', f)
 
     def test_yield_now_times_itself(self):
         line = cut(SRC, '  const YLD = PERF.yld = {', '\n', inclusive=True) + cut(SRC, '  const yieldNow = () => new Promise(r => {', '\n', inclusive=True)
@@ -405,7 +525,7 @@ const out = {};
 PERF.ready = 29000; frameNo = 1;
 for (let k = 0; k < 12; k++) program(1, 1, 5, 0);
 NOW = 30000; measReady();
-out.ready = { prg: MEAS.ready.prg, n: MEAS.ready.link.n, hd: MEAS.ready.hd, hn: MEAS.ready.hn, med: MEAS.ready.med, top: MEAS.ready.top, on: MEAS.on, timers: timers.length };
+out.ready = { prg: MEAS.ready.prg, n: MEAS.ready.link.n, hd: MEAS.ready.hd, hn: MEAS.ready.hn, med: MEAS.ready.med, top: MEAS.ready.top, on: MEAS.on, timers: timers.length, mw: MW };
 const tick = timers[0];
 NOW = 31000; tick();
 PERF.enterT = 33500; ENTER.lit = true; frameNo = 130; MEAS.lastMs = 46.4; MEAS.worstMs = 1467.2; renderer.info.programs = new Array(193);
@@ -416,7 +536,8 @@ NOW = 49500; tick();   // by the clock: the running crumb is due at 20 s and mus
 out.stopped = [crumbs.length, timers[0] === null];
 console.log(JSON.stringify(out));
 ''')
-        self.assertEqual(o['ready'], {'prg': 0, 'n': 12, 'hd': 0, 'hn': 0, 'med': 8, 'top': '', 'on': '0.250', 'timers': 1})
+        self.assertEqual(o['ready'], {'prg': 0, 'n': 12, 'hd': 0, 'hn': 0, 'med': 8, 'top': '', 'on': '0.250', 'timers': 1, 'mw': 11},
+                         'the matrix pass is the mean of ten after a first (the review: one pass is under the clock\'s step), in microseconds')
         self.assertEqual(o['crumbs'], [['ready', 'q1,e-1,f1,m0,w0,gb1844,b911,x844,r89,p0,l0'], ['ready', 'q6,e3,f130,m46,w1467,gb1844,b911,x844,r89,p193,l1'],
                                        ['ready', 'q19,e16,f130,m46,w1467,gb1844,b911,x844,r89,p193,l1']], 'q is the clock\'s seconds since Ready, not a count of ticks (a hidden tab ticks late)')
         self.assertEqual(o['stopped'], [3, True])
@@ -432,10 +553,21 @@ PERF.ready = 1; NOW = 2000; measReady();
 NOW = 3000; timers[0]();
 for (const f of winL.pagehide) f();   // the page is left: pagehide clears the crumb for good (bootClear), and nothing writes it back
 NOW = 4000; if (timers[0]) timers[0]();
-// a page that was hidden through its build
 console.log(JSON.stringify({ n: crumbs.length, cleared: timers[0] === null }));
 ''')
         self.assertEqual(o, {'n': 1, 'cleared': True})
+        # the review: only the tab in front writes, the running crumb's own rule. A second tab finishing its build in the
+        # background wrote 'ready' every second for 19.5 s over the front tab's 'running'
+        o = node(self, r'''
+PERF.ready = 1; NOW = 2000; measReady();
+const tick = timers[0], n = [];
+NOW = 3000; tick(); n.push(crumbs.length);
+document.visibilityState = 'hidden'; NOW = 4000; tick(); NOW = 5000; tick(); n.push(crumbs.length);
+document.visibilityState = 'visible'; FOCUS = false; NOW = 6000; tick(); n.push(crumbs.length);   // visible beside the window in front
+FOCUS = true; NOW = 7000; tick(); n.push(crumbs.length);
+console.log(JSON.stringify({ n, alive: timers[0] !== null, last: crumbs[crumbs.length - 1][1].split(',')[0] }));
+''')
+        self.assertEqual(o, {'n': [1, 1, 1, 2], 'alive': True, 'last': 'q5'}, 'not written while hidden or unfocused; written again in front, by the clock')
         # the ready snapshot closes an open hide
         o = node(self, r'''
 HID.n = 2; HID.ms = 4000; HID.at = 9000; HID.bail = 3100; PERF.ready = 1; NOW = 12500; measReady();
@@ -453,6 +585,11 @@ console.log(JSON.stringify([MEAS.ready.hd, MEAS.ready.hn]));
         r = cut(BLOCK, '  function measReady() {', '\n  }\n')
         self.assertIn("if (MEAS.left || performance.now() - t >= 19500) { clearInterval(id); return; }", r)
         self.assertIn("try { bootMark('ready', readyCtx()); } catch (e) { MEAS.err++; }", r)
+        gate = "if (document.visibilityState !== 'visible' || !document.hasFocus()) return;"
+        self.assertIn(gate, r)
+        self.assertLess(r.index('clearInterval(id); return; }'), r.index(gate), 'the stop by the clock comes first: a hidden tab still stops at 19.5 s')
+        self.assertLess(r.index(gate), r.index("bootMark('ready', readyCtx())"))
+        self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running', bootCtx()); };", b, 'the rule it follows')
         self.assertIn("window.addEventListener('pagehide', () => { MEAS.left = true; });", BLOCK)
         # the hides before Ready, counted from the first line that can
         h = cut(SRC, '  const HID = PERF.hid = {', '\n  });\n', inclusive=True)
@@ -526,7 +663,7 @@ gl.cost = { texImage2D: 5 }; gl.texImage2D(); gl.texImage2D();
 MEAS.gw = [4, 6, 116]; MEAS.gw[5] = 9; MEAS.gi = ['2.29.15', '5.3.9'];
 MEAS.flushes = [[2, 1000, 30], [2, 757, 30], [5, 1301, 36]];
 Object.assign(YLD, { n: 155, ms: 695.3, max: 224.6, afN: 14, afMs: 11.9 });
-Object.assign(MEAS.fence, { n: 14, late: 3, lo: 410.2, hi: 1894.4, max: 371.9, at: 5, pend: 1 });
+Object.assign(MEAS.fence, { n: 14, late: 3, lo: 410.2, hi: 1894.4, max: 371.9, at: 5, pend: 1, cms: 2.4, st: 0 });
 HID.n = 1; HID.ms = 4200; HID.bail = 3100; MEAS.artNull = 2;
 sceneObjs.push({ geometry: { attributes: { position: { array: new Uint8Array(3 * 1048576) } } }, material: { userData: {} } });
 PERF.ready = 29209; NOW = 30000; measReady();
@@ -572,7 +709,7 @@ class Facts(unittest.TestCase):
         self.assertEqual(r['gw'], '4.6.116.0.0.9')
         self.assertEqual(r['gi'], '2.29.15_5.3.9')
         self.assertEqual(r['gy'], '155.695.225.14.12')
-        self.assertEqual(r['gf'], '14.3.410.1894.372.5.1')
+        self.assertEqual(r['gf'], '14.3.410.1894.372.5.1.2.0', 'and the ms the fence calls took, and the state')
         self.assertEqual((r['hd'], r['hn'], r['bl']), (4200, 1, 3100))
         self.assertEqual(r['cap'], 'absk.16384.4')
         self.assertEqual(o['asked'], 0, 'the extensions are read from the list, never asked for')
@@ -625,7 +762,7 @@ const fetch = (url) => { sent.push(url); return { catch() {} }; };
 BOTH
 READY
 GMF
-const isTouch = true, TIER = 2, LITE_WHY = 'cgtsxrupa';
+const TIER = 2, LITE_WHY = 'cgtsxrupa';
 const bootPrev = { step: 'Lettering the landmarks and the rest', ctx: 'q19,e19,f99999,m99999,w599999,gb9999,b9999,x9999,r9999,p999,l1' + 'x'.repeat(40) };
 const zcField = () => 'rqca.1111.p0', pendingUpload = new Array(20), TSKIN = { ms: 12345 }, SF = { waitMs: 12345, preBlob: 1 };
 Object.assign(GPUMEM, { peak: 2300 * 1048576, peakAt: 'Opening the Libr +199s', zrev: 136 * 1048576, att: () => 172 * 1048576 });
@@ -637,7 +774,7 @@ renderer.info.programs = LINK.recs.map((r, k) => ({ program: r.p, name: 'MeshSta
 PERF.steps = []; PERF.flush = { n: 99, ms: 99999.6, p0: 140, p1: 190 }; PERF.staged = () => ({ n: 20, bytes: 44040192, mb: 142.5 });
 for (let i = 0; i < 48; i++) { PERF.steps.push(['step ' + i, 99000 + i]); MEAS.gw[i] = 21000 + i; MEAS.gi.push(i + '.999.' + (21000 + i)); MEAS.flushes.push([i, 57000 + i, 190]); }
 Object.assign(YLD, { n: 9999, ms: 999999, max: 99999, afN: 999, afMs: 99999 });
-Object.assign(MEAS.fence, { n: 999, late: 999, lo: 999999, hi: 999999, max: 99999, at: 47, pend: 8 });
+Object.assign(MEAS.fence, { n: 999, late: 999, lo: 999999, hi: 999999, max: 99999, at: 47, pend: 8, cms: 99999, st: 3 });
 HID.n = 99; HID.ms = 999999; HID.bail = 999999; MEAS.artNull = 999; LINK.err = 999;
 gl.ext = ['WEBGL_compressed_texture_astc', 'EXT_texture_compression_bptc', 'WEBGL_compressed_texture_s3tc', 'EXT_texture_compression_rgtc', 'WEBGL_compressed_texture_etc', 'WEBGL_compressed_texture_etc1', 'WEBKIT_WEBGL_compressed_texture_pvrtc', 'KHR_parallel_shader_compile', 'EXT_disjoint_timer_query_webgl2'];
 for (let k = 0; k < 6; k++) sceneObjs.push({ isInstancedMesh: k === 3, geometry: { attributes: { position: { array: { byteLength: 9999 * 1048576 } } } }, material: { userData: { wxSurf: k === 2 } } });
@@ -646,9 +783,10 @@ PERF.ready = 599999; NOW = 600000; measReady();
 beacon('ready', { ms: 599999, fail: 48, sf: 'built' });
 const q = Object.fromEntries(new URLSearchParams(sent[0].split('?')[1]));
 console.log(JSON.stringify({ bytes: sent[0].length, q, keys: Object.keys(q).length }));
-'''.replace('BOTH', both).replace('READY', ready).replace('GMF', gmf))
+'''.replace('BOTH', both).replace('READY', ready).replace('GMF', gmf), touch=True)
         q = o['q']
         self.assertEqual(q['cold'], '1')
+        self.assertEqual(q['gf'], '999.999.999999.999999.99999.47.8.99999.3')
         self.assertEqual(len(q['sp'].split(',')), 48)
         self.assertEqual(len(q['gw'].split('.')), 48)
         self.assertEqual(len(q['gi'].split('_')), 48)
@@ -699,13 +837,14 @@ class Wiring(unittest.TestCase):
         self.assertLess(f.index('    pinOccPoll();'), i)
         self.assertIn('    const tj1 = performance.now();   // Round 226: the marks that split the JavaScript before the draw (measJs)\n    measFrame(rawMs, once);', f)
         order = ['const tj1 = ', 'applyLighting();', 'const tj2 = performance.now();\n    updateTransit(now, dt);', 'updateTraffic(now, dt);\n    const tj3 = performance.now();',
-                 'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on) measLit();', 'if (!ENTER.lit) enterLight();']
+                 'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on || !MEAS.lit) measLit();', 'if (!ENTER.lit) enterLight();']
         at = [f.index(x) for x in order]
         self.assertEqual(at, sorted(at))
         self.assertEqual(f.count('measLit()'), 1)
-        # the wraps come off before the button can light, on the line before it
+        # a cold load's wraps come off before the button can light, on the line before it (a warm load's went at Ready, and
+        # the frame's snapshot is taken either way)
         lines = [ln.split('   //')[0] for ln in f.rstrip().splitlines()]
-        self.assertEqual(lines[-2:], ['    if (LINK.on) measLit();', '    if (!ENTER.lit) enterLight();'])
+        self.assertEqual(lines[-2:], ['    if (LINK.on || !MEAS.lit) measLit();', '    if (!ENTER.lit) enterLight();'])
         m = cut(BLOCK, '  function measLit() {', '\n  }\n')
         self.assertLess(m.index('LINK.off();'), m.index('if (MEAS.lit) return;'))
 
@@ -769,6 +908,19 @@ class BeaconsPy(unittest.TestCase):
         self.assertEqual(d('gbs', '911.844.89.120'), {'buffers_mb': 911, 'textures_mb': 844, 'renderbuffers_mb': 89, 'attached_mb': 120})
         self.assertEqual(d('db', '2240x1260'), '2240x1260')
         self.assertEqual(d('gi', ''), '')
+        # the fences: the review's two numbers, and a line from before them still reads
+        self.assertEqual(d('gf', '14.14.16.1780.4.11.0.2.0'), {'fences': 14, 'late': 14, 'lo_ms': 16, 'hi_ms': 1780, 'longest_lo_ms': 4, 'step': 11, 'pending': 0, 'call_ms': 2, 'state': 'laid'})
+        self.assertEqual(d('gf', '1.0.0.0.0.-1.0.73.1')['state'], 'stopped-at-a-slow-call')
+        self.assertEqual(d('gf', '0.0.0.0.0.-1.0.0.2')['state'], 'never-laid-here')
+        self.assertEqual(d('gf', '0.0.0.0.0.-1.0.0.3')['state'], 'no-fenceSync')
+        self.assertEqual(d('gf', '14.3.410.1894.372.5.1'), {'fences': 14, 'late': 3, 'lo_ms': 410, 'hi_ms': 1894, 'longest_lo_ms': 372, 'step': 5, 'pending': 1})
+        # the cold line cut again from the median program
+        c = self.m.cold_of
+        self.assertEqual([c({'cold': '1', 'lk': '144.0.1.4280.45.0.45'}), c({'cold': '0'}), c({}), c({'cold': ''})], ['cold', 'warm', '', ''], "the page's own flag")
+        self.assertEqual(c({'cold': '1', 'lk': '144.0.1.4280.45.0.45'}, 60), 'warm', "a load the first cut's 40 ms called cold")
+        self.assertEqual(c({'cold': '0', 'lk': '144.0.1.4280.45.0.74'}, 60), 'cold')
+        self.assertEqual(c({'cold': '', 'lk': '4.0.0.9.0.0.2'}, 60), '', 'under ten programs there is no verdict to cut again')
+        self.assertEqual(c({'cold': '1'}, 60), '')
         # every field measFacts sends is one the reader prints under --all
         facts = cut(BLOCK, '  function measFacts(st) {', '\n  }\n')
         sent = set(re.findall(r"[{,] (\w+): ", facts)) | set(re.findall(r"\bo\.(\w+) = ", facts))
@@ -823,6 +975,19 @@ class BeaconsPy(unittest.TestCase):
         self.assertIn("('desk', 'Win', '0', 'cold') n= 1", out)
         self.assertIn("('desk', 'Win', '0', 'warm') n= 1", out)
         self.assertIn(' cold: t0=1000 ', out)
+        # --coldms cuts the line again from the median program: at 400 the 330 ms load is warm too
+        with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as f:
+            f.write(log)
+        buf = io.StringIO()
+        try:
+            sys.argv = ['beacons.py', f.name, '--coldms=400']
+            with redirect_stdout(buf):
+                self.m.main()
+        finally:
+            sys.argv = argv
+            Path(f.name).unlink()
+        self.assertIn("('desk', 'Win', '0', 'warm') n= 2", buf.getvalue())
+        self.assertNotIn("'cold')", buf.getvalue())
 
 
 if __name__ == '__main__':

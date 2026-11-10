@@ -776,16 +776,27 @@
   // pair of timer reads on the calls it makes anyway and no more. A load reads COLD once ten programs are in and the median
   // of their compile + link + query is over COLD_MS (the median, because the first query after a batch of uploads waits for
   // the uploads too; the first three programs are the module's small bakes, hence ten). Only then, and only behind the
-  // veil, one getError() goes before each link (the drain: what was queued ahead is timed as lk's sixth number and not as
-  // the program's; it adds no wait, the first query would have waited for the same queue), and only a cold load names its
-  // five slowest programs. EVERY wrap comes off when the first drawn frame
-  // ends (measLit, on the line before the button lights): nothing is installed once a tap can be answered, and no draw
-  // call is ever wrapped (the first-draw timer the proposal carried is the four-program probe's, not this).
-  // COLD_MS: MEASURED from the beacons, a cold program is 88 to 413 ms on Windows and 232 to 252 on Apple devices against 9
-  // to 10 for a warm iPhone's whole flush a program; headless Chrome on the M2 Max reads a median of 18 to 29 ms warm or
-  // cold (its Metal compiles are quick either way), which is not the cold load the plan is about. The median rides the
-  // beacon beside the verdict, so the line can be cut again from the data. ?coldms=<n> moves it (a proof's knob)
-  const COLD_MS = +(/[?&]coldms=(\d+)/.exec(location.search) || [0, 40])[1], COLD_MIN = 10;
+  // veil, one getError() goes before each program's first shaderSource (the drain: what was queued ahead is timed as lk's
+  // sixth number and not as the program's; it adds no wait, the first query would have waited for the same queue. The
+  // review: issued before the link, as it first was, it came after the program's own two compiles, so the program's shader
+  // translation was waited for in the drain and its ms under-read a warm load's by 15 to 20%, MEASURED in a WKWebView:
+  // first query 32 ms with no drain against 5 + 25 with it), and only a cold load names its five slowest programs.
+  // WHERE THE WRAPS COME OFF (the review). A warm load's at Ready (measReady): nothing of this is installed on any path a
+  // warm load runs after its build. A cold load's when the one frame drawn behind the unlit button ends (measLit, on the
+  // line before the button lights; MEASURED, that frame is where a cold device froze 8.5 to 29 s), so the enter beacon
+  // says what it linked (f1k, f1t, f15) on the loads the plan is about and on no other. Either way nothing is installed
+  // once a tap can be answered, and no draw call is ever wrapped (the first-draw timer the proposal carried is the
+  // four-program probe's, not this).
+  // COLD_MS: MEASURED from the beacons, a cold program is 88 to 413 ms on Windows and 232 to 252 on Apple devices (the mean
+  // of a whole flush, uploads included) against 9 to 10 for a warm iPhone's; a quiet M2 Max reads a median of 9 to 30 ms
+  // warm, headless Chrome or a WKWebView. The line was 40 and the review found it inside a warm machine's range: the same
+  // Mac under other work (load average 33 to 57) read 37.6 to 45 ms in Chrome and 71 to 74 in a WKWebView, cold at 40 with
+  // nothing to compile. 60 is twice the quiet warm ceiling and under the fastest cold load's median (its 88 ms mean less
+  // the uploads' 7, times the 0.87 this Mac's median stands to its mean, is about 70): a miss either way costs a label
+  // (a cold load read warm also loses its five names, which is why the line is not higher), never load time, and the
+  // median rides the beacon beside the verdict (lk's seventh number), so beacons.py --coldms=<n> cuts the line again from
+  // the data. ?coldms=<n> moves it on the page (a proof's knob)
+  const COLD_MS = +(/[?&]coldms=(\d+)/.exec(location.search) || [0, 60])[1], COLD_MIN = 10;
   const LINK = PERF.link = { on: false, names: [], recs: [], n: 0, c: 0, l: 0, q: 0, i: 0, d: 0, dn: 0, de: 0, cold: -1, med: 0, err: 0, tn: 0, tms: 0, off: () => {} };
   function linkMedian() {
     const a = [];
@@ -809,10 +820,14 @@
       };
       L.names.push(name);
     };
-    wrap('shaderSource', (dt, a) => { sh.set(a[0], { ms: 0, len: a[1] ? a[1].length : 0 }); });
+    // the drain, a cold load's alone: before the first shaderSource of a program (open: its shaders are being made, until
+    // its link), so the queue ahead is timed apart and the program's own translation is still in its first query
+    let open = false;
+    const drain = (g) => { if (open) return; open = true; if (L.cold === 1) { const t = performance.now(), e = g.getError(); L.d += performance.now() - t; L.dn++; if (e) L.de++; } };
+    wrap('shaderSource', (dt, a) => { sh.set(a[0], { ms: 0, len: a[1] ? a[1].length : 0 }); }, drain);
     wrap('compileShader', (dt, a) => { const s = sh.get(a[0]); if (s) s.ms += dt; });
     wrap('attachShader', (dt, a) => { const s = sh.get(a[1]); if (!s) return; const r = rec(a[0]); r.c += s.ms; if (r.ns++ === 0) r.vl = s.len; else r.fl = s.len; });   // three attaches the vertex shader first
-    wrap('linkProgram', (dt, a) => { rec(a[0]).l += dt; }, (g) => { if (L.cold === 1) { const t = performance.now(), e = g.getError(); L.d += performance.now() - t; L.dn++; if (e) L.de++; } });
+    wrap('linkProgram', (dt, a) => { open = false; rec(a[0]).l += dt; });
     const status = (dt, a) => {
       const r = pr.get(a[0]);
       if (!r) return;
@@ -851,7 +866,7 @@
     return (type + '-' + k).replace(/[^A-Za-z0-9]+/g, '-').replace(/-$/, '').slice(0, 30);
   }
   // every program timed so far, slowest first: tag, type, the step it was linked in (buildSteps' index), late (after Ready:
-  // the first frame's), and its ms apart (c compile, l link, q the first status query, i introspection), with the source
+  // the first frame's, which only a cold load times; ?coldms=0 reads every load cold), and its ms apart (c compile, l link, q the first status query, i introspection), with the source
   // lengths. gone: three released it since (a double compile). __dbg.PERF.programs()
   PERF.programs = () => {
     const live = new Map();
@@ -882,7 +897,21 @@
   // the ms at which a poll first found it passed (gf sums both; the first poll comes a millisecond after the flush, so
   // nearly every fence is seen unsignalled once and only lo says how long). A fence can pass only between tasks, so it is
   // never polled in the task that made it, and one never polled is not counted either way.
-  const MEAS = PERF.meas = { err: 0, step: -1, gw: [], gi: [], flushes: [], fq: [], fence: { n: 0, late: 0, lo: 0, hi: 0, max: 0, at: -1, pend: 0 }, ready: null, lit: null, left: false, away: false,
+  // THE FENCE'S OWN COST (the review). fenceSync is not free everywhere. MEASURED in a real WKWebView (macOS 26) on this
+  // build: WebKit's call WAITS until the GPU process has worked through what the flush queued, 264 to 865 ms a load on a
+  // computer's path (five loads of 14 calls, the longest call 206 ms) and 527 and 2,680 ms on the phone's (single calls of
+  // 772 and 1,608 ms after the far ring's flushes, a quarter again on that load's 10.7 s of flush renders, and on a warm
+  // load, whose far-ring flush links nothing), where the page before it built the next chunk while the GPU process caught
+  // up; a micro-test read 10 to 72 ms with 192 MB of bufferData queued and 0 to 1 ms with draws alone, the poll 0 to 3.
+  // Chrome's returns at once, and the gaps this instrument is for are Windows Chrome's (9 to 21 s a load, against 0.2 s
+  // on the iPhone). So a fence is laid only on a computer whose engine is Chromium (FENCE_OK: never on a touch device,
+  // never in WebKit, nowhere the call is not known to return at once; told by Chromium's own window.chrome object, which
+  // WebKit and Firefox do not have, so no agent string is read), the call and its flush are timed (gf's eighth number),
+  // and the first pair that takes FENCE_SLOW_MS or more is the load's last (gf's ninth: 0 laid throughout, 1 stopped at
+  // a slow call, 2 never laid on this engine or device, 3 no fenceSync). Where none is laid the waits after a flush still
+  // show in gy's last two numbers
+  const FENCE_OK = !isTouch && typeof window.chrome === 'object' && !!window.chrome, FENCE_SLOW_MS = 4;
+  const MEAS = PERF.meas = { err: 0, step: -1, gw: [], gi: [], flushes: [], fq: [], fence: { n: 0, late: 0, lo: 0, hi: 0, max: 0, at: -1, pend: 0, cms: 0, st: FENCE_OK ? 0 : 2 }, ready: null, lit: null, left: false, away: false,
     lastMs: 0, worstMs: 0, stall: { n: 0, ms: 0, pn: 0, pms: 0, max: 0, prg: -1 }, eh: [0, 0, 0, 0], js: [0, 0, 0, 0, 0], jsN: 0, fg: [0, 0, 0, 0], landPrev: 0, landed: false,
     cap: { n: 0, ms: 0, tris: 0, calls: 0, near: 0 }, traf: 0, artNull: 0, on: '', caps: null, fam: new WeakMap(), famMs: 0 };
   try { linkInstall(renderer.getContext()); } catch (e) { LINK.err++; }
@@ -909,14 +938,22 @@
     } catch (e) { MEAS.err++; q.length = 0; }
   }
   // after a flush render (flushUploads): its step, ms and the programs it added, for fll; the next yield is 'after a flush';
-  // and its fence, at most eight in flight
+  // and its fence where one may be laid (FENCE_OK, and no slow call yet: see THE FENCE'S OWN COST), at most eight in flight
   function flushNote(tf, fp) {
     try {
-      const now = performance.now();
+      const now = performance.now(), F = MEAS.fence;
       MEAS.flushes.push([MEAS.step, Math.round(now - tf), renderer.info.programs.length - fp]);
       YLD.af = true;
+      if (F.st !== 0) return;
       const gl = renderer.getContext();
-      if (gl.fenceSync && MEAS.fq.length < 8) { const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); if (s) { MEAS.fq.push({ s, t: now, si: MEAS.step, polls: 0, un: false, lo: 0 }); MEAS.fence.n++; } }
+      if (!gl.fenceSync) { F.st = 3; return; }
+      if (MEAS.fq.length >= 8) return;
+      const t0 = performance.now(), s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      gl.flush();
+      const d = performance.now() - t0;
+      F.cms += d;
+      if (d >= FENCE_SLOW_MS) F.st = 1;   // this engine waits in the call: no more this load (the one laid is still polled)
+      if (s) { MEAS.fq.push({ s, t: now, si: MEAS.step, polls: 0, un: false, lo: 0 }); F.n++; }
     } catch (e) { MEAS.err++; }
   }
   // GEOMETRY BYTES BY FAMILY (famWalk). An array freed at upload (freeOnUpload and its kin) leaves nothing to size, so each
@@ -967,16 +1004,21 @@
   }
   const dbField = () => { const gl = renderer.getContext(); return gl.drawingBufferWidth + 'x' + gl.drawingBufferHeight; };
   // AT READY (build(), before the ready beacon is composed): the last fences, the timers' sums so far (the ready beacon's
-  // are the build's alone; what the first frame links rides the enter beacon), the geometry noted, the scene's size and what
-  // one settled scene.updateMatrixWorld() costs (three walks the whole graph every render; the second of two calls, so the
-  // first's one-off work is not in it; the first frame would have made the same call), and the crumb. THE CRUMB: for the
+  // are the build's alone; what a cold load's first frame links rides the enter beacon; a warm load's wraps come off here,
+  // see WHERE THE WRAPS COME OFF), the geometry noted, the scene's size and what
+  // one settled scene.updateMatrixWorld() costs (three walks the whole graph every render; the mean of ten passes after a
+  // first, so the first's one-off work is not in it and a clock of 0.1 ms, or WebKit's 1 ms, can still read a pass of 100
+  // to 500 microseconds: the review found one pass timed alone read 100, 200 and 500 in Chrome and would read 0 or 1,000
+  // in WebKit; the first frame would have made the same call), and the crumb. THE CRUMB: for the
   // 20 s after Ready the breadcrumb said only 'ready', so a phone killed a few seconds after Enter left no reading at all
   // and its real ceiling is unknown (871 MB was the figure at Ready, not at the kill). Until the running crumb takes over
   // (build()'s 20 s timer) the 'ready' crumb is written again every second with readyCtx: the same step, so the next
   // load's verdict is what it was, with q seconds since Ready, e seconds since Enter (-1 before), f frames drawn, m the
   // last frame's gap and w the worst since Ready (ms), gb the GPU megabytes with b buffers, x textures and r renderbuffers,
   // p programs, l the button lit. It stops by the clock at 19.5 s (a late tick must never write 'ready' over 'running'),
-  // and when the page is left (pagehide clears the crumb for good)
+  // and when the page is left (pagehide clears the crumb for good), and it is written only while the page is visible and
+  // focused, the running crumb's own rule (bootRun): a second tab finishing its build in the background must not write
+  // 'ready' every second over the 'running' of the tab in front (the review)
   function readyCtx() {
     const now = performance.now(), mb = (b) => Math.round(b / 1048576);
     return 'q' + (MEAS.ready ? Math.round((now - MEAS.ready.t) / 1000) : -1) + ',e' + (PERF.enterT ? Math.round((now - PERF.enterT) / 1000) : -1) + ',f' + frameNo + ',m' + Math.round(MEAS.lastMs) + ',w' + Math.round(MEAS.worstMs) +
@@ -986,22 +1028,25 @@
     try {
       const t = performance.now();
       fencePoll(true);
-      MEAS.ready = { t, prg: renderer.info.programs.length, link: linkSnap(), hd: Math.round(HID.ms + (HID.at >= 0 ? t - HID.at : 0)), hn: HID.n, med: linkMedian(), top: LINK.cold === 1 ? linkTop(0, LINK.recs.length) : '' };
+      MEAS.ready = { t, prg: renderer.info.programs.length, link: linkSnap(), hd: Math.round(HID.ms + (HID.at >= 0 ? t - HID.at : 0)), hn: HID.n, med: linkMedian(), top: LINK.cold === 1 ? linkTop(0, LINK.recs.length) : '', wr: false };
+      if (LINK.cold !== 1) LINK.off();   // a warm load's wraps come off at Ready; a cold load's after its one frame behind the unlit button (measLit)
+      MEAS.ready.wr = LINK.on;
       famWalk(false);
       let n = 0;
       scene.traverse(() => { n++; });
       scene.updateMatrixWorld();
       const t1 = performance.now();
-      scene.updateMatrixWorld();
-      MEAS.on = n + '.' + Math.round((performance.now() - t1) * 1000);
+      for (let k = 0; k < 10; k++) scene.updateMatrixWorld();
+      MEAS.on = n + '.' + Math.round((performance.now() - t1) * 100);   // microseconds a pass: ms * 1000 / 10
       const id = setInterval(() => {
         if (MEAS.left || performance.now() - t >= 19500) { clearInterval(id); return; }
+        if (document.visibilityState !== 'visible' || !document.hasFocus()) return;
         try { bootMark('ready', readyCtx()); } catch (e) { MEAS.err++; }
       }, 1000);
     } catch (e) { MEAS.err++; }
   }
-  // at the end of the first drawn frame, before the button lights: the wraps come off, and what the frame linked is kept
-  // for the enter beacon
+  // at the end of the first drawn frame, before the button lights: a cold load's wraps come off (a warm load's went at
+  // Ready, and LINK.off is then nothing), and what the frame linked is kept for the enter beacon
   function measLit() {
     try {
       LINK.off();
@@ -1021,7 +1066,7 @@
     const M = MEAS;
     if (frameNo > 1) { M.lastMs = rawMs; if (M.ready && rawMs > M.worstMs) M.worstMs = rawMs; }   // the first frame's gap is the whole build's (last is set at boot)
     if (once || !DPR.live) return;
-    if (LINK.on) measLit();
+    if (LINK.on || !M.lit) measLit();
     const S = M.stall, prg = renderer.info.programs.length, landed = M.landed;   // the frame before began with a landing: this gap holds it
     M.landed = PIN_OCC.landN !== M.landPrev; M.landPrev = PIN_OCC.landN;
     if (S.prg < 0) S.prg = M.lit ? M.lit.prg : prg;
@@ -1053,12 +1098,14 @@
   //     inside: index, yields, ms); gy (all yields: count, ms, the longest, and the ones right after a flush render:
   //     count, ms); gf (fences made; the ones seen unsignalled and later passed; the summed ms they were last seen
   //     unsignalled at, and first seen passed at; the longest of the former and the step it followed; still unpassed at
-  //     Ready); hd and hn (ms hidden before Ready and how often); bl
+  //     Ready; the ms the fence calls themselves took; and the state: 0 laid throughout, 1 stopped at a slow call, 2 never
+  //     laid on this engine or device, 3 no fenceSync); hd and hn (ms hidden before Ready and how often); bl
   //     (the ms of the bail beacon this load sent, '' with none); cap (capField); db (the drawing buffer, WxH); gbf
   //     (geometry MB: chunks, roads, flats, instanced, rest, then the buffers never sized); on (the scene's objects and
   //     the microseconds of one settled updateMatrixWorld); an (art loads that ended in null); wn (wraps that threw)
-  //   enter: cold; f1p (programs the first frame added) and f1k, f1t, f15 (lk, tu and l5 for what it linked); lit (ms from
-  //     Ready to the lit button); eb (1 when the fallback timer drew the first frame)
+  //   enter: cold; f1p (programs the first frame added) and, on a cold load alone (its wraps were still on), f1k, f1t and
+  //     f15 (lk, tu and l5 for what it linked); lit (ms from Ready to the lit button); eb (1 when the fallback timer drew
+  //     the first frame)
   //   bail: cold, as far as it is known
   //   perf, settled, late: stl (stalls after Enter: count, ms, those with new programs: count, ms, the longest); prg; db;
   //     gbf; pl (pin landings and their ms); pt (the pins' captures: count, mean triangles in thousands, mean calls, mean
@@ -1075,15 +1122,15 @@
       for (const e of MEAS.flushes) { const a = by.get(e[0]) || [0, 0, 0]; a[0]++; a[1] += e[1]; a[2] += e[2]; by.set(e[0], a); }
       const F = MEAS.fence, o = { cold, lk: measLk(R.link, LINK0) + '.' + Math.round(R.med), tu: R.link.tn + '.' + Math.round(R.link.tms),
         fll: [...by].map((e) => e[0] + '.' + e[1].join('.')).join('_'), gw: Array.from(MEAS.gw, (v) => v || 0).join('.'), gi: MEAS.gi.join('_'),
-        gy: [YLD.n, YLD.ms, YLD.max, YLD.afN, YLD.afMs].map(Math.round).join('.'), gf: [F.n, F.late, F.lo, F.hi, F.max, F.at, F.pend].map(Math.round).join('.'),
+        gy: [YLD.n, YLD.ms, YLD.max, YLD.afN, YLD.afMs].map(Math.round).join('.'), gf: [F.n, F.late, F.lo, F.hi, F.max, F.at, F.pend, F.cms, F.st].map(Math.round).join('.'),
         hd: R.hd, hn: R.hn, bl: HID.bail >= 0 ? HID.bail : '', cap: f(capField), db: f(dbField), gbf: f(famField), on: MEAS.on, an: MEAS.artNull, wn: LINK.err + MEAS.err };
       if (R.top) o.l5 = R.top;
       return o;
     }
     if (st === 'enter') {
-      if (LINK.on) measLit();
+      if (LINK.on || !MEAS.lit) measLit();
       const E = MEAS.lit, o = { cold };
-      if (E && R) { o.f1p = E.prg - R.prg; o.f1k = measLk(E.link, R.link); o.f1t = (E.link.tn - R.link.tn) + '.' + Math.round(E.link.tms - R.link.tms); if (E.top) o.f15 = E.top; }
+      if (E && R) { o.f1p = E.prg - R.prg; if (R.wr) { o.f1k = measLk(E.link, R.link); o.f1t = (E.link.tn - R.link.tn) + '.' + Math.round(E.link.tms - R.link.tms); if (E.top) o.f15 = E.top; } }
       o.lit = PERF.lit && PERF.ready ? PERF.lit - PERF.ready : ''; o.eb = PERF.enterBy === 'timer' ? 1 : 0;
       return o;
     }
@@ -53091,7 +53138,7 @@ float pinOccGate() {
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
     if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: no wx program compiles in it a second time, wxHookAll; tier 2's ten first compiles still do, see there)
     if (PERF.prog.f1 < 0) progLost();   // Round 226: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
-    if (LINK.on) measLit();   // Round 226: the link timers' wraps come off here, before a tap can be answered, and what this frame linked is kept for the enter beacon
+    if (LINK.on || !MEAS.lit) measLit();   // Round 226: a cold load's link timers come off here, before a tap can be answered (a warm load's went at Ready), and what this frame linked is kept for the enter beacon
     if (!ENTER.lit) enterLight();   // Round 226: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
   }
 
