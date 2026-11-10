@@ -21,7 +21,7 @@ REQUIRED = {
     "scene.json": 550_000, "meta.json": 10_000, "about_body.html": 3_000,
     "dem.json": 120_000, "dem_wide.json": 350_000, "dem_south.json": 120_000, "dem_city.json": 620_000,
     "dem_nw.json": 140_000, "wwb.json": 250, "wide_walls.b64": 100_000, "city_limit.json": 2_500, "wide_names.json": 3_000, "facade_palette.json": 300,
-    "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "paved.b64": 250_000, "traffic.b64": 100_000,
+    "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "paved.b64": 250_000, "traffic.b64": 100_000, "people_walk.b64": 98_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000, "septa_stops.json": 340_000, "civic.json": 12_000,
     "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000, "markers.json": 120_000, "landmarks.json": 100_000, "rail_amtrak.json": 30_000, "patco.json": 7_500,
@@ -175,6 +175,9 @@ part("ST_SDF", "let ST_SDF = " + sdf + ";\n")
 const("OVERPASSES", text_of("overpasses.json", "null"))
 # typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
 let_blob("TRAFFIC_B64", "traffic.b64")
+# the walls beside those ways (bake_people_walk.py, Round 227): how far the nearest wall stands from each way's centreline, read only
+# under ?people=1. Its body is already laid in byte planes, so it is not in PLANAR
+let_blob("PEOPLE_WALK_B64", "people_walk.b64")
 # NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
 # PPR parkland boundaries and full-fidelity creek/canal rings (fetch_nw_parks.py / fetch_nw_water.py)
 const("DEM_NW", dem_of("dem_nw.json", 1))
