@@ -218,7 +218,7 @@ class Text(unittest.TestCase):
         self.assertEqual(s[s.index(END):].split('\n', 2)[1], '  function trafficPrepareGraph(runs) {')
 
     def test_off_by_default_and_never_on_tier_two(self):
-        self.assertIn("const PEOPLE_ON = /[?&]people=1\\b/.test(location.search) && !TIER2;", self.sec)
+        self.assertIn("const PEOPLE_ON = /[?&]people=(?:1|sharp)\\b/.test(location.search) && !TIER2;", self.sec)
         self.assertIn("if (!PEOPLE_ON || !P.live) return 0;", self.sec)
         self.assertIn("if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;", self.sec)
 

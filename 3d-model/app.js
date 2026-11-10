@@ -44503,7 +44503,7 @@ float pinOccGate() {
   // ---- people on the sidewalks (Round 227. Mike, Nov 9, 2026: people on the sidewalks, walking; the plan's STREET-1 as
   // both verifiers amended it). The data and the logic only: where a walker may walk, who is there at a given second, and
   // one call that fills a buffer with the walkers near the eye. No mesh, no material and no program is made here (the
-  // drawing is a later round's), and nothing runs unless the page is opened with ?people=1: every look change goes to
+  // drawing is its own section, after the traffic's step), and nothing runs unless the page is opened with ?people=1: every look change goes to
   // Mike behind a flag first. Tier 2 has no traffic runs and gets nobody from this section.
   //
   // WHERE. A walker keeps to a walk line behind the kerb of a street the typical traffic runs on: the run's centreline set
@@ -44544,7 +44544,7 @@ float pinOccGate() {
   // as a unit vector on the ground, figure index, step phase 0 to 1, fade 0 to 1) for the walkers within R of the eye and
   // returns how many; nothing when the eye is PEOPLE.eyeMax over the ground. It allocates nothing, keys nothing by a
   // string, and traces at most PEOPLE.traceMs of new faces a call. __dbg.people() reports, __dbg.people(false) stops it.
-  const PEOPLE_ON = /[?&]people=1\b/.test(location.search) && !TIER2;
+  const PEOPLE_ON = /[?&]people=(?:1|sharp)\b/.test(location.search) && !TIER2;   // sharp: a computer's twice-size atlas (PEOPLE_SHARP)
   if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;   // nothing reads the walls: let the text go
   const PEOPLE_T0 = Date.UTC(2026, 0, 1);   // t counts real seconds from here, so the same instant gives the same street on any device
   const PEOPLE = { live: PEOPLE_ON, ready: false, r: isTouch ? 80 : 150, cap: isTouch ? 150 : 600, stride: 8, figures: 12,
@@ -45115,6 +45115,7 @@ float pinOccGate() {
     const o = { on: PEOPLE_ON, live: P.live, ready: P.ready, t: P.t, loops: 0, shuttles: 0, trails: P.trails.length, slots: P.nSlots, points: P.nPts, pieces: P.nPieces || 0, traced: S.traced, dropped: S.dropped, flushes: P.flushes,
       share: PEOPLE_ON ? +peopleShare().toFixed(3) : 0, why: P.sides ? { sides: Array.from(P.sides), corners: Array.from(P.corners) } : null, radiusK: +P.rk.toFixed(2), fill: { drawn: S.drawn, present: S.present, slots: S.slots, trails: S.active, pending: S.pending, ms: +S.ms.toFixed(3), fills: S.fills } };
     for (const T of P.trails) if (T.closed) o.loops++; else o.shuttles++;
+    if (PEOPLE_ON && typeof peopleDrawDbg === 'function') o.draw = peopleDrawDbg();   // the drawing's own count (typeof: this section also runs under Node, alone)
     if (P.ready) {
       // the walkable share of the kerb length within the fill's radius of the eye (the sides traced so far)
       const ex = camera.position.x, ez = camera.position.z, R = P.r, C = P.cell, seen = new Set();
@@ -45761,6 +45762,299 @@ float pinOccGate() {
     trafficAdvance(now,Math.min(dt,.1));trafficDraw(clamp((lampUniform.value-.25)/.6,0,1));
     if(CARMAP.on)carMapUpdate();
   }
+
+  // ---- people on the sidewalks: the drawing (Round 227. The walkers above, drawn: only under ?people=1, a look change
+  // behind its flag until Mike has seen it). One InstancedMesh of unit quads, a card a walker, each turned about its own
+  // vertical to the eye and never tilted, its feet on the drawn ground the fill hands it. The picture is a cell of
+  // PEOPLE_ART's one atlas (bake_people_art.py): a front, a back and a side view, each as a stride and as the passing
+  // pose between two strides.
+  //   THE VIEW comes from the walker's heading against the line to the eye: the front inside 45 degrees of walking at
+  // the eye, the back inside 45 of walking away, the side between, mirrored when the walker's way is toward the viewer's
+  // left. No view snaps: across PPL.hand degrees either side of a line the two pictures hand over through a per-pixel
+  // dither (both cells ride every instance).
+  //   THE STEP: the fill's phase is one gait cycle of two steps, so stride, pass, stride, pass. The second stride is the
+  // other leg's: the front and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on
+  // one side (p01's tote must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet
+  // by PPL.bob metres at the passing pose (a walker is lowest with both feet down), the feet never leaving the ground.
+  //   THE LIGHT is the tree cards': a MeshStandardMaterial with a soft normal round the body's axis, so a figure has a
+  // sun side; the sun's shadow received on a computer (a walker in a building's shade is in shade); the lamps' pools at
+  // night through lampLightPatch (called, never edited: its crown share is the card's own uniform here); the clouds'
+  // shadows, the fog and the air as every standard material has them. The atlas goes up premultiplied and the shader
+  // divides the coverage back out (handoff's gotcha 16), cut at half coverage, firmer as the card shrinks.
+  //   THE GROUND: a contact shade under every figure (the vehicles' own blob material and program, vehShadowMaterial),
+  // and by day the figure's own shadow: the card as the SUN sees it (its view chosen against the sun's bearing), laid
+  // flat along the sun's rays, cut by the atlas's alpha, reading the sun's map where it lands so a walker in a building's
+  // shade casts no second shadow, and sharing the vehicles' stencil so two shadows that cross never darken twice.
+  // Nothing here enters the depth pass (REAL's rule: nothing that moves casts into it), the mirror (reflK 0) or the pins'
+  // capture (occRender leaves every InstancedMesh out), and nothing answers a tap.
+  //   TWO NEW PROGRAMS, people-card and people-shade, exist only under the flag, and no other program's text is touched.
+  // Both are linked in the frames between Ready and the Enter tap, on a 1 by 1 texture and one collapsed instance, with
+  // peopleInit beside them, so the first descent to a street stalls on neither; the atlas is asked for the first time a
+  // fill returns anyone. ?people=sharp is a computer's twice-size atlas, for the side by side
+  const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\b/.test(location.search);
+  const PEOPLE_SYM = { p02: 1, p03: 1 };   // nothing carried on one side: the second stride may be the first one mirrored
+  const PPL = { made: false, card: null, shade: null, blob: null, out: null, iv: null, ivb: null, fade: null, figs: null, n: 0, atlas: null, loading: false, retryAt: 0, failed: 0,
+    hand: 6, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
+    uTex: { value: null }, uPK: { value: new THREE.Vector4(0.03, 900, 256, 0.0) }, uPL: { value: new THREE.Vector4(0.42, 0.9, 0, 0) }, uPS: { value: new THREE.Vector4(0, 0.035, 0, 0) } };
+  const PEOPLE_BAYER = 'float pBay(vec2 p) { vec2 cp = mod(floor(p), 4.0); float low = mod(mod(cp.x, 2.0) * 2.0 + mod(cp.y, 2.0) * 3.0, 4.0); float high = mod(floor(cp.x / 2.0) * 2.0 + floor(cp.y / 2.0) * 3.0, 4.0); return (low * 4.0 + high + 0.5) / 16.0; }';
+  // every figure's cells as the shader reads them: view (front, back, side) by frame (stride, pass), each u0, v0 (the
+  // feet's row), du, dv in a texture with its first row at the top of the image
+  function peopleCells() {
+    const A = PEOPLE_ART, W = A.atlas.w, H = A.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [];
+    for (const f of A.figures) {
+      const c = new Float32Array(24);
+      for (let v = 0; v < 3; v++) for (let fr = 0; fr < 2; fr++) { const r = f.cells[V[v]][fr], o = (v * 2 + fr) * 4; c[o] = r[0] / W; c[o + 1] = 1 - (r[1] + r[3]) / H; c[o + 2] = r[2] / W; c[o + 3] = r[3] / H; }
+      const r0 = f.cells[V[0]][0];
+      F.push({ c, tall: f.tall, wide: f.tall * r0[2] / r0[3], sym: !!PEOPLE_SYM[f.id] });
+    }
+    return F;
+  }
+  function peopleCardPatch(sh) {
+    Object.assign(sh.uniforms, { tPeople: PPL.uTex, uPK: PPL.uPK, uPL: PPL.uPL });
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + [
+        'attribute float aCarFade; attribute vec4 aPB; attribute vec4 aRA; attribute vec4 aRB;',
+        'uniform vec4 uPK;   // the bob (m), the frame height (px), a cell height (texels), the lift (m)',
+        'varying vec4 pUv; varying vec3 pK;',
+        'void pCard(out vec3 lp, out vec3 nrm) {',
+        '  vec3 pTb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, toE = cameraPosition - pTb;',
+        '  vec2 fh = normalize(toE.xz + vec2(1e-5, 0.0));',
+        '  vec3 rt = vec3(fh.y, 0.0, -fh.x);',
+        '  float yy = position.y + 0.5;',
+        '  float H = aPB.y + uPK.x * (0.5 - 0.5 * cos(12.5664 * (aPB.w - 0.125)));',   // tallest in the middle of each passing pose
+        '  lp = rt * (position.x * aPB.x) + vec3(0.0, yy * H + uPK.w, 0.0);',   // in the instance's own frame: its matrix is the feet's place alone
+        '  vec2 cs = vec2(position.x + 0.5, yy);',
+        '  pUv = vec4(aRA.xy + aRA.zw * cs, aRB.xy + aRB.zw * cs);',
+        '  float px = aPB.y * projectionMatrix[1][1] * 0.5 * uPK.y / max(1.0, length(toE));',
+        '  pK = vec3(aPB.z, aCarFade, 1.0 + 0.35 * max(0.0, log2(uPK.z / max(px, 1.0))));',
+        '  nrm = normalize(vec3(fh.x, 0.0, fh.y) * 0.62 + rt * (position.x * 1.3) + vec3(0.0, 0.3, 0.0));',
+        '}',
+      ].join('\n'))
+      .replace('#include <beginnormal_vertex>', 'vec3 pLP, pNrm; pCard(pLP, pNrm);\n#include <beginnormal_vertex>')
+      .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * pNrm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = pLP;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');   // nobody: clipped whole
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tPeople; uniform vec4 uPL; varying vec4 pUv; varying vec3 pK;\n' + PEOPLE_BAYER)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n' + [
+        '{ if (pK.y <= pBay(gl_FragCoord.xy)) discard;',   // the fade, a screen door (never a blend)
+        '  vec4 pa = texture2D(tPeople, pUv.xy), pb = texture2D(tPeople, pUv.zw);',   // both read outside the pick, so each keeps its own mips
+        '  vec4 tx = pK.x > pBay(gl_FragCoord.xy + vec2(2.0, 1.0)) ? pb : pa;',
+        '  tx.rgb = min(tx.rgb / max(tx.a, 0.004), vec3(1.0));   // the atlas holds premultiplied colour: the coverage divided back out',
+        '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2)) * uPL.y;',
+        '  diffuseColor.a *= clamp(tx.a * pK.z, 0.0, 1.0); }',
+      ].join('\n'));
+    const wp = 'cameraPosition - vViewPosition * mat3(viewMatrix)';
+    lampLightPatch(sh, wp, 'crown');
+    // a tree's crown takes 0.12 of the pool it stands in; a walker stands IN the pool, so the share is the card's own
+    // (in this program's text alone: the patch itself is as it was)
+    const lk = sh.fragmentShader.indexOf('float lk = 0.12');
+    if (lk >= 0) sh.fragmentShader = sh.fragmentShader.slice(0, lk) + 'float lk = uPL.x' + sh.fragmentShader.slice(lk + 15);
+    cloudShadowPatch(sh, wp);
+  }
+  // the figure's own shadow: the card as the sun sees it, flat on the ground along the sun's rays (the vehicles' way,
+  // vehShadowMaterial, with the atlas's alpha for the hull)
+  function peopleShadeMaterial() {
+    const m = new THREE.ShadowMaterial({ color: 0x000000, depthWrite: false });
+    m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation; m.blendSrc = THREE.SrcAlphaFactor; m.blendDst = THREE.OneMinusSrcAlphaFactor;
+    m.blendEquationAlpha = THREE.AddEquation; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;   // the bloom's mask in the alpha is left as it was
+    m.stencilWrite = true; m.stencilRef = 1; m.stencilFunc = THREE.NotEqualStencilFunc; m.stencilZPass = THREE.ReplaceStencilOp;   // the vehicles' own mark: no shadow darkens another
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { uSunW: vehShadowU.uSunW, uShadowA: vehShadowU.uShadowA, uShadeOut: vehShadowU.uShadeOut, uCoreBox: vehShadowU.uCoreBox, tPeople: PPL.uTex, uPS: PPL.uPS });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_vertex>').replace('#include <worldpos_vertex>', '#include <logdepthbuf_vertex>\n#include <worldpos_vertex>');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_fragment>').replace('void main() {', 'void main() {\n#include <logdepthbuf_fragment>');
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aCarFade; attribute vec4 aPB; attribute vec4 aRS; uniform vec3 uSunW; uniform vec4 uPS; varying vec2 vShXZ; varying vec4 pSUv; varying float pSF;')
+        .replace('#include <project_vertex>', [
+          'vec3 pTb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, LS = normalize(uSunW);',
+          'vec2 pSh = normalize(LS.xz + vec2(1e-5, 0.0));',
+          'vec3 pRt = vec3(pSh.y, 0.0, -pSh.x);',
+          'float pYy = position.y + 0.5;',
+          'vec4 wpS = vec4(pTb + pRt * (position.x * aPB.x) - vec3(LS.x, 0.0, LS.z) * (pYy * aPB.y / max(LS.y, 0.3)) + vec3(0.0, uPS.y, 0.0), 1.0);',
+          'vec4 mvPosition = viewMatrix * wpS;',
+          'gl_Position = projectionMatrix * mvPosition;',
+          'pSUv = vec4(aRS.xy + aRS.zw * vec2(position.x + 0.5, pYy), position.x + 0.5, pYy); pSF = aCarFade; vShXZ = wpS.xz;',
+        ].join('\n'))
+        // a log depth buffer ignores a polygon offset: the flat shade is drawn a hair toward the eye (the vehicles' line, both depth modes)
+        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif' + (ZREV.on ? '\ngl_Position.z /= 0.9993;' : ''))
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif')
+        .replace('#include <fog_vertex>', '#include <fog_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uShadowA, uShadeOut; uniform vec4 uCoreBox, uPS; uniform sampler2D tPeople; varying vec2 vShXZ; varying vec4 pSUv; varying float pSF;\n' + PEOPLE_BAYER)
+        .replace('gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );', [
+          'if (pSF <= pBay(gl_FragCoord.xy)) discard;',
+          // uPS.x 1 (__dbg.peopleTune({ shade: 1 })): a plain long soft shade in the hull's place, the A/B the review asked for
+          'float pHull = uPS.x > 0.5 ? 1.0 - smoothstep(0.55, 1.0, length(vec2((pSUv.z - 0.5) / 0.3, (pSUv.w - 0.5) / 0.5))) : texture2D(tPeople, pSUv.xy, -1.5).a;',   // a finer mip than the grazing view asks for: the cut edge stays the figure's, not a coarse mip's blocks
+          'if (pHull < 0.5) discard;',
+          'float shIn = step(uCoreBox.x, vShXZ.x) * step(vShXZ.x, uCoreBox.y) * step(uCoreBox.z, vShXZ.y) * step(vShXZ.y, uCoreBox.w);',
+          'float bk = mix(1.0, getShadowMask(), max(shIn, uShadeOut));',
+          'gl_FragColor = vec4(color, 1.0);',
+        ].join('\n'))
+        .replace('#include <fog_fragment>', '#include <fog_fragment>' + VEH_SHADE_FOG + 'gl_FragColor = vec4(0.0, 0.0, 0.0, uShadowA * bk * (1.0 - shFog));');
+    };
+    m.customProgramCacheKey = () => 'people-shade';
+    return m;
+  }
+  // the meshes, made once, in a frame behind the veil after Ready: one collapsed instance each, so this frame's draw links
+  // the programs against the scene as it stands (its lights, its fog, the post target)
+  function peopleDrawMake() {
+    const D = PPL, t0 = performance.now(), cap = PEOPLE.cap;
+    D.figs = peopleCells();
+    D.out = new Float32Array(cap * PEOPLE.stride);
+    D.iv = new Float32Array(cap * 16);    // a walker: the card's width, its height, the hand-over, the step's phase; then three cells (view A, view B, the sun's view)
+    D.fade = new Float32Array(cap);
+    const one = new THREE.DataTexture(new Uint8Array(4), 1, 1); one.needsUpdate = true;
+    D.uTex.value = one;
+    D.ivb = new THREE.InstancedInterleavedBuffer(D.iv, 16); D.ivb.setUsage(THREE.DynamicDrawUsage);
+    const fade = new THREE.InstancedBufferAttribute(D.fade, 1); fade.setUsage(THREE.DynamicDrawUsage);
+    const at = (o) => new THREE.InterleavedBufferAttribute(D.ivb, 4, o);
+    const quad = () => { const g = new THREE.PlaneGeometry(1, 1); g.deleteAttribute('uv'); g.setAttribute('aCarFade', fade); g.setAttribute('aPB', at(0)); return g; };
+    const cg = quad(); cg.setAttribute('aRA', at(4)); cg.setAttribute('aRB', at(8));
+    const mat = new THREE.MeshStandardMaterial({ alphaTest: 0.5, side: THREE.FrontSide, roughness: 1, metalness: 0, envMapIntensity: 0.2 });
+    mat.onBeforeCompile = peopleCardPatch;
+    mat.customProgramCacheKey = () => 'people-card';
+    const card = D.card = new THREE.InstancedMesh(cg, mat, cap);
+    card.name = 'People';
+    card.instanceMatrix.setUsage(THREE.DynamicDrawUsage);   // identity but for each walker's place (the feet), written every frame
+    { const e = card.instanceMatrix.array; for (let i = 0; i < cap * 16; i += 16) e[i] = e[i + 5] = e[i + 10] = e[i + 15] = 1; }
+    card.frustumCulled = false; card.castShadow = false; card.count = 1;
+    const meshes = [card];
+    if (REAL) {   // the shades are the realistic look's, as the vehicles' are (their uniforms are vehShadowUpdate's)
+      const sg = quad(); sg.setAttribute('aRS', at(12));
+      const shade = D.shade = new THREE.InstancedMesh(sg, peopleShadeMaterial(), 1);
+      shade.name = 'People shadows'; shade.renderOrder = 2;
+      const bg = vehBlobGeom(1.05, 0.85); bg.setAttribute('aCarFade', fade);   // a soft patch about 0.6 m across under the feet (the blob's own falloff takes the outer half)
+      const blob = D.blob = new THREE.InstancedMesh(bg, vehShadowMaterial(true, true, false), 1);
+      blob.name = 'People contact'; blob.renderOrder = 1;
+      meshes.push(shade, blob);
+    }
+    for (const m of meshes) {
+      if (m !== card) { m.instanceMatrix = card.instanceMatrix; m.count = 1; m.frustumCulled = false; m.castShadow = false; }
+      m.userData.reflK = 0;        // never in the river's mirror (reflSweep keeps a set flag)
+      m.userData.people = true;
+      // who reads the sun's map: the card on a computer, the figure's shadow anywhere (r149 hands the map to a mesh that
+      // receives); a mesh made while the receivers are off joins the list they come back from (moonShadowsOff)
+      const recv = m === D.shade || (m === card && !isTouch);
+      m.receiveShadow = recv && !moonNoRecv;
+      if (recv && moonNoRecv) moonNoRecv.push(m);
+      const key = m === card ? 'cardMs' : m === D.shade ? 'shadeMs' : 'blobMs';
+      let tb = 0;
+      m.onBeforeRender = () => { tb = performance.now(); };
+      m.onAfterRender = () => { D.warm[key] = +(performance.now() - tb).toFixed(1); m.onBeforeRender = m.onAfterRender = THREE.Object3D.prototype.onBeforeRender; };
+      groupCity.add(m);
+    }
+    D.fade[0] = 0;   // the one instance of the warm frame is nobody: clipped in the vertex shader, and both programs are linked by its draw
+    D.warm.p0 = renderer.info.programs ? renderer.info.programs.length : 0;
+    if (!PEOPLE.ready && trafficReady && trafficRuns.length) { const t1 = performance.now(); peopleInit(); D.warm.initMs = +(performance.now() - t1).toFixed(1); }
+    D.made = true;
+    D.warm.makeMs = +(performance.now() - t0).toFixed(1);
+  }
+  function peopleAtlasLoad(now) {
+    const D = PPL, A = PEOPLE_ART.atlas;
+    D.loading = true;
+    // each a record's field with the record's own half beside it, so a phone can only ever be handed the half
+    (PEOPLE_SHARP ? artImage(artSrc(A.imgSharp, A.imgHalf)) : artImage(artSrc(A.img, A.imgHalf))).then((im) => {
+      D.loading = false;
+      if (!im) { D.failed++; D.retryAt = performance.now() + 30000; return; }
+      const t = new THREE.Texture(im), mips = renderer.capabilities.isWebGL2 === true;   // its size is no power of two: WebGL 2 mips it as it is
+      t.premultiplyAlpha = true;   // gotcha 16: unpremultiplied, the clear texels' colour mixes into every edge's mips
+      t.generateMipmaps = mips; t.minFilter = mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+      t.anisotropy = anisoOf(4); t.needsUpdate = true;   // left linear: the card's shader decodes it, as the trees' does
+      const old = D.uTex.value;
+      D.uTex.value = freeTexOnUpload(t);
+      if (old) old.dispose();
+      D.uPK.value.z = Math.round(im.height * PEOPLE_ART.figures[0].cells[0][0][3] / A.h);
+      D.atlas = { w: im.width, h: im.height, bytes: Math.round(im.width * im.height * 4 * (mips ? 4 / 3 : 1)), sharp: PEOPLE_SHARP, half: im.width < A.w };
+    });
+  }
+  // The fill's height is the drawn GROUND at the walker's line; what the walker stands on is whatever is laid over it: an
+  // outer district's sidewalk (SIDEWALK_UP over the ground at its ring's points, and by the cut of its triangles 0.07 to
+  // 0.32 over it between them: measured through pickAt under 30 walkers, the median 0.195), the core's own sidewalks
+  // (0.14 to 0.26 over siteY, 35 walkers), or nothing (the far ring, a phone at tier 1: within 0.05 either way). No call
+  // answers the drawn sidewalk's own height, so the lift is the high side of each range: a figure a few centimetres
+  // over the paving stands on its contact shade and reads as standing, where one a few centimetres under it loses its
+  // soles and its shade both. Three points along the walker's way, so a ring's edge is a step of a third at a time
+  const peopleOn = (x, z) => (inCore(x, z) || sidewalkAt(x, z) ? 1 : 0);
+  function peopleUp(x, z, hx, hz) {
+    return PPL.up0 + (PPL.up1 - PPL.up0) * (peopleOn(x, z) + peopleOn(x + hx * 0.4, z + hz * 0.4) + peopleOn(x - hx * 0.4, z - hz * 0.4)) / 3;
+  }
+  // every frame, after the traffic: the walkers near the eye into the instance buffers
+  function peopleStep(now) {
+    const D = PPL;
+    if (!D.made) { if (PERF.ready !== undefined && typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.figures && PEOPLE_ART.figures.length) peopleDrawMake(); return; }
+    if (D.warm.frames < 2) { if (++D.warm.frames === 2) D.warm.p1 = renderer.info.programs ? renderer.info.programs.length : 0; else return; }   // the warm frame has been drawn
+    const t0 = performance.now(), c = camera.position, out = D.out;
+    const n = peopleFill(out, c.x, c.y, c.z);
+    if (n && !D.atlas && !D.loading && now >= D.retryAt) peopleAtlasLoad(now);
+    const show = D.atlas ? n : 0;
+    D.n = show;
+    D.card.count = show; D.card.visible = show > 0;
+    if (D.blob) { D.blob.count = show; D.blob.visible = show > 0 && vehShadowU.uBlobA.value > 0.005; }
+    if (D.shade) { D.shade.count = show; D.shade.visible = show > 0 && vehShadowU.uShadowA.value > 0.005; }
+    if (!show) { D.stepMs = performance.now() - t0; return; }
+    D.uPK.value.x = D.bob; D.uPK.value.y = renderer.domElement.height || 900;
+    const figs = D.figs, nf = figs.length, iv = D.iv, fd = D.fade, me = D.card.instanceMatrix.array, ex = c.x, ez = c.z, HW = D.hand, xf = D.xfade;
+    let sx = sunDir.x, sz = sunDir.z; const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl;
+    for (let i = 0; i < show; i++) {
+      const o = i * 8, x = out[o], z = out[o + 2], hx = out[o + 3], hz = out[o + 4], F = figs[out[o + 5] % nf], ph = out[o + 6], C = F.c, q = i * 16;
+      me[q + 12] = x; me[q + 13] = out[o + 1] + peopleUp(x, z, hx, hz); me[q + 14] = z;
+      fd[i] = out[o + 7];
+      // the step: stride, pass, stride, pass; the second stride mirrored where the figure allows
+      const p4 = ph * 4, fi = Math.floor(p4) & 3, fr = fi & 1, flip = F.sym && fi === 2;
+      // the view against the eye: 0 the front, 1 the back, 2 the side
+      let dx = ex - x, dz = ez - z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const cs = hx * dx + hz * dz, a = Math.acos(cs > 1 ? 1 : cs < -1 ? -1 : cs) * 57.29578, right = hx * dz - hz * dx >= 0;
+      let vA, vB, k = 0;
+      if (a < 45 - HW) vA = vB = 0;
+      else if (a < 45 + HW) { vA = 0; vB = 2; k = (a - 45 + HW) / (2 * HW); }
+      else if (a < 135 - HW) vA = vB = 2;
+      else if (a < 135 + HW) { vA = 2; vB = 1; k = (a - 135 + HW) / (2 * HW); }
+      else vA = vB = 1;
+      let frB = fr, flipB = flip;
+      if (xf > 0 && vA === vB) {   // PPL.xfade (0 by default): the tail of each pose dissolves into the next through the same dither
+        const u = p4 - Math.floor(p4);
+        if (u > 1 - xf) { const nx = (fi + 1) & 3; frB = nx & 1; flipB = F.sym && nx === 2; k = (u - 1 + xf) / xf; }
+      }
+      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = ph;
+      for (let s = 0; s < 3; s++) {
+        let v, f = fr, mir;
+        if (s === 0) { v = vA; mir = v === 2 ? !right : flip; }
+        else if (s === 1) { v = vB; f = frB; mir = v === 2 ? !right : flipB; }
+        else {   // the sun's view of the walker, for the shadow: the nearest view, no hand-over. From the side it is the
+          // passing pose whatever the step: a stride's feet stand 0.4 m either side of the card's own (which may be a front
+          // or a back, feet together), and a shadow that does not start at the feet reads as somebody else's
+          const cz = hx * sx + hz * sz;
+          v = cz > 0.7071 ? 0 : cz < -0.7071 ? 1 : 2; mir = v === 2 ? hx * sz - hz * sx < 0 : flip;
+          if (v === 2) f = 1;
+        }
+        const ci = (v * 2 + f) * 4, w = q + 4 + s * 4;
+        iv[w] = mir ? C[ci] + C[ci + 2] : C[ci]; iv[w + 1] = C[ci + 1]; iv[w + 2] = mir ? -C[ci + 2] : C[ci + 2]; iv[w + 3] = C[ci + 3];
+      }
+    }
+    const im = D.card.instanceMatrix, fa = D.card.geometry.attributes.aCarFade;
+    im.updateRange.offset = 0; im.updateRange.count = show * 16; im.needsUpdate = true;
+    D.ivb.updateRange.offset = 0; D.ivb.updateRange.count = show * 16; D.ivb.needsUpdate = true;
+    fa.updateRange.offset = 0; fa.updateRange.count = show; fa.needsUpdate = true;
+    D.stepMs = performance.now() - t0;
+  }
+  // __dbg.people().draw: what is drawn, the atlas in use and its bytes on the GPU, the two programs' presence, the warm-up
+  function peopleDrawDbg() {
+    const D = PPL, P = (renderer.info.programs || []).map((p) => String(p.cacheKey || '')), has = (k) => P.some((s) => s.indexOf(k) >= 0);
+    return { made: D.made, drawn: D.n, sharp: PEOPLE_SHARP, atlas: D.atlas ? { ...D.atlas } : null, loading: D.loading, failed: D.failed, figures: D.figs ? D.figs.length : 0,
+      programs: { card: has('people-card'), shade: has('people-shade'), total: P.length }, shades: { sun: !!(D.shade && D.shade.visible), contact: !!(D.blob && D.blob.visible) },
+      receive: D.card ? { card: D.card.receiveShadow, shade: !!(D.shade && D.shade.receiveShadow) } : null,
+      warm: { ...D.warm, programs: D.warm.p1 - D.warm.p0 }, stepMs: +D.stepMs.toFixed(3), tune: { bob: D.bob, hand: D.hand, xfade: D.xfade, lamp: D.uPL.value.x, tone: D.uPL.value.y, lift: D.uPK.value.w, shade: D.uPS.value.x, up: [D.up0, D.up1] } };
+  }
+  // __dbg.peopleTune({ bob, hand, xfade, lamp, tone, lift, shade }): the look's numbers at run time, for the review
+  function peopleTune(o) {
+    const D = PPL;
+    if (o) {
+      if (o.bob != null) D.bob = +o.bob; if (o.hand != null) D.hand = clamp(+o.hand, 0.5, 40); if (o.xfade != null) D.xfade = clamp(+o.xfade, 0, 0.9);
+      if (o.lamp != null) D.uPL.value.x = +o.lamp; if (o.tone != null) D.uPL.value.y = +o.tone; if (o.lift != null) D.uPK.value.w = +o.lift; if (o.shade != null) D.uPS.value.x = +o.shade; if (o.up) { D.up0 = +o.up[0]; D.up1 = +o.up[1]; }
+    }
+    return peopleDrawDbg().tune;
+  }
+  // ---- people on the sidewalks: the drawing ends
 
   // ---------------------------------------------------------------- streetlights
   // Every city-maintained lamp: the Streets Department's Street_Poles inventory
@@ -53130,6 +53424,7 @@ float pinOccGate() {
     updatePatco(now, dt);
     updateFerry(now);   // Round 151
     updateTraffic(now, dt);
+    if (PEOPLE_ON) peopleStep(now);   // Round 227: the walkers, after the traffic (the fill reads its runs and its view); nothing without ?people=1
     updateLights(now);
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
@@ -53290,7 +53585,7 @@ float pinOccGate() {
       // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
       // the cars standing inside a drawn bus now (their footprints overlapping, 0.2 m of slack), and the cars on a closed run
       mirLights: () => ({ n: MIRL.n, ships: MIRL.shipN || 0, late: Object.fromEntries(MIR_LATE.map((L) => [L.k, L.n || 0])), built: MIRL.built, on: !!MIRL.mesh && MIRL.mesh.visible, opacity: MIRL.mesh ? +MIRL.mesh.material.uniforms.uOpacity.value.toFixed(2) : 0, refl: REFL.on }),   // Round 208
-      people: peopleDbg, peopleAt: peoplePin, peopleProbe,   // Round 227: the walkers' counts and switch, t pinned, and one fill's rows (inert without ?people=1)
+      people: peopleDbg, peopleAt: peoplePin, peopleProbe, peopleTune,   // Round 227: the walkers' counts and switch, t pinned, and one fill's rows (inert without ?people=1)
       busClips: () => { let clips = 0, near = 0; const kinds = {}; for (const v of BUS_OB.drawn) { const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), sp = SEPTA_KIND[v.kind]; for (const r of trafficRuns) for (const c of r.cars) { if (c.die) continue; const dx = c.x - v.dx, dz = c.z - v.dz; if (dx * dx + dz * dz > 400) continue; near++; const M = CAR_MODELS[c.kind], a = Math.abs(dx * hx + dz * hz), l = Math.abs(-dx * hz + dz * hx); if (a < sp.l / 2 + M.l / 2 - 0.2 && l < sp.w / 2 + M.w / 2 - 0.2) { clips++; const cs = Math.cos(c.yaw - v.yaw); kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] = (kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] || 0) + 1; } } } return { yield: BUS_YIELD, buses: BUS_OB.drawn.length, near, clips, kinds }; },
       closedCars: () => { let runs = 0, cars = 0; for (const r of trafficRuns) if (r.closed) { runs++; for (const c of r.cars) if (!c.die) cars++; } return { runs, cars, runsClosed: CLOSURES.runsClosed, cleared: CLOSURES.carsCleared || 0, dieClosed: CARC.dieClosed, recs: CLOSURES.recs.filter((q) => q.o >= 3).length, near: CLOSURES.recs.filter((q) => q.o >= 3).slice(0, 6).map((q) => { let bd = 1e9, bc = -1, bcl = false; for (const r of trafficRuns) { if (Math.hypot(r.mx - q.mx, r.mz - q.mz) > r.len + 60) continue; for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - q.mx, r.zs[j] - q.mz); if (d < bd) { bd = d; bc = r.cls; bcl = r.closed; } } } return { addr: q.addr, x: Math.round(q.mx), z: Math.round(q.mz), hw: q.hw, d: Math.round(bd), cls: bc, closed: bcl }; }) }; },
       busObst: () => ({ buses: BUS_OB.n, cells: BUS_OB.cells.size, held: BUS_OB.held, lanes: [...septaVeh.values()].filter((v) => v.snx != null && !v.off).slice(0, 8).map((v) => ({ id: v.id, lane: +(v.lane || 0).toFixed(2), d: +Math.hypot(v.dx - v.snx, v.dz - v.snz).toFixed(2) })) }),   // Round 207
