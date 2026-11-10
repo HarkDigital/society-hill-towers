@@ -13272,3 +13272,18 @@ school proxy gets the same 14 MB and the same 304s as anyone else.
   predates today.
 - Still open from the proposal: the deploy's two verify lines (an art file answering with the header, the page through
   a Via header answering gzip).
+
+## Round 226 — the pins from half a mile again (Nov 10)
+
+Mike, Nov 10: "The pins should draw from a little farther out. I know i have changed that in the past but it almost
+looks like nothing is happening. set it back to what it was."
+
+What it was: Round 82's half mile. Round 204 had pulled the pins over the ground things (the SEPTA and Indego badges, the
+Amtrak and PATCO pins, the closures', markers' and art's pins, the stops and stations, the libraries and rec centres) in
+to 0.2 mile, `PIN_R` 321.87 m, when buildings went back to hiding them. `PIN_R` is 804.67 m again, the same circle as
+what the pins stand over (`NEAR_R`); `pinNear` still takes the smaller of the two, so `__dbg.near` pulls both in.
+Nothing else moved: buildings still hide a pin at every distance (Round 204), a pin still holds its half-mile size on
+the screen (Round 190), the ships' and the events' pins keep their mile, flights their range. The pin caps were sized
+for the half mile before Round 204 and were never lowered. `tests/test_near.py` pins the new value and refuses the old.
+No shader text changed.
+
