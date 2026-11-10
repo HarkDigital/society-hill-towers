@@ -51558,11 +51558,48 @@ float pinOccGate() {
       window.addEventListener('blur', bootClear);
     }, 20000);
     beacon('ready', { ms: PERF.ready, fail: failures, sf: SF.state });   // Round 219: whether the shopfronts were built, or why not
-    setLoadingMessage(failures ? 'Ready (some detail could not be built)' : 'Ready');
+    ENTER.fail = failures;   // Round 226: the Ready line, the button and the full bar wait for the first frame (enterLight)
+  }
+  // ---- Round 226 (Stage 1 of the Nov 10 plan): Enter lights only when a tap can be answered. The button used to light
+  // here, as build() ended, with the first frame still to draw: that frame uploads the last fifth of the geometry and
+  // compiles what the flushes never drew, and while it runs the page answers nothing. MEASURED on cold devices it froze
+  // 8.5 to 9.1 s on Apple devices and 29 s on a Windows PC under a button that already read Explore the City. So the
+  // button, its text, the Ready line (the same words as before: the veil's wording is Mike's) and the bar's last step
+  // are set at the end of the first drawn frame (frame calls enterLight), and until then the veil keeps the last step's
+  // line with its pulse. The ready beacon and PERF.ready stay where they were, at build()'s end.
+  // A page that draws no frame on its own must still open: a hidden tab gets no animation frame (a visitor who waits a
+  // long load out in another tab), nor does the Browser pane, and the capture skill's render.mjs holds
+  // requestAnimationFrame and waits for this button. So the block after build() arms a timer beside its
+  // requestAnimationFrame (enterArm): if no frame has ended ENTER_WAIT ms on, it draws the first frame itself through
+  // the once path, from its own task, and then lights the button, so a hidden tab's visitor comes back to a button that
+  // answers and not to one that freezes on the tap. A visible page's first animation frame comes within a refresh and
+  // runs before the timer can (a timer waits behind the frame's task however long that is), so there the timer finds
+  // the button lit and does nothing. Whatever that frame does (a lost context returns at once, a frame that throws is
+  // caught), the button lights: a page that could be entered before can be entered now. The recovery gate's own use of
+  // the button (bootGate's 'Load the City', before the build) is untouched.
+  // PERF.enterTimer is the timer's id: a tool that measures the city at Ready, before its first frame, clears it when
+  // it sees PERF.ready and lights the button itself with __dbg.frameOnce(). PERF.lit is when the button lit, PERF.enterBy
+  // says 'timer' when the fallback drew the frame (for a probe; neither rides a beacon: the cold flag and the wait's
+  // fields are the measurement round's)
+  const ENTER = { lit: false, fail: 0 };
+  const ENTER_WAIT = 1500;
+  function enterLight() {
+    if (ENTER.lit) return;
+    ENTER.lit = true;
+    PERF.lit = Math.round(performance.now() - PERF.t0);   // on PERF.ready's clock: the difference is how long Ready waited for a button that answers
+    setLoadingMessage(ENTER.fail ? 'Ready (some detail could not be built)' : 'Ready');
     loadmsg.classList.add('done');   // the pulse stops with the wait
     btnEnter.disabled = false;
     btnEnter.textContent = 'Explore the City';
     document.getElementById('loadProgress').value = 100;
+  }
+  function enterArm() {
+    PERF.enterTimer = setTimeout(() => {
+      if (ENTER.lit) return;
+      PERF.enterBy = 'timer';   // for a probe: the fallback drew the first frame (no animation frame came)
+      try { frame(performance.now(), true); } catch (e) { console.error('the first frame failed:', e); }
+      enterLight();
+    }, ENTER_WAIT);
   }
 
   // Round 220 (the measurement round): the first frames' facts for the enter beacon. fn, the frames drawn behind the veil by
@@ -52616,6 +52653,7 @@ float pinOccGate() {
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
     if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: the wx programs no longer compile in it, wxHookAll)
     if (PERF.prog.f1 < 0) progLost();   // Round 226: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
+    if (!ENTER.lit) enterLight();   // Round 226: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
   }
 
   setHint();
@@ -52726,6 +52764,7 @@ float pinOccGate() {
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
+    enterArm();   // Round 226: Enter lights at that frame's end; a page that gets no animation frame draws it from a timer (enterLight)
     if (window.__dbg && window.__dbg.facade) { const f0 = window.__dbg.facade; window.__dbg.facade = () => Object.assign(f0(), { pitched: PITCH_N }); }   // the realism pass: the packed tiers' pitched roofs beside the facade's state
   });
 })();
