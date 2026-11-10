@@ -13253,3 +13253,22 @@ triangles, 32,374 trimmed), the street labels (3,773 of 3,774 drawn, 243,696 tri
 under `?dev` 278,030 scanned masks on a computer and 238,107 on the phone path checked against `roofKitMask` in Chrome
 with 0 differing; the collision notes 345,029 to 345,168, the museum's and Liberty Place's masses; no console error, no
 failed step. The suite: 1,277 tests (1,194 before the round).
+
+**Coda, the same day: the two vhost edits, at Mike's "Yes, apply both".** The art's other half (DELIVERY-1 step 2) and
+the proxy fault its second verifier found. On the box (`/etc/nginx/sites-available/philly3d`, the old file kept beside
+it as `philly3d.bak-20261110`; `nginx -t` clean, one reload): `location ^~ /art/` answers `Cache-Control: public,
+max-age=31536000, immutable`, without `always`, so an error answer never carries the year; and the https server block
+gains `gzip_proxied any` with `gzip_vary on`, because nginx's default refuses the gzip twin to any request carrying a
+Via header, gzip_static's included. Read back with header-only requests: an art file 200 with the year and 304 on its
+own validator, a missing art path 404 without it; the page with a Via header now `content-encoding: gzip` at
+14,262,638 bytes where it was the 33.8 MB identity page, and 304 on the gzip copy's validator where it was a 200 every
+time; `Vary: Accept-Encoding` on the page and the feeds; the page's bytes identical to the deployed build either way
+(sha256 96089bd2); harkpicks.com 200 and thelionspool.com its 307. `ops/philly3d.vhost.live` is the installed file and
+the example carries both. With step 1 a returning visitor now asks for no art at all, and one behind an office or
+school proxy gets the same 14 MB and the same 304s as anyone else.
+
+- Seen on the way and left alone: `nginx -t` warns "conflicting server name harkpicks.com" on 80 and 443, because
+  `sites-enabled` holds a second copy of that site's file (`harkpicks.bak.20260903140929`). It is not this site's and
+  predates today.
+- Still open from the proposal: the deploy's two verify lines (an art file answering with the header, the page through
+  a Via header answering gzip).

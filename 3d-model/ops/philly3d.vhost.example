@@ -109,6 +109,7 @@ server {
 
     # nginx.conf already has `gzip on`; these widen it to the small JSON/SVG
     # answers and mark compressed responses Vary: Accept-Encoding
+    gzip_proxied any;   # Round 225: a request with a Via header gets the gzip twin too
     gzip_vary on;
     gzip_types application/json image/svg+xml text/plain;
 
@@ -249,6 +250,13 @@ server {
 
     # everything else: favicons, apple-touch-icon, og.png — inherits the
     # server-scope hardening headers (no add_header of its own)
+    # Round 225 (Mike's go, Nov 10, 2026): every file under art/ is named by its own content's hash (art_files.py;
+    # the deploy refuses any other name and never rewrites a file that is there), so a browser may keep one for a
+    # year without asking. No `always`: an error answer must not carry the year
+    location ^~ /art/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
     location / {
         gzip_static on;
         try_files $uri $uri/ =404;

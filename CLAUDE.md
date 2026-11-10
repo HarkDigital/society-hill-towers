@@ -394,6 +394,8 @@ What Round 225 added (Stage 1's first batch: JavaScript and data only, nothing d
   (`tests/test_traffic_reconcile.py` holds the old text by hash): anything that puts a car on a run calls `trafficHold`.
 - A new building loop or landmark must call `hitNote`, as the Art Museum (`mass`) and One and Two Liberty Place now do; a
   roof rising more than `HIT_CLR` over its eave goes through `hitGable` (`tests/test_collide_museum.py`).
+- nginx serves `/art/` as `immutable` for a year (no `always`) and gives the gzip twin to requests behind a proxy
+  (`gzip_proxied any`, `gzip_vary on`): `ops/philly3d.vhost.live` is the installed file (Round 225 coda).
 - The deploy skips art the server has (`rsync --ignore-existing`, so no file is re-dated) and refuses a staged file not
   named by its content's hash (`python3 art_files.py check`); it never updates an art file in place.
 - The app copies only what a touch device can ask for, keyed by kind (`app/scripts/art-touch.mjs`, `KEEP_FULL`): load art
