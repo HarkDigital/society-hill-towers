@@ -1,8 +1,12 @@
-{"rule":"outside the city line and east of x 1000, unmeasured by the City footprints, the roof pass way covering at least 0.5 of the building and the building of it","cols":["set","building","way","form","old","new","cx","cz","name"],"rows":[
-["wide",38965,265973742,0,6,35.8,1261,1730,null],
+{"rule":"outside the city line and east of x 1000, unmeasured by the City footprints, the roof pass way covering at least 0.5 of the building and the building of it; a way listed under held gives no height and its building keeps its default","cols":["set","building","way","form","old","new","cx","cz","name"],"held_cols":["way","form","read","cx","cz","why"],"held":[
+[265973742,0,35.8,1261,1730,"unnamed port structure (building=commercial) read at 35.8 m; unchecked, and over 30 m it would be dressed as an office tower"],
+[334628517,0,38.1,1361,-717,"a bridge support (OSM bridge:support): the reading is the deck over it, and the page draws its own bridges"],
+[754832343,0,40.8,1114,-772,"a bridge support (OSM bridge:support): the reading is the deck over it, and the page draws its own bridges"],
+[1044593722,0,38.8,1853,4572,"a bridge support (OSM bridge:support): the reading is the deck over it, and the page draws its own bridges"],
+[1186523447,0,31.9,1688,3195,"unnamed port structure (a Microsoft footprint, no tags) read at 31.9 m; unchecked, and over 30 m it would be dressed as an office tower"]
+],"rows":[
 ["wide",38966,362336178,0,13,11.4,1252,1869,null],
 ["wide",38967,362334093,0,13,12.2,1646,2864,null],
-["wide",38968,1186523447,0,13,31.9,1686,3193,null],
 ["wide",38969,1186523451,0,11,10.1,1515,2912,null],
 ["wide",38970,1186523452,0,11,10.2,1553,2921,null],
 ["wide",38972,1186523454,0,11,3.6,1745,2871,null],
@@ -396,7 +400,6 @@
 ["wide",77385,265133908,0,10.5,9.8,2312,-889,null],
 ["wide",77387,265133976,0,10.5,7.8,2107,-927,null],
 ["wide",77391,1374236849,0,11,6.1,1778,-775,null],
-["wide",77392,334628517,0,13,38.1,1360,-718,null],
 ["wide",77394,528469250,0,13,5.2,1609,-845,null],
 ["wide",77395,528473138,0,13,10.8,1472,-748,"F.W. Winter Inc. & Co."],
 ["wide",77403,1086062461,0,13,9.3,1711,-695,null],
@@ -562,7 +565,6 @@
 ["south",5485,265350770,1,11,7.1,1988,4826,null],
 ["south",5487,265350775,0,10.5,3.2,1902,4839,null],
 ["south",5501,265350796,0,10.5,7.6,2155,4839,null],
-["south",5532,1044593722,0,13,38.8,1853,4573,null],
 ["south",5536,576393381,0,13,33.2,1794,3585,null],
 ["south",5538,266900356,0,6,9.6,1965,3988,null],
 ["south",5539,362334096,0,13,13.4,2029,3526,null],

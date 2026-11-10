@@ -44,7 +44,9 @@ Rules:
     its OSM way (lidar_city_roofs.json: P90 above ground for a flat roof, the ridge for a
     pitched one); see roof_pass_height. The talls' ratchet applies to it as to every other
     measure. Nothing west of the river takes a height from this source, and every row it
-    gives is written to lidar_east_heights.json
+    gives is written to lidar_east_heights.json. A way in ROOF_HELD gives none (a bridge's
+    anchorage, where the "roof" is the deck; two port structures nobody has checked) and
+    is listed there under "held"
 Frame: philly_frame.py (the scene's own projection). This script used to hardcode
 KX=85350, which put the city footprints up to ~1.1 m east of the far-ring ways
 they were overlapped with (a few % of coverage on narrow rowhouses); the committed
@@ -81,13 +83,36 @@ EAST_X = 1000.0            # a belt under the city line test: nothing west of th
                            # 996, the American Water building at 1,192; 38 of the wide scene's New Jersey buildings
                            # stand west of 1,250, the water's edge the river walk looks straight at)
 ROOF_COVER = 0.5           # the building and its way cover at least half of each other: one building, one way
+# Round 226, the review: what the pass measured is not always a roof, and a reading nothing can vouch for is not a
+# height. A way named in ROOF_HELD (roof_ways adds the bridge supports to it) gives no height: its building keeps the
+# default it had, its blob word does not move, and lidar_east_heights.json lists it under "held" with what the pass
+# read and why.
+# - A bridge's anchorage is not a building. OSM maps the Delaware bridges' New Jersey anchorages as building ways
+#   tagged bridge:support (way 1044593722 the Walt Whitman's, 55 by 33 m at scene (1853, 4573); way 334628517 the Ben
+#   Franklin's Camden pier; way 754832343 under the Ben Franklin's east tower, which the talls' ratchet was already
+#   holding), and the flight's flat "roof" over each is the roadway on top of it (38.8, 38.1 and 40.8 m). The
+#   page draws its own bridges: its BRIDGE_SKIP drops the Ben Franklin's anchorage and both bridges' towers but not
+#   the Walt Whitman's anchorage, which at 13 m sat hidden under the deck and at 38.8 stood across the roadway as a
+#   glass office block with the traffic driving into its wall.
+# - Two unnamed port structures the pass reads over 30 m, the line where the page's wide loop stops dressing a record
+#   as fabric and dresses it as an office tower (towerStyle). Flat within a metre, so real roofs, but OSM gives no
+#   name, no levels, no trade and no land use under either, and their type words (commercial, plain) cannot say
+#   "industrial": in the review's captures the 84 by 31 m shed at the foot of Kaighn Avenue drew as a blue curtain
+#   wall at the water's edge and the 916 sq m block at (1686, 3193) as a white slab. Held until someone has looked at
+#   the orthophoto; a third (way 576393381, 33.2 m, at (1794, 3585)) is tagged office=company and keeps its reading.
+ROOF_HELD = {
+    265973742: 'unnamed port structure (building=commercial) read at 35.8 m; unchecked, and over 30 m it would be dressed as an office tower',
+    1186523447: 'unnamed port structure (a Microsoft footprint, no tags) read at 31.9 m; unchecked, and over 30 m it would be dressed as an office tower',
+}
+BRIDGE_SUPPORT = 'a bridge support (OSM bridge:support): the reading is the deck over it, and the page draws its own bridges'
 
 def roof_ways():
     """{way id: (scene-frame Polygon, top AGL m, form)} for the OSM building ways the citywide LiDAR roof pass
     (lidar_city_roofs.json, fetch_lidar_roofs.py) measured: every flat one (form 0: P90 - P10 under 1 m over its
     cells, or a level roof with bulkheads; top = P90) and, east of EAST_X only, the pitched ones (form 1 gable, 2 hip;
     top = the ridge, P95), which nothing west of the river reads. Polygons from whichever OSM raws are on disk (the
-    pass's own rings are UTM)."""
+    pass's own rings are UTM). A way OSM tags bridge:support is noted in ROOF_HELD on the way through (it stays in
+    the result: the spike check's witnesses are as they were)."""
     roofs = json.load(open('lidar_city_roofs.json')) if os.path.exists('lidar_city_roofs.json') else {}
     meas = {int(k): (v[2], v[0]) for k, v in roofs.items() if v[0] in (0, 1, 2)}
     out = {}
@@ -105,6 +130,8 @@ def roof_ways():
             if len(pts) < 4:
                 continue
             top, form = meas[e['id']]
+            if 'bridge:support' in e.get('tags', {}):
+                ROOF_HELD.setdefault(e['id'], BRIDGE_SUPPORT)
             if form != 0 and max(q[0] for q in pts) <= EAST_X:
                 continue
             try:
@@ -140,7 +167,8 @@ def roof_pass_height(pg, east_tree, east_list):
     """(top AGL m, way id, form) from the roof pass for a scene building's polygon, or None. The scene's buildings ARE
     the OSM ways, so the rule is identity rather than a blend: the way that overlaps the building most, with the
     overlap at least ROOF_COVER of BOTH (a kiosk inside a big way's outline, or a big building over a small way, is
-    not that way's measurement and keeps its default)."""
+    not that way's measurement and keeps its default). A building whose way is in ROOF_HELD gets None and is noted
+    in east_held: the next best way is never taken in a held one's place."""
     best = None
     for j in east_tree.query(pg):
         wid, wpg, top, form = east_list[j]
@@ -150,7 +178,13 @@ def roof_pass_height(pg, east_tree, east_list):
             continue
         if ia >= ROOF_COVER * pg.area and ia >= ROOF_COVER * wpg.area and (best is None or ia > best[0]):
             best = (ia, top, wid, form)
-    return None if best is None else (max(CLAMP_LO, min(CLAMP_HI, float(best[1]))), best[2], best[3])
+    if best is None:
+        return None
+    if best[2] in ROOF_HELD:
+        c = pg.centroid
+        east_held.append([best[2], best[3], round(float(best[1]), 1), round(c.x), round(c.y), ROOF_HELD[best[2]]])
+        return None
+    return max(CLAMP_LO, min(CLAMP_HI, float(best[1]))), best[2], best[3]
 
 def spike_check(pg, h, a, flat_tree, flat_list):
     """True when this footprint's max_hgt is a CONFIRMED spike (Round 160). The Reading Terminal headhouse's City
@@ -270,6 +304,7 @@ report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'confirme
 spike_log = []   # (set, name, cx, cz, what the join gave before Round 160, what it gives now)
 deltas = []  # (|dh|, set, name, cx, cz, old, new)
 east_rows = []   # Round 226: [set, building index, way id, form, old h, new h, cx, cz, name], every height the roof pass gave
+east_held = []   # Round 226, the review: [way id, form, what the pass read, cx, cz, why] for every ROOF_HELD way a building matched
 
 def snapshot_path(path):
     """lidar_cache/<scene>.pre_lidar.json: the scene's heights as they were before any LiDAR pass."""
@@ -366,10 +401,12 @@ patch_scene('scene_south.json', 'south')
 # Round 226: the roof pass's heights east of the river, row by row (tests/test_wide_repack.py holds wide.b64 to them)
 with open('lidar_east_heights.json', 'w') as f:
     f.write('{"rule":"outside the city line and east of x %g, unmeasured by the City footprints, the roof pass way covering '
-            'at least %g of the building and the building of it","cols":["set","building","way","form","old","new","cx","cz","name"],"rows":[\n'
-            % (EAST_X, ROOF_COVER) + ',\n'.join(json.dumps(r, separators=(',', ':')) for r in east_rows) + '\n]}\n')
-print(f'lidar_east_heights.json: {len(east_rows)} heights from the roof pass east of the Delaware', flush=True)
-report['east_roof_pass'] = {'ways': len(east_list), 'heights': len(east_rows),
+            'at least %g of the building and the building of it; a way listed under held gives no height and its building keeps its default",'
+            '"cols":["set","building","way","form","old","new","cx","cz","name"],"held_cols":["way","form","read","cx","cz","why"],"held":[\n'
+            % (EAST_X, ROOF_COVER) + ',\n'.join(json.dumps(r, separators=(',', ':')) for r in sorted(east_held)) + '\n],"rows":[\n'
+            + ',\n'.join(json.dumps(r, separators=(',', ':')) for r in east_rows) + '\n]}\n')
+print(f'lidar_east_heights.json: {len(east_rows)} heights from the roof pass east of the Delaware, {len(east_held)} held back', flush=True)
+report['east_roof_pass'] = {'ways': len(east_list), 'heights': len(east_rows), 'held': len(east_held),
                             'changed': sum(1 for r in east_rows if abs(r[5] - r[4]) > 0.05),
                             'over_20m': sum(1 for r in east_rows if r[5] > 20)}
 

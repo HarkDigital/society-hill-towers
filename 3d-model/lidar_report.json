@@ -7,19 +7,19 @@
    "total": 111073,
    "measured": 107058,
    "protected": 422,
-   "unmeasured": 3091,
+   "unmeasured": 3095,
    "skipped": 5,
-   "roof_pass": 500,
+   "roof_pass": 497,
    "spike_released": 29,
-   "roof_pass_protected": 2
+   "roof_pass_protected": 1
   },
   "south": {
    "total": 6369,
    "measured": 4897,
    "protected": 7,
-   "unmeasured": 1381,
+   "unmeasured": 1382,
    "skipped": 5,
-   "roof_pass": 84
+   "roof_pass": 83
   },
   "core_join": {
    "total": 2831,
@@ -35,9 +35,10 @@
  },
  "east_roof_pass": {
   "ways": 3799,
-  "heights": 584,
-  "changed": 580,
-  "over_20m": 20
+  "heights": 580,
+  "held": 5,
+  "changed": 576,
+  "over_20m": 16
  },
  "top_deltas": [
   [
@@ -95,15 +96,6 @@
    21.9
   ],
   [
-   29.8,
-   "wide",
-   null,
-   1261,
-   1730,
-   6,
-   35.8
-  ],
-  [
    29.3,
    "wide",
    "Independence Hall",
@@ -140,15 +132,6 @@
    16.2
   ],
   [
-   25.8,
-   "south",
-   null,
-   1853,
-   4573,
-   13,
-   38.8
-  ],
-  [
    25.7,
    "wide",
    "Riverview Towers",
@@ -156,15 +139,6 @@
    357,
    15,
    40.7
-  ],
-  [
-   25.1,
-   "wide",
-   null,
-   1360,
-   -718,
-   13,
-   38.1
   ],
   [
    23.8,
@@ -237,15 +211,6 @@
    -975,
    36.1,
    17.1
-  ],
-  [
-   18.9,
-   "wide",
-   null,
-   1686,
-   3193,
-   13,
-   31.9
   ],
   [
    18.9,
@@ -489,6 +454,42 @@
    118,
    13,
    4.6
+  ],
+  [
+   8.4,
+   "wide",
+   null,
+   1749,
+   -1312,
+   13,
+   4.6
+  ],
+  [
+   8.3,
+   "wide",
+   null,
+   2022,
+   2230,
+   13,
+   4.7
+  ],
+  [
+   8.3,
+   "wide",
+   null,
+   1801,
+   2600,
+   13,
+   4.7
+  ],
+  [
+   8.3,
+   "wide",
+   "Fresh Oil Missionary Baptist Church",
+   1664,
+   1798,
+   14,
+   5.7
   ]
  ],
  "spike_released": [

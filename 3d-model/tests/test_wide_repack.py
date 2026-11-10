@@ -14,7 +14,12 @@ wide_walls.b64 rides the same order, so these checks hold the committed wide.b64
   - every changed height is a row of lidar_east_heights.json, and every row is the roof pass's own number;
   - a record lifted over the 45 m line is named in app.js's WIDE_COLK_KEEP, so the far ring's colour reservoir
     counts as it did;
-  - Camden City Hall's whole footprint is not a 113 m slab.
+  - Camden City Hall's whole footprint is not a 113 m slab;
+  - (the review) no bridge structure took a "roof": the pass's flat reading over an anchorage is the deck, and the Walt
+    Whitman's New Jersey anchorage at 38.8 m stood across the roadway as an office block. A way OSM tags
+    bridge:support, and the two unchecked port structures of lidar_join.py's ROOF_HELD, give no height;
+  - (the review) the storefronts hung on the hosts that moved carry the new host heights in storefront_info.json
+    (bake_storefronts.py --host-heights), so no panel stands over a wall the measurement lowered.
 A LATER heights-only repack packs with --against a copy of the then-committed wide.b64, commits the wide_repack.json
 that writes, and moves PREDECESSOR to that file's "against" in the same commit; a repack that is NOT heights-only
 re-deals the tier's look and has to say so, and retire the first check, on purpose."""
@@ -22,6 +27,8 @@ import base64
 import hashlib
 import json
 import os
+import ast
+import math
 import re
 import struct
 import sys
@@ -195,7 +202,7 @@ class CamdenHeights(unittest.TestCase):
             self.assertEqual(a0, a1, rec)
             self.assertEqual((a0 ^ a1) & ~PITCH_BITS, 0, rec)
         self.assertEqual(self.hdr[1:], (112752, 6651, 1163))       # Round 225's counts
-        self.assertEqual(len(self.changes), 553)
+        self.assertEqual(len(self.changes), 549)        # 553 before the review: less two bridge anchorages and two port structures
 
     def test_the_wall_colours_still_ride_the_same_records(self):
         raw = base64.b64decode(C.path('wide_walls.b64').read_text())
@@ -269,7 +276,7 @@ class CamdenHeights(unittest.TestCase):
     def test_every_row_is_the_roof_pass_s_own_number(self):
         scenes = {'wide': json.loads(C.path('scene_wide.json').read_text())['buildings'],
                   'south': json.loads(C.path('scene_south.json').read_text())['buildings']}
-        self.assertEqual(len(self.rows), 584)
+        self.assertEqual(len(self.rows), 580)
         for tag, bi, way, form, old, new, cx, cz, name in self.rows:
             m = self.roofs[str(way)]
             self.assertEqual(m[0], form, way)
@@ -299,6 +306,98 @@ class CamdenHeights(unittest.TestCase):
         # Camden Tower: tagged 37.2 m, the pass reads 28.4, the ratchet holds it
         ct = [b for b in json.loads(C.path('scene_wide.json').read_text())['buildings'] if b.get('name') == 'Camden Tower']
         self.assertEqual([b['h'] for b in ct], [37.2])
+
+    # ---- the review: what the pass measured is not always a roof
+    def record_at(self, x, z):
+        hits = []
+        for i in range(self.hdr[1]):
+            a = self.offs[i]
+            if abs(self.body[a + 6] * 0.2 - x) < 400 and point_in_ring(x, z, self.ring(i)):
+                hits.append(i)
+        self.assertEqual(len(hits), 1, (x, z, hits))
+        return hits[0]
+
+    def test_a_held_way_gives_no_height(self):
+        s = self.join
+        self.assertIn("            if 'bridge:support' in e.get('tags', {}):\n                ROOF_HELD.setdefault(e['id'], BRIDGE_SUPPORT)", s)
+        self.assertIn('    if best[2] in ROOF_HELD:', s)
+        fn = s[s.index('def roof_pass_height('):s.index('def spike_check(')]
+        self.assertLess(fn.index('if best[2] in ROOF_HELD:'), fn.index('return max(CLAMP_LO'))    # held before any height is returned
+        doc = json.loads(C.path('lidar_east_heights.json').read_text())
+        held = {r[0]: r for r in doc['held']}
+        # the Walt Whitman's New Jersey anchorage, the Ben Franklin's Camden anchorage and its east tower's pier (OSM
+        # bridge:support), and the two unnamed port structures nobody has checked
+        self.assertEqual(sorted(held), [265973742, 334628517, 754832343, 1044593722, 1186523447])
+        self.assertEqual(sum(1 for r in held.values() if 'bridge support' in r[5]), 3)
+        self.assertFalse({r[2] for r in self.rows} & set(held))
+        changed = {c[0] for c in self.changes}
+        # each stands in the blob at the word Round 225 gave it: 13 m under the Walt Whitman's deck, not 38.8 across it
+        for x, z, word in ((1853, 4573, 65), (1368, -717, 65), (1261, 1730, 30), (1686, 3193, 65)):
+            i = self.record_at(x, z)
+            self.assertNotIn(i, changed, (x, z))
+            self.assertEqual(self.body[self.offs[i] + 1], word, (x, z))
+
+    def test_no_changed_record_stands_in_a_delaware_bridge(self):
+        # The page draws the Ben Franklin and the Walt Whitman itself and leaves the wide loop at BRIDGE_SKIP for the
+        # footprints it knows: the first four entries are the two bridges' towers. A changed record whose footprint
+        # comes within DECK of a bridge's axis (the line through its towers, on to REACH past the east one: the
+        # anchorages are 226 and 241 m out, the approach spans beyond them) must be one the page skips, by the loop's
+        # own test with a margin for the centroid.
+        DECK, REACH = 25.0, 600.0
+        m = re.search(r'const BRIDGE_SKIP = (\[\[.*?\]\]);', self.app, re.S)
+        self.assertIsNotNone(m)
+        skip = json.loads(re.sub(r'//[^\n]*', '', m.group(1)))
+        towers = skip[:4]
+        self.assertEqual([q[2] for q in towers], [60, 60, 60, 60])
+        self.assertEqual([towers[0][:2], towers[2][:2]], [[620.8, -889.9], [1037.2, 4391.6]])     # the Ben Franklin's west tower, the Walt Whitman's
+
+        def seg_dist(px, pz, ax, az, bx, bz):
+            dx, dz = bx - ax, bz - az
+            t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz)))
+            return math.hypot(px - ax - t * dx, pz - az - t * dz)
+
+        def crosses(a, b, c, d):
+            o = lambda p, q, r: (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0])
+            return o(a, b, c) * o(a, b, d) < 0 and o(c, d, a) * o(c, d, b) < 0
+
+        near = []
+        for a, b in ((towers[0], towers[1]), (towers[2], towers[3])):
+            L = math.hypot(b[0] - a[0], b[1] - a[1])
+            ux, uz = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+            e = (b[0] + ux * REACH, b[1] + uz * REACH)
+            for c in self.changes:
+                ring = self.ring(c[0])
+                d = min(min(seg_dist(p[0], p[1], a[0], a[1], e[0], e[1]) for p in ring),
+                        min(seg_dist(q[0], q[1], ring[k - 1][0], ring[k - 1][1], ring[k][0], ring[k][1]) for q in (a[:2], e) for k in range(len(ring))))
+                if d < DECK or any(crosses(a[:2], e, ring[k - 1], ring[k]) for k in range(len(ring))):
+                    near.append(c)
+        for c in near:
+            self.assertTrue(any(math.hypot(c[1] - q[0], c[2] - q[1]) < q[2] - 5 for q in skip),
+                            'record %d at (%.0f, %.0f) took a height of %.1f m in a bridge the page draws, and BRIDGE_SKIP does '
+                            'not drop it' % (c[0], c[1], c[2], c[4] / 5))
+        # and the check sees what the review saw: the Walt Whitman's anchorage is in the corridor and outside every circle
+        i = self.record_at(1853, 4573)
+        ring = self.ring(i)
+        a, b = towers[2], towers[3]
+        self.assertLess(min(seg_dist(p[0], p[1], a[0], a[1], b[0] + (b[0] - a[0]), b[1] + (b[1] - a[1])) for p in ring), DECK)
+        self.assertFalse(any(math.hypot(1853.4 - q[0], 4572.6 - q[1]) < q[2] for q in skip))
+
+    def test_the_records_lifted_into_the_tower_styles_are_the_ones_looked_at(self):
+        # over 30 m the wide loop leaves fabricStyle for towerStyle, whose only industrial dress needs the type word a
+        # heights-only repack cannot change: a port shed lifted over the line draws as an office block. These six
+        # crossed it and were looked at in captures; a seventh has to be looked at too before it is added here.
+        self.assertIn('      else if (h > 30) style = towerStyle(fa, t, i);', self.app)
+        # (each record's centre and its two words as the blob holds them, 0.2 m a word)
+        up = sorted((round(c[1]), round(c[2]), c[3] / 5, c[4] / 5) for c in self.changes if c[3] <= 150 < c[4])
+        self.assertEqual(up, [
+            (1288, 134, 13.0, 54.2),       # One Port Center
+            (1550, 360, 15.0, 40.8),       # Riverview Towers
+            (1563, -307, 29.8, 44.0),      # the Board of Education building
+            (1794, 3585, 13.0, 33.2),      # way 576393381, office=company
+            (1819, 218, 13.0, 30.8),       # the county jail
+            (1886, -162, 21.2, 39.2),      # 330 Cooper
+        ])
+        self.assertEqual([c for c in self.changes if c[4] <= 150 < c[3]], [])
 
     def test_the_packer_refuses_anything_but_heights(self):
         s = C.path('pack_wide.py').read_text()
@@ -366,6 +465,112 @@ class CamdenHeights(unittest.TestCase):
                     hits.append(self.body[a + 1] / 5)
         self.assertEqual(len(hits), 1, hits)
         self.assertLess(hits[0], 40.0)
+
+
+def bake_fn(name, *consts):
+    """One function of bake_storefronts.py (a script: importing it runs the bake) with the module constants it reads."""
+    tree = ast.parse(C.path('bake_storefronts.py').read_text())
+    keep = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name == name)
+            or (isinstance(n, ast.Assign) and any(getattr(t, 'id', None) in consts for t in n.targets))]
+    ns = {'math': math}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), 'bake_storefronts.py', 'exec'), ns)
+    return ns[name]
+
+
+class StorefrontHosts(unittest.TestCase):
+    """The review: the page clamps a shopfront panel, its awning and its blade sign to the host height baked into
+    storefront_info.json, which held the defaults the repack replaced. bake_storefronts.py --host-heights gave the 52
+    records on the moved hosts their new host heights and touched nothing else."""
+
+    # sha256 of the base64 text of Round 225's sidecar records (storefront_info.json's "rec" at e4b6a2f)
+    REC_225 = '5418489e882b0741c443e3cb51948e4c9c147d805b7eab0a0b2598f4cffb126a'
+
+    @classmethod
+    def setUpClass(cls):
+        need = ('storefronts.b64', 'storefront_info.json', 'lidar_east_heights.json', 'scene_wide.json', 'scene_south.json',
+                'bake_storefronts.py', 'app.js')
+        missing = [n for n in need if not C.path(n).exists()]
+        if missing:
+            raise unittest.SkipTest('input absent: ' + ', '.join(missing))
+        cls.info = json.loads(C.path('storefront_info.json').read_text())
+        raw = base64.b64decode(C.path('storefronts.b64').read_text())
+        cls.body = struct.unpack('<%dh' % ((len(raw) - 16) // 2), raw[16:])
+        r = base64.b64decode(cls.info['rec'])
+        cls.rec = struct.unpack('<%dh' % (len(r) // 2), r)
+        cls.st = cls.info['stride']
+        cls.rows = json.loads(C.path('lidar_east_heights.json').read_text())['rows']
+        cls.scenes = {'wide': json.loads(C.path('scene_wide.json').read_text())['buildings'],
+                      'south': json.loads(C.path('scene_south.json').read_text())['buildings']}
+        cls.fn = staticmethod(bake_fn('host_heights', 'S'))
+        # the same walk with every row's two heights swapped puts the old host heights back
+        cls.back, cls.undone, cls.back_problems = cls.fn(cls.body, cls.rec, cls.st, [r[:4] + [r[5], r[4]] + r[6:] for r in cls.rows], cls.scenes)
+
+    def test_the_sidecar_is_round_225s_with_the_moved_hosts_heights_and_nothing_else(self):
+        self.assertEqual(self.back_problems, [])
+        self.assertEqual(len(self.undone), 52)
+        old = base64.b64encode(struct.pack('<%dh' % len(self.back), *self.back)).decode('ascii')
+        self.assertEqual(hashlib.sha256(old.encode('ascii')).hexdigest(), self.REC_225,
+                         'storefront_info.json differs from Round 225\'s in more than the host heights of the records on moved hosts')
+        # forward from Round 225's records gives the committed ones, and a second run changes nothing
+        fwd, changed, problems = self.fn(self.body, self.back, self.st, self.rows, self.scenes)
+        self.assertEqual(problems, [])
+        self.assertEqual(tuple(fwd), self.rec)
+        self.assertEqual(sorted(c[0] for c in changed), sorted(c[0] for c in self.undone))
+        self.assertEqual(self.fn(self.body, self.rec, self.st, self.rows, self.scenes)[1:], ([], []))
+        # only field 7 moved, and its two end bits stayed
+        diff = [i for i in range(len(self.rec)) if self.rec[i] != self.back[i]]
+        self.assertEqual({i % self.st for i in diff}, {7})
+        self.assertTrue(all((self.rec[i] & 3) == (self.back[i] & 3) for i in diff))
+        # every one of them is a storefront east of the river
+        for c in changed:
+            self.assertGreater(self.body[c[0] * 8] * 0.2, EAST_X, c)
+
+    def test_no_panel_stands_over_its_measured_host(self):
+        app = C.path('app.js').read_text()
+        self.assertEqual(app.count('if (r.hostH > 0) H = Math.min(H, r.hostH - 0.15);'), 2)     # the panel and the blade sign's
+        self.assertEqual(app.count('let H = Math.min(r.fh, Math.max(3.4, (r.fp || 3.05) + 0.7));'), 2)
+        self.assertIn('hostH = (r[q + 7] >> 2) / 10;', app)
+
+        def panel(i, rec):     # the page's own height for record i's panel
+            fh, fp, host = self.body[i * 8 + 6] / 10, rec[i * self.st + 4] / 10, (rec[i * self.st + 7] >> 2) / 10
+            H = min(fh, max(3.4, (fp or 3.05) + 0.7))
+            if host > 0:
+                H = min(H, host - 0.15)
+            return max(2.6, H)
+        over_before = []
+        for i, old, new, tag, bi in self.undone:      # (undone: old and new swapped)
+            h = self.scenes[tag][bi]['h']
+            self.assertEqual(self.rec[i * self.st + 7] >> 2, int(round(h * 10)), i)
+            self.assertEqual(old, int(round(h * 10)), i)
+            # the wall is drawn at the blob's 0.2 m word, at most 0.1 m under the scene's height
+            self.assertLessEqual(panel(i, self.rec), max(2.6, h - 0.1) + 1e-9, (i, self.info['names'][i], h))
+            if panel(i, self.back) > h:
+                over_before.append((i, self.info['names'][i], panel(i, self.back), panel(i, self.rec), h))
+        # the two the review named: 3.6 m of panel on a 3.2 m wall, 3.75 on 3.3
+        self.assertEqual([(i, n) for i, n, a, b, h in over_before], [(1078, "Buster's Liquor"), (1099, "Friend's Cafe")])
+        self.assertEqual([round(b, 2) for i, n, a, b, h in over_before], [3.05, 3.15])
+
+    def test_a_record_that_is_not_its_hosts_is_refused(self):
+        # a record behind whose wall a moved building stands, but carrying some other host's height: a problem, no change
+        i, old, new, tag, bi = self.undone[0]
+        rec = list(self.back)
+        rec[i * self.st + 7] = (rec[i * self.st + 7] & 3) | ((new + 7) << 2)     # (undone's `new` is the old height)
+        out, changed, problems = self.fn(self.body, rec, self.st, self.rows, self.scenes)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn('record %d ' % i, problems[0])
+        self.assertNotIn(i, [c[0] for c in changed])
+        self.assertEqual(out[i * self.st + 7], rec[i * self.st + 7])
+
+    def test_the_flag_bakes_nothing_and_writes_nothing_on_a_problem(self):
+        s = C.path('bake_storefronts.py').read_text()
+        a, b = s.index("if '--host-heights' in sys.argv:"), s.index('# ---- footprints: the drawn set')
+        self.assertLess(a, b)                              # before the bake reads a footprint
+        block = s[a:b]
+        self.assertTrue(block.rstrip().endswith('sys.exit(0)'))
+        self.assertNotIn('OUT_B64, \'w\'', block)
+        self.assertNotIn("open(OUT_B64, 'w')", block)
+        self.assertLess(block.index('if _problems:'), block.index("open('storefront_info.json', 'w'"))
+        self.assertIn("sys.exit(f'ERROR: --host-heights: {len(_problems)} record(s) do not line up", block)
 
 
 if __name__ == '__main__':
