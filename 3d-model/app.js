@@ -1745,6 +1745,32 @@
     renderer.setRenderTarget(null); renderer.render(postScene, postCam);
     gpuT(null);
   }
+  // ---- Round 226, ?veilcity=1 (off by default: it changes the loading screen, so Mike sees it first). The veil is
+  // translucent and the camera is posed before the build so its renders behind the veil show the city, but under the post
+  // pipeline a flush draws into the float target and never presents, so a computer shows an empty veil for the whole
+  // build (66 to 103 s on the public Windows PCs' beacons). With the flag each flush ends with one composite of its own
+  // picture onto the canvas, so the city is seen rising behind the veil, a flush at a time. It is the frames' own
+  // composite program on the frames' own quad (the first frame would compile it anyway; here the first flush does), with
+  // no occlusion and no bloom: nothing has drawn their targets yet, and a render target never drawn into reads as black
+  // (three binds its empty texture), so the bloom's strength is left alone (wxGrade is its one writer). One full-screen
+  // pass a flush, about fourteen a load.
+  // Where the canvas is drawn through reversed depth's own framebuffer and no post pipeline (ZREV.sub: an iPhone, a
+  // computer under ?bloom=0) a flush is not presented either, and the flag presents it with the frames' own blit.
+  // PERF.veilCity counts the presents and their ms (the calls' CPU: the pass itself is the GPU's)
+  const VEIL_CITY = /[?&]veilcity=1\b/.test(location.search);
+  PERF.veilCity = { on: VEIL_CITY, n: 0, ms: 0 };
+  function veilCityShow() {
+    const t0 = performance.now();
+    if (POST.on) {
+      const u = postComp.uniforms;
+      u.uAO.value = 0;
+      u.tScene.value = postRT.texture; u.tBloom.value = postA.texture;
+      if (u.tBloomW) u.tBloomW.value = postA.texture;
+      postQuad.material = postComp;
+      renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+    } else if (ZREV.sub) zrevPresent();
+    PERF.veilCity.n++; PERF.veilCity.ms += performance.now() - t0;
+  }
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 8000, 40000);
@@ -27154,6 +27180,7 @@ if (uOlLamp > 0.001) {
     // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
     // into the float target so every program compiles once, in the variant the frames use
     if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
+    if (VEIL_CITY) veilCityShow();   // Round 226, ?veilcity=1: this flush's picture onto the canvas, behind the veil
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
     F.n++; F.ms += performance.now() - tf; F.p1 = renderer.info.programs.length;
