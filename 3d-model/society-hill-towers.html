@@ -7566,6 +7566,11 @@ RB.add({
   const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? (GFX.pick === 'sharper' ? 0 : GFX.pick === 'smoother' ? Math.max(1, tierAuto) : tierAuto) : 0;
   const LITE = TIER >= 1, TIER2 = TIER >= 2;
   const LITE_R = TIER2 ? 5000 : 8000;   // the far ring's buildings stand within this of the centre on a lite build
+  // Round 225: whether this build lays rooftop hardware at all. 'Fitting out the rooftops' drops the roof notes where this
+  // is false, and roofClutter takes none there: a tier 2 iPhone spent 0.53 to 0.88 s of every launch (rk on its beacons)
+  // noting roofs that step then threw away. One flag for both, so the day tier 2 gets its rooftops back (Round 219's
+  // list) is this line alone. It is declared here, never beside ROOF_KIT: that span runs under Node with no tiers in scope
+  const ROOF_KIT_ON = !TIER2;
   GFX.autoNext = Math.max(tierSaved, tierSoft, liteSticky ? 1 : 0, sessLite ? 1 : 0);   // Auto's city at the next launch, a clean leave assumed
   function gfxTierFor(pick) {   // the tier a launch with this pick would build (#gfxNote's forecast)
     if (qLite) return TIER;   // a forced tier stays forced
@@ -9532,6 +9537,83 @@ RB.add({
     }
     return [lo, hi];
   }
+  // Round 225: the same mask by scanline. roofKitMask above asks pointInPoly 240 times a roof, in world space, over every
+  // edge each time: 317,502 roofs across the three packed tiers, the largest per-record cost of the ring loops (rk on the
+  // beacons: 0.53 to 0.88 s on Mike's iPhone, 3.4 to 4.4 s on the Windows desktops by the far step). Its 240 samples lie
+  // on 18 rows of the box (each cell row's centre line and the two lines dv either side), so roofKitScan turns the
+  // footprint into the box's own frame once, takes each row's edge crossings once and reads every sample's parity from
+  // its row; a cell one sample has put off the roof asks no more. The two answers can only part where a sample sits on
+  // the footprint's edge to within the arithmetic (about 1e-11 m either way), so the scan refuses to answer inside
+  // RK_EPS, 1e-7 m, of it: a vertex that close to a row, or a sample that close to an edge (the gap along the row scaled
+  // by the edge's slope, which makes it the distance to the edge itself), returns null and roofKitFast asks roofKitMask
+  // above, as it does for a roof with holes. So lo and hi are bit for bit what they were: 0 masks of the 317,502 differ
+  // under Node and under JavaScriptCore (tests/test_roof_kit_scan.py runs every record of the three blobs through both,
+  // and the core's 2,609 from scene.json with their three courtyards: 0 differing there too;
+  // with RK_EPS at 0 about 147 do, so the fallback is needed), one roof in forty-eight falls back (6,626 and 6,639), and
+  // the masks cost about a quarter of what they did (4,982 to 1,157 ms under JavaScriptCore and 6,184 to 1,792 ms under
+  // Node, on a busy M2 Max). cu, cv, du and dv are roofKitMask's own expressions, so the samples are the same numbers.
+  // RK_SCAN counts it (PERF.roofKitMask, and mask on PERF.roofKit): under ?dev check is set where it is registered and
+  // every scanned roof is asked both ways, differ counting any that part, which is how one load proves the equality on
+  // its own engine (V8 and JavaScriptCore hand orientedBox's Math.hypot back an ulp apart, so they fall back on slightly
+  // different roofs). rk is dearer than a visitor's under ?dev for that reason, so never compare a ?dev rk with a
+  // beacon's: ?rkcheck=0 turns the check off for a timing run. No timer in here (Round 220's rule)
+  const RK_SCAN = { masks: 0, fallbacks: 0, checked: 0, differ: 0, check: false };
+  const RK_EPS = 1e-7;
+  let RK_PU = new Float64Array(64), RK_PV = new Float64Array(64), RK_XC = new Float64Array(64), RK_XG = new Float64Array(64);
+  // one sample on the row whose m crossings are in RK_XC: 1 on the roof, 0 off it, -1 too near an edge to say
+  function roofKitRowAt(u, m) {
+    let c = 0;
+    for (let k = 0; k < m; k++) {
+      const t = RK_XC[k] - u, g = RK_XG[k];
+      if (t < g && t > -g) return -1;
+      if (t > 0) c ^= 1;
+    }
+    return c;
+  }
+  function roofKitScan(ob, ax, poly) {
+    const n = poly.length;
+    if (n > RK_PU.length) { RK_PU = new Float64Array(n * 2); RK_PV = new Float64Array(n * 2); RK_XC = new Float64Array(n * 2); RK_XG = new Float64Array(n * 2); }
+    const ux = ax.ax, uz = ax.az, hl = ax.hl, hs = ax.hs, PU = RK_PU, PV = RK_PV, XC = RK_XC, XG = RK_XG;
+    for (let i = 0; i < n; i++) { const x = poly[i][0] - ob.cx, z = poly[i][1] - ob.cz; PU[i] = x * ux + z * uz; PV[i] = z * ux - x * uz; }   // v along roofKitMask's (px, pz) = (-uz, ux)
+    const du = 0.5 * hl / RK_NU, dv = 0.5 * hs / RK_NV;
+    let lo = 0, hi = 0;
+    for (let b = 0; b < RK_NV; b++) {
+      const cv = -hs + (b + 0.5) * (2 * hs / RK_NV);
+      let cells = (1 << RK_NU) - 1;   // this row's cells still on the roof
+      for (let r = 0; r < 3 && cells; r++) {
+        const v = r === 0 ? cv : r === 1 ? cv - dv : cv + dv;
+        let m = 0;
+        for (let i = 0, j = n - 1; i < n; j = i++) {
+          const vi = PV[i], d = v - vi;
+          if (d < RK_EPS && d > -RK_EPS) return null;
+          const vj = PV[j];
+          if ((vi > v) !== (vj > v)) { const s = (PU[j] - PU[i]) / (vj - vi); XC[m] = s * d + PU[i]; XG[m] = RK_EPS * (1 + Math.abs(s)); m++; }
+        }
+        for (let a = 0; a < RK_NU; a++) {
+          if (!(cells & (1 << a))) continue;
+          const cu = -hl + (a + 0.5) * (2 * hl / RK_NU);
+          let q;
+          if (r === 0) q = roofKitRowAt(cu, m);
+          else { q = roofKitRowAt(cu - du, m); if (q === 1) q = roofKitRowAt(cu + du, m); }
+          if (q < 0) return null;
+          if (q === 0) cells &= ~(1 << a);
+        }
+      }
+      for (let a = 0; a < RK_NU; a++) if (cells & (1 << a)) {
+        const k = b * RK_NU + a;
+        if (k < 24) lo += 2 ** k; else hi += 2 ** (k - 24);
+      }
+    }
+    return [lo, hi];
+  }
+  function roofKitFast(ob, ax, poly, holes) {
+    RK_SCAN.masks++;
+    let m = null;
+    if (!(holes && holes.some((hr) => hr && hr.length > 2))) m = roofKitScan(ob, ax, poly);
+    if (!m) { RK_SCAN.fallbacks++; return roofKitMask(ob, ax, poly, holes); }
+    if (RK_SCAN.check) { const r = roofKitMask(ob, ax, poly, holes); RK_SCAN.checked++; if (r[0] !== m[0] || r[1] !== m[1]) RK_SCAN.differ++; }
+    return m;
+  }
   function roofKitNote(ob, ax, top, area, seed, poly, holes, row = 0) {
     if ((RK_STAT.calls++ & 15) !== 0) { roofKitNoteRaw(ob, ax, top, area, seed, poly, holes, row); return; }   // Round 220: see RK_STAT
     const tk = performance.now();
@@ -9542,7 +9624,7 @@ RB.add({
     if (area < 25 || area > 40000) return;
     const S = ROOF_KIT_STRIDE;
     if (ROOF_KIT.n * S + S > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
-    const [lo, hi] = poly ? roofKitMask(ob, ax, poly, holes) : [0xffffff, 0xffffff];
+    const [lo, hi] = poly ? roofKitFast(ob, ax, poly, holes) : [0xffffff, 0xffffff];   // Round 225: roofKitMask's own answer, by scanline
     if (lo === 0 && hi === 0) { ROOF_KIT.empty++; return; }   // nowhere on it a unit could stand
     { let c = 0; for (let k = 0; k < 24; k++) c += (Math.floor(lo / 2 ** k) % 2) + (Math.floor(hi / 2 ** k) % 2); ROOF_KIT.hist[Math.min(6, Math.floor(c / 8))]++; }
     if (lo !== 0xffffff || hi !== 0xffffff) ROOF_KIT.partial++;
@@ -9558,9 +9640,10 @@ RB.add({
   }
   function roofClutter(add, poly, base, h, area, t, fa, seed, wallC, far, holes) {
     if (h < 3) return;
+    if (!ROOF_KIT_ON && isTouch) return;   // Round 225: no note to take and a phone bakes no boxes, so not the oriented box either
     const ob = orientedBox(poly), ax = obbAxis(ob);
     if (ax.hs < 2.2) return;
-    roofKitNote(ob, ax, base + h, area, seed, poly, holes, REAL && h <= 14 && (fa ? fa[0] === 0 || fa[0] === 3 : t <= 1) ? 1 : 0);
+    if (ROOF_KIT_ON) roofKitNote(ob, ax, base + h, area, seed, poly, holes, REAL && h <= 14 && (fa ? fa[0] === 0 || fa[0] === 3 : t <= 1) ? 1 : 0);
     // the baked boxes below stand only where their whole footprint is on the roof (the same fault as the lay's)
     const onRoof = (pts) => pts.every((q) => pointInPoly(q[0], q[1], poly) && !(holes && holes.some((hr) => hr && hr.length > 2 && pointInPoly(q[0], q[1], hr))));
     const add0 = add;
@@ -11147,6 +11230,7 @@ RB.add({
           streetSurfaceIndex.get(key).push(f);
         }
     }
+    streetSurfaceIndex.bits = cellBits(streetSurfaceIndex);   // Round 225: streetTriNear's bitmap, built once the keys are all in
   }
   function streetLocal(f,x,z) { return [(x-f.x)*f.dx+(z-f.z)*f.dz,(x-f.x)*f.dz-(z-f.z)*f.dx]; }
   function streetBounds(poly) {
@@ -11164,12 +11248,32 @@ RB.add({
   function streetTriNear(ax,az,bx,bz,cx,cz) {
     TRI_NEAR.calls++;   // Round 220: counted, never timed
     const x0=Math.min(ax,bx,cx)-0.01,x1=Math.max(ax,bx,cx)+0.01,z0=Math.min(az,bz,cz)-0.01,z1=Math.max(az,bz,cz)+0.01;
-    if(terrainRoadGrid)
-      for(let x=Math.floor(x0/TERRAIN_PATCH_CELL);x<=Math.floor(x1/TERRAIN_PATCH_CELL);x++)
-        for(let z=Math.floor(z0/TERRAIN_PATCH_CELL);z<=Math.floor(z1/TERRAIN_PATCH_CELL);z++)if(terrainRoadGrid.has(x+':'+z))return true;
-    if(streetSurfaceIndex)
-      for(let gx=Math.floor(x0/100);gx<=Math.floor(x1/100);gx++)
-        for(let gz=Math.floor(z0/100);gz<=Math.floor(z1/100);gz++)if(streetSurfaceIndex.has(gx+':'+gz))return true;
+    if(terrainRoadGrid && cellBitsHit(terrainRoadGrid.bits,Math.floor(x0/TERRAIN_PATCH_CELL),Math.floor(x1/TERRAIN_PATCH_CELL),Math.floor(z0/TERRAIN_PATCH_CELL),Math.floor(z1/TERRAIN_PATCH_CELL)))return true;
+    if(streetSurfaceIndex && cellBitsHit(streetSurfaceIndex.bits,Math.floor(x0/100),Math.floor(x1/100),Math.floor(z0/100),Math.floor(z1/100)))return true;
+    return false;
+  }
+  // Round 225: streetTriNear asked its two Maps by string, two to six keys built for every street triangle, 2.6 M
+  // triangles a load, to learn nearly every time that no cell was there. Each Map now carries its key set as a byte a
+  // cell over the keys' own box (bits), and the question goes to that; the Maps stay for the walk after a yes. Exact
+  // because both key sets are fixed once built: initStreetSurfaces and initTerrainPatches' reserve are the only writers
+  // (rememberTerrainRoad fills a bin and never makes one), and bits hangs on its Map, so it is released where the Map
+  // is. A cell outside the box is no key, so clamping the walk to the box changes no answer; a NaN corner walks nothing
+  // either way. tests/test_river_gate.py: 0 answers differing against the Round 124 walk over the real cells (2,009
+  // reserved and 3,667 label cells, 14 KB of bitmap) for 1.0 M strip triangles, 1.4 us a call to 0.05 under Node
+  function cellBits(map) {
+    let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;const cells=[];
+    for(const key of map.keys()){
+      const c=key.indexOf(':'),x=+key.slice(0,c),z=+key.slice(c+1);cells.push(x,z);
+      if(x<x0)x0=x;if(x>x1)x1=x;if(z<z0)z0=z;if(z>z1)z1=z;
+    }
+    if(!cells.length)return {x0:0,z0:0,nx:0,nz:0,m:new Uint8Array(0)};
+    const nx=x1-x0+1,nz=z1-z0+1,m=new Uint8Array(nx*nz);
+    for(let k=0;k<cells.length;k+=2)m[(cells[k+1]-z0)*nx+cells[k]-x0]=1;
+    return {x0,z0,nx,nz,m};
+  }
+  function cellBitsHit(o,i0,i1,j0,j1) {   // is any cell of i0..i1 by j0..j1 a key? (the Maps' own cell numbers)
+    i0=Math.max(i0-o.x0,0);i1=Math.min(i1-o.x0,o.nx-1);j0=Math.max(j0-o.z0,0);j1=Math.min(j1-o.z0,o.nz-1);
+    for(let j=j0;j<=j1;j++)for(let i=i0,r=j*o.nx;i<=i1;i++)if(o.m[r+i]===1)return true;
     return false;
   }
   function rememberStreetTriangle(a,b,c,dx=0,dz=0) { // input [x,z,y], final GPU precision
@@ -11271,6 +11375,7 @@ RB.add({
       reserve([c.cx-r,c.cx+r,c.cz-r,c.cz+r]);
     }
     reserve([CORE_EXT.x0-50,CORE_EXT.x1+50,Math.min(CORE_EXT.z0,PROMENADE_Z0)-50,Math.max(CORE_EXT.z1,PROMENADE_Z1)+50]);
+    terrainRoadGrid.bits = cellBits(terrainRoadGrid);   // Round 225: streetTriNear's bitmap; the cells are all reserved here, rememberTerrainRoad only fills them
   }
   function rememberTerrainRoad(a,b,c) {
     if(!terrainRoadGrid)return;
@@ -13128,9 +13233,19 @@ RB.add({
           for (let gz = Math.floor(Math.min(a[1], b[1]) / EC); gz <= Math.floor(Math.max(a[1], b[1]) / EC); gz++) { const key = gx + ':' + gz; let l = egrid.get(key); if (!l) { l = []; egrid.set(key, l); } l.push(sid); }
       }
     }
+    // Round 225: asked only where it can answer. The walk below builds 25 string keys a call, and of the 2.7 M calls a load
+    // 98% are nowhere near the river (8,487 of a 50 m grid of the far box's 359,159 points have an edge cell in the block,
+    // 19 of the towns' 153,861 road points), which was most of the far ground's node loop and of the traffic sampler.
+    // schNear (R1's bitmap, below) is this search's own reach: false there means all 25 cells are empty, and the walk then
+    // returns [Math.sqrt(6400), 0], which is the [80, 0] the gate hands back, a fresh array as before (callers index it).
+    // tests/test_river_gate.py runs this block with and without the gate over every road point of the three tiers, the
+    // traffic's points and both ground builders' nodes (riverCarve's inputs, so the river's bed cannot move): 0 answers
+    // differing in 2.0 M, and every cell with an edge in its block is in the bitmap. Measured on a busy M2 Max over the
+    // far ring's 201,644 road vertices: 2.5 us a call to 0.09 under Node, 1.9 to 0.07 under JavaScriptCore
     // [distance to the nearest edge within 40 m (else 40), +1 outside / -1 inside by that edge]
     schEdges = (x, z) => {
       SCH_STAT.calls++;   // Round 220: counted, never timed
+      if (!schNear(x, z)) return [80, 0];   // Round 225: no edge within the search's block, the walk's own empty answer
       let best = 6400, side = 0;   // 80 m, the reach of the ±2-cell search below
       const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
       for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) {
@@ -32227,6 +32342,18 @@ if (uOlLamp > 0.001) {
     HIT.notes++;
   }
   function hitSquare(x, z, half, top) { hitNote([[x - half, z - half], [x + half, z - half], [x + half, z + half], [x - half, z + half]], top); }
+  // Round 225: a gable for the flight's walls (the Art Museum's tile roofs rise 6 to 9 m over their eaves and Liberty Place's
+  // crowns 10 to 19 m, where a rowhouse's 2 m sits inside HIT_CLR). The prism whose ridge runs from l0 to l1 along `at`'s
+  // first axis, hw either side of it (`at(along, across)` gives the scene's [x, z]), as strips narrowing to the ridge: each
+  // strip's column is the roof's own height at the strip's outer edge, so no column stands over the roof it notes (HIT_DY's
+  // rounding aside), and no strip steps more than HIT_CLR, so an eye set down on one is over the roof everywhere inside it.
+  // The first strip is the whole footprint at the eave
+  function hitGable(at, l0, l1, hw, eave, apex) {
+    for (let s = 0, n = Math.max(1, Math.ceil((apex - eave) / HIT_CLR)); s < n; s++) {
+      const c = hw * (1 - s / n);
+      hitNote([at(l0, -c), at(l1, -c), at(l1, c), at(l0, c)], eave + (apex - eave) * s / n);
+    }
+  }
   function hitSweep() {   // the rings REBUILD_OCC has gained since the last sweep (City Hall, the rebuilds, the Liberty Bell's chamber)
     for (; HIT.occN < REBUILD_OCC.length; HIT.occN++) { const o = REBUILD_OCC[HIT.occN]; if (o.top) hitNote(o.ring, o.top); }
   }
@@ -35955,6 +36082,26 @@ if (uOlLamp > 0.001) {
               for (const sg of [-1, 1]) slope(k, F3(k, 0, 0, t.apex), F3(k, t.hw, 0, t.apex), F3(k, t.hw, sg * t.hw, t.eave), s);
             }
           });
+          // ---- the flight's walls (Round 225, found beside the Art Museum's: both towers' records, twelve of them, leave the
+          // loop at BRIDGE_SKIP before its hitNote and this block noted nothing, so the flight passed through One and Two
+          // Liberty Place): the base, the shaft and Two's upper stage on the plans built above, each to its own top; the
+          // central bays under their gables, from the axis out to each face's end (inside the crown they lie under its
+          // tiers); each tier's square under its cross gable, a ridge either way; One's glazed pyramid as squares stepping in
+          // by hitGable's rule. The mast and the finial are thinner than a cell (4 m) and take no column
+          {
+            const wall = (ring, top) => hitNote(ring.map((q) => P(q[0], q[1])), base + top);
+            wall(baseL, T.base); wall(shaftL, S.top);
+            if (U) wall(notched(U.u[0], U.u[1], U.v[0], U.v[1], U.notch, U.steps), U.top);
+            for (let k = 0; k < 4; k++) hitGable((l, x) => { const q = F(k, l, x); return P(q[0], q[1]); }, 0, A.ends[k], a, base + A.eave, base + A.apex);
+            for (const t of T.tiers) {
+              hitGable((l, x) => P(l, x), -t.hw, t.hw, t.hw, base + t.eave, base + t.apex);
+              hitGable((l, x) => P(x, l), -t.hw, t.hw, t.hw, base + t.eave, base + t.apex);
+            }
+            if (T.spire.pyr) {
+              const [y0, y1, w0, w1] = T.spire.pyr;
+              for (let s = 0, n = Math.ceil((y1 - y0) / HIT_CLR); s < n; s++) { const h = (w0 + (w1 - w0) * s / n) / 2; wall([[-h, -h], [h, -h], [h, h], [-h, h]], y0 + (y1 - y0) * s / n); }
+            }
+          }
           // ---- One Liberty's top tier runs on as a glazed pyramid into the mast's foot (the crown's glass and ribs)
           const W = T.spire;
           if (W.pyr) {
@@ -36322,6 +36469,18 @@ if (uOlLamp > 0.001) {
         const cCourt = new THREE.Color(0x7d7264);          // forecourt paving
         const cRoofM = new THREE.Color(0x2e3d47);          // blue-gray tile
         const cRed = new THREE.Color(0x5e2f26);            // tympanum brick-red
+        // Round 225 (the Nov 10 audit: the flight passed straight through the museum). Round 214's rule is that whatever
+        // raises a building notes its footprint and top for the flight (hitNote), and this block noted nothing, while its
+        // OSM footprint (record 66278: 36.4 m over 11,687 sq m) leaves the loop at BRIDGE_SKIP before the loop's own note.
+        // So each mass is noted where it is built, with its own top: `mass` draws a box in the block's colour exactly as
+        // before and notes the same quad, and `roof` notes its prism (hitGable). The colonnades are noted solid under
+        // their entablatures (the gaps between the columns are 2.1 and 4.8 m with a wall close behind, and the eye is 6 m
+        // across). The terrace, the forecourt, the pedestal and the steps are the hill's ground and take no note: the DEM
+        // lies 0.4 to 0.9 m under the deck across the open court and 2.2 m at most in the slots beside the centre block,
+        // and no flight of the steps stands more than 1.5 m over it, so the eye's floor (the ground + 2.5 m) is already
+        // over all of them, and a column there would be a kerb that stops an eye coming up the steps. Nothing drawn
+        // changes, and ?collide=0 notes nothing
+        const mass = (u0, u1, v0, v1, y0, y1, st) => { const q = quad(u0, u1, v0, v1); appendBuilding(chk, q, y0, y1, c, st, T); hitNote(q, y1); };
         const roof = (cu, cv, w, len, eave, apex, alongU, col) => {
           // gable prism in the museum's own frame (gPrism is grid-locked)
           const hl = len / 2, hw = w / 2;
@@ -36341,6 +36500,7 @@ if (uOlLamp > 0.001) {
           g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
           g.computeVertexNormals();
           lmTrim.push({ geom: g, color: col || cRoofM, style: 3 });
+          hitGable(alongU ? (l, x) => pt(cu + l, cv + x) : (l, x) => pt(cu - x, cv + l), -hl, hl, hw, eave, apex);   // Round 225: the tiles' own slopes, as the prism above lays them
         };
         const colAt = (u, v, r2, y0c, y1c) => {
           const g = new THREE.CylinderGeometry(r2, r2 * 1.06, y1c - y0c, 8);
@@ -36356,21 +36516,21 @@ if (uOlLamp > 0.001) {
         // main masses: central temple block, rear range, forward wings — style-1
         // walls give them the tall arched fenestration
         c.copy(cGold);
-        appendBuilding(chk, quad(-40, 15, -40, 40), T - 1, T + 25, c, 1, T);
-        appendBuilding(chk, quad(-70, -40, -95, 95), T - 1, T + 19, c, 1, T);
-        appendBuilding(chk, quad(-40, 58, 48, 95), T - 1, T + 19, c, 1, T);
-        appendBuilding(chk, quad(-40, 58, -95, -48), T - 1, T + 19, c, 1, T);
+        mass(-40, 15, -40, 40, T - 1, T + 25, 1);
+        mass(-70, -40, -95, 95, T - 1, T + 19, 1);
+        mass(-40, 58, 48, 95, T - 1, T + 19, 1);
+        mass(-40, 58, -95, -48, T - 1, T + 19, 1);
         roof(-12.5, 0, 80, 55, T + 25, T + 34, true);      // central ridge, pediment ends fore/aft
         roof(-55, 0, 30, 190, T + 19, T + 25, false);      // rear range, gable ends face NE/SW
         roof(9, 71.5, 47, 98, T + 19, T + 26, true);       // wings — pediment ends face the steps
         roof(9, -71.5, 47, 98, T + 19, T + 26, true);
         // central portico: stepped podium, 8 columns, entablature, pediment + red tympanum
         c.copy(cStone);
-        appendBuilding(chk, quad(15, 29, -17, 17), T, T + 3.5, c, 3, T);
-        appendBuilding(chk, quad(15, 25, -16, 16), T + 3.5, T + 7, c, 3, T);
+        mass(15, 29, -17, 17, T, T + 3.5, 3);
+        mass(15, 25, -16, 16, T + 3.5, T + 7, 3);
         for (let i2 = 0; i2 < 8; i2++) colAt(19.5, -14 + 4 * i2, 0.95, T + 7, T + 19.5);
         c.copy(cGold);
-        appendBuilding(chk, quad(12, 24, -17, 17), T + 19.5, T + 21.5, c, 3, T);
+        mass(12, 24, -17, 17, T + 19.5, T + 21.5, 3);
         // golden pediment shell with the brick-red tympanum nested inside: the red
         // prism is narrower and lower so only its end triangles poke past the shell
         roof(18, 0, 34, 12, T + 21.5, T + 27.5, true, cGold);
@@ -36378,10 +36538,10 @@ if (uOlLamp > 0.001) {
         // wing-end porticos facing the forecourt steps
         for (const sv of [-1, 1]) {
           c.copy(cStone);
-          appendBuilding(chk, quad(54, 64, sv * 71.5 - 19, sv * 71.5 + 19), T, T + 6.5, c, 3, T);
+          mass(54, 64, sv * 71.5 - 19, sv * 71.5 + 19, T, T + 6.5, 3);
           for (let i2 = 0; i2 < 6; i2++) colAt(59, sv * 71.5 - 16 + 6.4 * i2, 0.8, T + 6.5, T + 17.5);
           c.copy(cGold);
-          appendBuilding(chk, quad(56, 61, sv * 71.5 - 18, sv * 71.5 + 18), T + 17.5, T + 19, c, 3, T);
+          mass(56, 61, sv * 71.5 - 18, sv * 71.5 + 18, T + 17.5, T + 19, 3);
         }
         // The light stone pedestal on the upper landing now carries Rocky.
         const rockyU = 38, rockyV = 0, rockyBaseY = T + 0.9;
@@ -39410,6 +39570,7 @@ if (uOlLamp > 0.001) {
   // out. Every figure is milliseconds but the counts: fn (records raised), rkn (roofKitNote's calls), sc (schEdges' calls
   // during the fit step) and cq (the clock's quantum in microseconds, 0 under a microsecond)
   PERF.roofKitNote = RK_STAT;   // __dbg.PERF.roofKitNote (declared with ROOF_KIT); the far step's beacon carries rk (ms) and rkn (calls)
+  PERF.roofKitMask = RK_SCAN; RK_SCAN.check = /[?&]dev\b/.test(location.search) && !/[?&]rkcheck=0\b/.test(location.search);   // Round 225: __dbg.PERF.roofKitMask; under ?dev every scanned mask is checked against roofKitMask and differ must read 0. ?rkcheck=0 leaves the check out for a timing run: with it rk is dearer than before the scan (3,992 ms for 284,102 calls on a headless ?dev load), never cheaper
   const STEP_EXTRA = {
     'Raising the outer districts': () => { const W = PERF.wide || {}; return { wd: W.dec, wl: W.loop, wy: W.yld, wf: W.flush }; },   // the junction pass runs in 'Fitting streets', whose beacon carries wj
     'Raising the rest of Philadelphia': () => { const F = PERF.far || {}, K = PERF.roofKitNote || {}; return { fd: F.dec, fl: F.loop, fy: F.yld, fn: F.n, fg: F.ground, ff: F.flush, fr: F.roads, fa: F.areas, rk: K.ms, rkn: K.calls, cq: PERF.clockUs }; },
@@ -51782,7 +51943,7 @@ float pinOccGate() {
   function carFeed(destination,now) {
     // Walk upstream to the nearest offscreen entry. Cars drive the intervening
     // blocks into view instead of making an empty visible street a spawn point.
-    const queue=[],seen=new Set(),start=trafficRuns.indexOf(destination);
+    const queue=[],seen=new Set(),start=trafficRuns[destination.ri]===destination?destination.ri:trafficRuns.indexOf(destination);   // Round 225: the run's own index (trafficIndex), not a search of 46,131 up to 24 times a reconcile
     for(const dir of destination.oneway?[1]:[1,-1])queue.push({i:start,dir,path:[],distance:0});
     const p={},q={};
     for(let head=0;head<queue.length&&head<100;head++) {
@@ -51804,30 +51965,92 @@ float pinOccGate() {
     }
     return null;
   }
+  // Round 225 (the once-a-second stall): trafficReconcile walked all 46,131 runs four times a call: a three-argument
+  // Math.hypot and two smoothsteps a run, then every run's cars for the inbound counts, then a Math.sin hash of a large
+  // argument a run (the dearest of them: V8 reduces an argument in the tens of millions the slow way), then a filter()
+  // array a run, though only a run within CAR_VIEW.warm of the eye can want a car. That was once a second and on every
+  // frame of a time-slider drag. Now one walk does it:
+  // - a run whose middle is CAR_VIEW.warm plus a metre or more from the eye IN PLAN is passed by with want 0 and target 0,
+  //   which is what the long way gives it: the 3D distance is never under the plan's, the smoothstep is exactly 1 from
+  //   warm on, so its weight and want are 0, adding 0 leaves the implied sum as it was, and its target is the floor of
+  //   its jitter alone, which is 0. The metre keeps the squared test clear of Math.hypot's rounding; a table holding a
+  //   jitter of 1 (none does), a clock with no fraction or a warm radius inside the near one turns the test off
+  //   (far2 Infinity) and every run takes the long way. Those three guards are all it has: an eye height that is not
+  //   a number, or a near run whose own want is not, made every run's want or target NaN the long way and leaves a far
+  //   idle run's at 0 here. Neither can happen on the page, and neither makes a need or a retirement either way;
+  // - the jitter hash01(i x 7.3) is read from a table made on the first call (trafficIndex: never inside
+  //   trafficPrepareGraph, whose runs tests/test_traffic_link.py compares key for key with the old linker's; the engine's
+  //   own Math.sin fills it, and JavaScriptCore's is not V8's to the bit), 0.37 MB, and 0.18 MB for the list below;
+  // - the runs that can need or shed a car go on one list in run order (trafficWork: the near ones, and a far one only
+  //   while it is on trafficBusy, so a car left behind on a far run is still retired); the targets and the needs are
+  //   worked from that list alone, the needs still pushed in run order, which is what settles a tie in the sort;
+  // - the inbound counts walk trafficBusy (every run holding a car is on it), and a run's living cars are counted in
+  //   place, in the order filter() listed them, with no array.
+  // Every run's want, target and inbound, every need's run, shortage and priority, every birth and retirement and the
+  // dice they throw are the old function's to the bit: tests/test_traffic_reconcile.py runs the page's section beside
+  // one with the old text put back on the real network, a computer and a phone, under a moving eye, jumps, heights from
+  // 2 to 2,500 m, clock changes, closed blocks and a slider drag, and a phone again under JavaScriptCore. Under Node 24
+  // on this Mac, the two taking turns on a busy machine (the old function alone 9.3 to 10.4 ms on a quiet one, the audit's
+  // figure), at a steady 5 pm over City Hall: the walks 17 to 20 ms a call at best to 2.0 with a phone's settings (542
+  // cars) and 19 to 20 to 3.3 with a computer's (2,964); under osascript's JavaScriptCore 49 to 3. What is left is the
+  // near runs' own arithmetic, a frustum test a living car and the needs, and after them the births, which are untouched
+  let trafficJit=new Float64Array(0),trafficWork=new Int32Array(0),trafficJitOk=false;
+  function trafficIndex() {
+    const n=trafficRuns.length;if(trafficJit.length===n&&(!n||trafficRuns[n-1].ri===n-1))return;
+    trafficJit=new Float64Array(n);trafficWork=new Int32Array(n);trafficJitOk=true;
+    for(let i=0;i<n;i++){const h=hash01(i*7.3);trafficJit[i]=h;if(!(h<1))trafficJitOk=false;trafficRuns[i].ri=i;}   // ri: the run's place in trafficRuns (carFeed, trafficBusySort)
+  }
+  // The same round, the two walks of every run a frame: trafficAdvance and trafficDraw went through all 46,131 runs to
+  // find the few hundred holding cars. They walk trafficBusy now, put in run order first, so the cars are advanced and
+  // drawn in exactly the order the full walk took them (the order matters: a car entering a run reads the cars already
+  // moved on it, and carTransfer throws dice). A run that joins the list during the advance held no car when it began, so
+  // every car on it has already moved this frame and the old walk did nothing there either. The list is nearly in order
+  // every time (trafficLeaders keeps its order, a birth or a transfer adds a run at the end): up to 64 at the end are slid
+  // into place, and more than that (the first seeding) is sorted whole. The cars' state, the dice and every instance slot
+  // are the full walk's to the bit, frame by frame (the same test). The advance and the draw together, same run: 0.83 to
+  // 0.94 ms a frame at best to 0.37 to 0.38 (a phone, 542 cars), 2.6 to 2.9 to 2.0 to 2.1 (a computer, 2,964)
+  function trafficBusySort() {
+    trafficIndex();
+    const b=trafficBusy,n=b.length;let p=1;
+    while(p<n&&b[p].ri>b[p-1].ri)p++;   // in order up to p: everything out of place came on at the end since the last call
+    if(p>=n)return;
+    if(n-p>64){b.sort((u,v)=>u.ri-v.ri);return;}
+    for(let q=p;q<n;q++){const r=b[q],v=r.ri;let j=q-1;while(j>=0&&b[j].ri>v){b[j+1]=b[j];j--;}b[j+1]=r;}
+  }
   function trafficReconcile(now) {
     const {frac}=trafficFrac();let implied=0;
-    for(const r of trafficRuns) {
-      const d=Math.hypot(r.mx-camera.position.x,r.mz-camera.position.z,camera.position.y-(r.ys[0]||0));
+    trafficIndex();
+    const runs=trafficRuns,N=runs.length,jit=trafficJit,work=trafficWork,cx=camera.position.x,cy=camera.position.y,cz=camera.position.z;
+    const far2=trafficJitOk&&CAR_VIEW.warm>CAR_VIEW.near&&isFinite(frac)?(CAR_VIEW.warm+1)*(CAR_VIEW.warm+1):Infinity;
+    let nw=0;
+    for(let i=0;i<N;i++) {
+      const r=runs[i],dx=r.mx-cx,dz=r.mz-cz;
+      r.inbound=0;
+      if(dx*dx+dz*dz>=far2){r.want=0;r.target=0;if(r.busy)work[nw++]=i;continue;}
+      const d=Math.hypot(dx,dz,cy-(r.ys[0]||0));
       // Spend the finite fleet near the viewer; keep a smaller upstream reservoir.
       const w=(1-smooth(CAR_VIEW.near,CAR_VIEW.warm,d))*(1+.65*(1-smooth(450,1500,d)));
       r.want=r.closed?0:r.aadt*frac/TRAFFIC_DENSITY_KMH[r.cls]*(r.len/1000)*w;implied+=r.want;
-      r.inbound=0;
+      work[nw++]=i;
     }
     TRAFFIC.scale=Math.min(1,TRAFFIC.cap*.85/Math.max(1,implied));
-    for(const r of trafficRuns)for(const c of r.cars)if(!c.die&&c.destination)c.destination.inbound++;
-    for(let i=0;i<trafficRuns.length;i++) {
-      const r=trafficRuns[i];r.target=Math.min(50,Math.floor(r.want*TRAFFIC.scale+hash01(i*7.3)));
+    for(let q=0;q<trafficBusy.length;q++){const cars=trafficBusy[q].cars;for(let k=0;k<cars.length;k++){const c=cars[k];if(!c.die&&c.destination)c.destination.inbound++;}}
+    for(let q=0;q<nw;q++) {
+      const i=work[q],r=runs[i];r.target=Math.min(50,Math.floor(r.want*TRAFFIC.scale+jit[i]));
     }
     const needs=[];
-    for(let i=0;i<trafficRuns.length;i++) {
-      const r=trafficRuns[i],target=r.target,alive=r.cars.filter(c=>!c.die);let extra=alive.length-target;
-      for(const car of alive) {
+    for(let q=0;q<nw;q++) {
+      const i=work[q],r=runs[i],target=r.target,cars=r.cars,nc=cars.length;let alive=0;
+      for(let k=0;k<nc;k++)if(!cars[k].die)alive++;
+      let extra=alive-target;
+      if(alive)for(let k=0;k<nc;k++) {
+        const car=cars[k];if(car.die)continue;
         // A visible car always keeps its place, even after a clock/density change.
         if(carSpotRank(car.x,car.y,car.z)===0||now-car.born<CAR_MIN_LIFE)continue;
         if(car.destination?.want>0)continue;
         if(extra>0||r.want===0){carDeath(car,now,'dieRetire',r);extra--;}
       }
-      const shortage=target-alive.length-r.inbound;
+      const shortage=target-alive-r.inbound;
       if(shortage>0) {
         const near=1-smooth(450,CAR_VIEW.far,Math.hypot(r.mx-camera.position.x,r.mz-camera.position.z));
         needs.push({r,shortage,priority:near*2+shortage/(target||1)+hash01(i+trafficFrame)*.1});
@@ -51928,7 +52151,8 @@ float pinOccGate() {
     trafficLeaders();trafficFrame++;
     const busR2 = BUS_OB.n ? (NEAR_R + 60) ** 2 : 0, cpx = camera.position.x, cpz = camera.position.z;
     BUS_OB.held = 0;
-    for(const r of trafficRuns)for(let i=r.cars.length-1;i>=0;i--) {
+    trafficBusySort();   // Round 225: the runs holding cars, in run order: the full walk's order exactly, without the 46,000 empty runs
+    for(let q=0,nq=trafficBusy.length;q<nq;q++)for(let r=trafficBusy[q],i=r.cars.length-1;i>=0;i--) {
       const car=r.cars[i];if(car.fr===trafficFrame)continue;car.fr=trafficFrame;
       const visible=carSpotRank(car.x,car.y,car.z)===0;
       if(visible&&car.die&&!car.closedOut)car.die=0; // Turning back toward retiring cars preserves them (not one leaving a closed block: Round 207).
@@ -51995,7 +52219,8 @@ float pinOccGate() {
     for(const f of trafficFleet){f.n=0;f.dirty=-1;f.lights.material.opacity=night;if(f.far){f.far.n=0;f.far.dirty=-1;}}
     CARLAMP.n=0;_carFar.length=0;
     const cp=camera.position;
-    for(const r of trafficRuns)for(const car of r.cars) {
+    trafficBusySort();   // Round 225: the advance's transfers put runs on the end of the list; in run order every car keeps the instance slot the full walk gave it
+    for(const r of trafficBusy)for(const car of r.cars) {
       const d=Math.hypot(car.px-cp.x,car.py-cp.y,car.pz-cp.z);
       if(REAL&&d>CAR_SHADE_D){_carFar.push(car,d);continue;}
       trafficPut(car,r,d,boxLamps);
@@ -52573,7 +52798,7 @@ float pinOccGate() {
   // take the roofs' own glow (ROOF_NIGHT), so they read against the roofs they stand on
   const ROOFKIT = { r: isTouch ? 260 : 420, cell: 160, cells: null, meshes: [], at: 0, cam: new THREE.Vector3(1e9, 0, 0), laid: 0, off: 0 };
   step('Fitting out the rooftops', () => {
-    if (TIER2) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }   // tier 2 lays no rooftop hardware, and the roof notes go (the recovery round)
+    if (!ROOF_KIT_ON) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }   // tier 2 lays no rooftop hardware, and the roof notes go (the recovery round; Round 225: on the flag roofClutter reads, so none were taken)
     if (!ROOF_KIT.n) return;
     const B = ROOF_KIT.buf, cells = new Map();
     for (let i = 0; i < ROOF_KIT.n; i++) {
@@ -52667,7 +52892,8 @@ float pinOccGate() {
       groupCity.add(m);
       ROOFKIT.meshes.push(m);
     }
-    PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size, partial: ROOF_KIT.partial, empty: ROOF_KIT.empty, hist: Array.from(ROOF_KIT.hist) };
+    PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size, partial: ROOF_KIT.partial, empty: ROOF_KIT.empty, hist: Array.from(ROOF_KIT.hist), mask: RK_SCAN };   // mask (Round 225): the scanline's counts, differ 0 under ?dev
+    if (RK_SCAN.differ) console.error('roof kit: ' + RK_SCAN.differ + ' of ' + RK_SCAN.checked + ' scanned masks differ from roofKitMask');   // only ever under ?dev (RK_SCAN.check); the capture skill's render.mjs prints the page's console errors
   });
   // ---- the house fronts near the eye (Round 181; FRONTS above). The notes are bucketed in 160 m cells; near the eye
   // (FRONTS.r) every note's street side is found once and kept, and its fronts and relief are laid, the nearest cells

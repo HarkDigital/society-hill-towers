@@ -5,7 +5,7 @@
 # (the GitHub Pages copy was retired Sep 17 2026; philly3d.com is the site.)
 #
 #   ./deploy_philly3d.sh             tests -> build -> gzip -> stage -> keep prev
-#                                    -> rsync art/ -> rsync --delay-updates -> verify live
+#                                    -> rsync art/ (new files only) -> rsync --delay-updates -> verify live
 #   ./deploy_philly3d.sh --rollback  put the previous index.html + .gz pair back
 #                                    and verify the live site serves it
 #   ./deploy_philly3d.sh --no-testflight   the deploy alone, without the app upload below
@@ -22,6 +22,10 @@
 # Verified:   the script ends by fetching https://philly3d.com/ twice, once
 #             identity and once gzip-encoded piped through gunzip, and compares
 #             both sha256s with the local build. Any mismatch exits non-zero.
+# Art:        art/ ships before the page, added and never deleted, and since Round 225 a file the
+#             box already has is left alone (rsync --ignore-existing): its name is its content's
+#             hash, so it cannot have changed, and nginx's ETag for it (its time and size) now
+#             outlives a deploy. Every local file must be on the box at its own size afterwards.
 # Gated:      the test suite runs before anything is built (warns if tests/
 #             does not exist yet), and the gzip must fall inside
 #             GZ_MIN..GZ_MAX bytes (a truncated or bloated build never ships).
@@ -45,6 +49,12 @@ sha() {                        # sha256 hex of a file, GNU or BSD userland
 }
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
+# The art's listing (Round 225), the same command here and on the box: wc -c prints "<bytes> ./<kind>/<name>" a file
+# and a total line a batch; art_rows keeps the files' lines as "./<kind>/<name> <bytes>" rows, sorted HERE in the C
+# locale so the two machines' collations never meet in comm. etag_line reads the ETag out of a response's headers.
+ART_LS='find . -type f -exec wc -c {} +'
+art_rows() { awk 'substr($2, 1, 2) == "./" { print $2, $1 }' "$1" | LC_ALL=C sort; }
+etag_line() { tr -d '\r' | awk 'tolower($1) == "etag:" { print $2; exit }'; }
 
 # verify_live SHA — fetch the live page identity and gzip-encoded, both must
 # hash to SHA. Cache-busting query + no-cache so a max-age=600 copy anywhere
@@ -142,6 +152,11 @@ find "$TMP" -maxdepth 1 -type f -exec chmod 644 {} +
 cp -R art "$TMP/art"
 find "$TMP/art" -type d -exec chmod 755 {} +
 find "$TMP/art" -type f -exec chmod 644 {} +
+# Round 225: the rsync below never sends a file the box already has, which is right only while a name cannot come to
+# mean other bytes. So every staged file must carry the first 10 hex of its own sha256 in its name (782 of 782 on
+# Nov 10, 2026), a stray .DS_Store included: anything else would be frozen on the box at its first copy.
+python3 art_files.py check "$TMP/art" \
+  || fatal "refusing to ship art that is not named by its content's hash (the deploy never sends an existing name again)"
 ART_N=$(find "$TMP/art" -type f | wc -l | tr -d ' ')
 WANT=$(sha "$TMP/index.html")
 echo "   gzip $GZ bytes, sha256 $WANT"
@@ -149,12 +164,43 @@ echo "   gzip $GZ bytes, sha256 $WANT"
 # 3. keep the live pair, then ship
 echo "== keeping the live pair in $HOST:$PREV"
 ssh "$HOST" "mkdir -p $PREV && cp -a $WEB/index.html $WEB/index.html.gz $PREV/ 2>/dev/null || true"
-echo "== rsync the art ($ART_N files)"
-ssh "$HOST" "mkdir -p $WEB/art && chmod 755 $WEB/art"
-rsync -az "$TMP/art/" "$HOST:$WEB/art/"
-(cd "$TMP/art" && find . -type f | sort) > "$TMP/art-local.txt"
-ssh "$HOST" "cd $WEB/art && find . -type f | sort" > "$TMP/art-remote.txt" || fatal "could not list $HOST:$WEB/art"
-[ -z "$(comm -23 "$TMP/art-local.txt" "$TMP/art-remote.txt")" ] || fatal "art files missing on $HOST after rsync: $(comm -23 "$TMP/art-local.txt" "$TMP/art-remote.txt" | head -3 | tr '\n' ' ')"
+# Round 225: only the files the box does not have. Until now this was a plain rsync -az of a fresh `cp -R`, so every
+# staged copy carried the deploy's own second, rsync wrote that time over all 782 files (43.6 MB) and nginx's ETag,
+# which is a file's time and size, changed for every one of them at every deploy: a returning visitor's cached art
+# answered 200 instead of 304 and was downloaded again, up to 33.6 MB on a computer and 10.2 MB on a phone
+# (measured Nov 10, 2026 with curl -sI: files baked Oct 12 to 24 all answered last-modified Oct 25 22:50:18, the
+# second of the last deploy). --ignore-existing never touches a file that is there, its time included, the first
+# deploy with the flag too (cp -Rp would have re-dated them all once more, to whatever git last did here). What the
+# old rsync did on the way is now done on purpose: the modes of what is already there are put right first (a chmod
+# moves no modification time, so no ETag), and since a wrong file on the box is no longer overwritten, the listing
+# check compares every file's size as well as its name.
+ssh "$HOST" "mkdir -p $WEB/art && chmod 755 $WEB/art \
+  && find $WEB/art -type d ! -perm 755 -exec chmod 755 {} + \
+  && find $WEB/art -type f ! -perm 644 -exec chmod 644 {} + \
+  && cd $WEB/art && $ART_LS" > "$TMP/art-before.raw" || fatal "could not prepare and list $HOST:$WEB/art"
+(cd "$TMP/art" && $ART_LS) > "$TMP/art-local.raw"
+art_rows "$TMP/art-local.raw" > "$TMP/art-local.txt"
+art_rows "$TMP/art-before.raw" > "$TMP/art-before.txt"
+ART_NEW=$(LC_ALL=C comm -23 "$TMP/art-local.txt" "$TMP/art-before.txt" | wc -l | tr -d ' ')
+# one file the box already has, and the ETag it answers with before anything is sent
+ART_PROBE=$(LC_ALL=C comm -12 "$TMP/art-local.txt" "$TMP/art-before.txt" | head -1 | cut -d' ' -f1)
+ART_PROBE=${ART_PROBE#./}
+ETAG_WAS=""
+if [ -n "$ART_PROBE" ]; then
+  ETAG_WAS=$(curl -sI --max-time 30 "${URL}art/$ART_PROBE" 2>/dev/null | etag_line) || ETAG_WAS=""
+fi
+echo "== rsync the art ($ART_N files, $ART_NEW the box does not have)"
+rsync -az --ignore-existing "$TMP/art/" "$HOST:$WEB/art/"
+ssh "$HOST" "cd $WEB/art && $ART_LS" > "$TMP/art-remote.raw" || fatal "could not list $HOST:$WEB/art"
+art_rows "$TMP/art-remote.raw" > "$TMP/art-remote.txt"
+ART_MISS=$(LC_ALL=C comm -23 "$TMP/art-local.txt" "$TMP/art-remote.txt")
+[ -z "$ART_MISS" ] || fatal "art files missing on $HOST after rsync, or there at another size (an existing file is never sent again: remove a wrong one on the box and deploy again): $(echo "$ART_MISS" | head -3 | tr '\n' ' ')"
+# a warning and never a failed deploy: the art has landed and is correct, this is the visitors' cache alone
+if [ -n "$ETAG_WAS" ]; then
+  ETAG_NOW=$(curl -sI --max-time 30 "${URL}art/$ART_PROBE" 2>/dev/null | etag_line) || ETAG_NOW=""
+  [ "$ETAG_NOW" = "$ETAG_WAS" ] \
+    || echo "WARNING: the ETag of art/$ART_PROBE moved across the art rsync ($ETAG_WAS to ${ETAG_NOW:-none}): the box's art was re-dated and every visitor's cached copy with it" >&2
+fi
 echo "== rsync"
 rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/favicon.ico" "$TMP/favicon.svg" \
@@ -175,7 +221,7 @@ for kind in fronts tiles trees ground; do
   curl -fsS --max-time 60 -o "$TMP/live-art" "${URL}art/$kind/$f" || fatal "could not fetch ${URL}art/$kind/$f"
   [ "$(sha "$TMP/live-art")" = "$(sha "$TMP/art/$kind/$f")" ] || fatal "the live art/$kind/$f does not match this one"
 done
-echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT) and its $ART_N art files"
+echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT) and its $ART_N art files ($ART_NEW sent, the rest left as they were)"
 echo "previous pair kept in $HOST:$PREV — '$0 --rollback' restores it"
 
 # 5. the app follows the site (Round 204)

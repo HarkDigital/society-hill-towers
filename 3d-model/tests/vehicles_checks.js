@@ -27,7 +27,7 @@ const renderer={domElement:{height:800}},CORE_EXT={x0:-640,x1:770,z0:-520,z1:850
 const out = {};
 const make = (touch, art, furn, coreHw) => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + traffic +
   'return {CAR_MODELS,carArtGeom,vehLoft,VART,trafficRuns,trafficCreateFleet,trafficFleet,PARKED,parkedInit,parkedLay,carSample,runHydrants,parkHalfW,FURN,furnInit,furnCell,TRAFFIC,camera,setReady:()=>{trafficReady=true;},' +
-  'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw);
+  'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw);
 // the cars: every kind's near and far body at its real size, every uv inside the atlas
 for (const touch of [false, true]) {
   const a = make(touch, true);
@@ -179,7 +179,7 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
   a.trafficCreateFleet();
   const r = a.trafficRuns[0];
   const mk = (x, kind) => ({ px: x, py: 0.3, pz: 0, x, y: 0.3, z: 0, kind, alpha: 1, heading: 0, col: 0xffffff, met: 0, brk: 0, seg: 0, s: x, dir: 1 });
-  r.cars.push(mk(1200, 1), mk(40, 1), mk(400, 1), mk(300, 3));
+  r.cars.push(mk(1200, 1), mk(40, 1), mk(400, 1), mk(300, 3)); a.trafficHold(r);   // Round 225: trafficDraw walks the runs on trafficBusy, so cars put on a run by hand are held the way carSpawn and carTransfer hold them
   a.camera.position.set(0, 2, 0);
   a.trafficDraw(0); a.vehShadowSync();
   const f = a.trafficFleet[1], f3 = a.trafficFleet[3];

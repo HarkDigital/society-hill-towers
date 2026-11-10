@@ -148,6 +148,35 @@ out.cells = HIT.cells; out.occ = HIT.occN;
         self.assertEqual(o['cells'], 25)
         self.assertEqual(o['occ'], 2)
 
+    def test_gable(self):
+        # Round 225: a roof that rises more than HIT_CLR over its eave (the Art Museum's, Liberty Place's crowns) is noted as
+        # strips narrowing to the ridge, each to the roof's own height at its outer edge: a column is never over the roof
+        # by a HIT_DY step, nor under it by more than HIT_CLR, so an eye set down on one is over the tiles
+        o = self.run_js('''
+hitGable((l, x) => [l, x], 0, 40, 19, 30, 39);            // the ridge along x over z 0, 19 m either side, 9 m of rise
+out.notes = HIT.notes; out.cols = []; out.tiles = [];
+for (let j = -5; j < 5; j++) { out.cols.push(hitTop(5, j)); out.tiles.push(30 + 9 * (1 - Math.abs((j + 0.5) * HIT_CELL) / 19)); }
+out.beside = hitTop(5, 5); out.past = hitTop(10, 0);
+out.land = fly([20, 60, 1], [0, -40, 0], 3);              // straight down beside the ridge
+out.wall = fly([20, 35, -60], [0, 0, 60], 1.2);           // level at 35 m from the north: in over the eave's strips, to the roof
+hitGable((l, x) => [l + 200, x], 0, 40, 19, 30, 30);      // no rise: the footprint alone
+out.flat = HIT.notes - out.notes;
+''')
+        self.assertEqual(o['notes'], 4)                       # 9 m in steps of no more than 2.5
+        for col, tile in zip(o['cols'], o['tiles']):
+            self.assertGreaterEqual(col, tile - 2.5)
+            self.assertLess(col, tile + 1.6)
+        self.assertEqual(o['cols'], o['cols'][::-1])          # the same either side of the ridge
+        self.assertEqual(sorted(o['cols'][:5]), o['cols'][:5])   # and never falling toward it
+        self.assertIsNone(o['beside'])
+        self.assertIsNone(o['past'])
+        self.assertGreaterEqual(o['land'][1], 30 + 9 * (1 - 1 / 19))   # over the tiles under it
+        self.assertLess(o['land'][1], 39 + 2.5)
+        self.assertAlmostEqual(o['wall'][1], 35)                 # stopped by the strip whose column it is not HIT_CLR over,
+        self.assertLess(o['wall'][2], -4.75)                     # short of the ridge's own strip
+        self.assertGreater(o['wall'][2], -19 - 3)                # and inside the eave
+        self.assertEqual(o['flat'], 1)
+
     def test_escape_hatch(self):
         o = self.run_js('''
 hitNote(box(0, 0, 40, 20), 30);
@@ -164,6 +193,10 @@ out.cells = HIT.cells;
         self.assertNotIn('fly.pos.addScaledVector(fly.vel, dt)', SRC)
         self.assertGreaterEqual(len(re.findall(r'hitNote\(poly, base \+ h\)', SRC)), 3)
         self.assertIn("hitNote(b.poly, siteY(rx, rz, 'ground') + b.h)", SRC)
+        # Round 225: the landmarks whose records leave the outer districts' loop at BRIDGE_SKIP, before its note, and build
+        # their own masses: the Art Museum (tests/test_collide_museum.py) and Liberty Place (tests/test_remodel_liberty.py)
+        self.assertIn('appendBuilding(chk, q, y0, y1, c, st, T); hitNote(q, y1); };', SRC)
+        self.assertIn('wall(baseL, T.base); wall(shaftL, S.top);', SRC)
 
 
 if __name__ == '__main__':

@@ -4,6 +4,33 @@ The iOS and Android apps are a Capacitor 8 wrapper around the same single page t
 page: `npm run sync` copies `../3d-model/society-hill-towers.html` (built by `python3 build.py`) into `www/index.html`
 and from there into both native projects. The page's build stays plain Python with no npm; npm lives only in this folder.
 
+## What the copy puts in the app (`scripts/copy-web.mjs`, Round 225)
+
+The page, and the generated art it loads by relative path (Round 184), but only the art a phone can ask for. Inside the
+app the page always takes the phone path, where `artSrc` answers a record's half copy wherever it has one, so a full-size
+file with a half copy is never read there. The copy leaves those out: on Nov 10, 365 of the 782 files and 33.4 of the
+43.6 MB, which takes `www` from 77.4 to 44.0 MB (the page is 33.8 of it). It prints both totals on every run.
+
+- The list is read from the page being copied (every art path it names), split by `scripts/art-touch.mjs`: a file is left
+  out when its `-half` twin is named too. Every named file is checked before anything is written; a missing or empty one
+  stops the sync with the file's name (a page older than its art: run `python3 build.py`), and `testflight.sh` stops with it.
+- The page and its art folder must agree exactly. A file under `3d-model/art/` that the page's scan did not find stops
+  the sync too (art newer than the page, or a path written in a way the scan cannot see): either way the app would be
+  short of something its page asks for. The Finder's dotfiles are ignored.
+- `www/art` is brought to the list by name, not deleted and recopied: a file already there with its source's bytes is
+  left alone (each is read and compared, nothing is written), and only what changed is written inside Dropbox.
+- `SHT_APP_SRC` and `SHT_APP_WWW` point the copy at another page folder and another `www` (the tests use them). The sync
+  removes from `www/art` whatever is not on the list, so it refuses a `www` that is the source folder or whose `art`
+  reaches the source's `art`, a link included.
+- `KEEP_FULL` in `scripts/art-touch.mjs` is the table of art kinds (the folder under `art/`) whose full-size files ride
+  along too. It is empty. To bring a kind's full-size pictures back to the app, say the house fronts if compressed
+  textures are later spent on sharpness, add the kind there and change the page's `artSrc` call for it in the same commit.
+- `3d-model/tests/test_app_art.py` is the guard: it runs the page's own `artSrc` line over every art manifest and holds
+  the list to its answers, and it refuses an art request in app.js that does not go through `artSrc`. A file the app does
+  not hold would not fail loudly: the page would draw the procedural look in its place. The test counts every mention of
+  `artImage` and `artSrc`, every `fetch`, every image element and every loader in app.js, so a new way to a picture
+  fails it until it is added there on purpose: load art as `artImage(artSrc(rec.x, rec.xHalf))` and nothing needs adding.
+
 ## What the page does differently inside the app (Round 155, `IN_APP` in app.js)
 
 - Detects the app by the `Philly3DApp` user-agent marker (`appendUserAgent` in `capacitor.config.json`), by the

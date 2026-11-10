@@ -365,7 +365,10 @@ reset(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 2, t: Date.now() - 1
         self.assertIn('LITE ? ((x, z) => x * x + z * z < LITE_R * LITE_R) : null, true)', s, 'the far ring reads LITE_R')
         self.assertIn('if (outer && TIER2) continue;', cut(s, "  step('Planting the street trees',", "  step('Sowing the grass'"))
         self.assertIn("if (TIER2 && typeof TRAFFIC_B64 !== 'undefined') TRAFFIC_B64 = null;", cut(s, "  step('Setting the traffic flowing',", '    const bin = unb64(TRAFFIC_B64'))
-        self.assertIn('if (TIER2) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }', cut(s, "  step('Fitting out the rooftops',", '    const B = ROOF_KIT.buf'))
+        # Round 225: the step drops the notes on ROOF_KIT_ON, the flag roofClutter reads too (no note is taken where none is
+        # laid), and the flag is tier 2's: one line to change the day tier 2 gets its rooftops back
+        self.assertIn('  const ROOF_KIT_ON = !TIER2;\n', s)
+        self.assertIn('if (!ROOF_KIT_ON) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }', cut(s, "  step('Fitting out the rooftops',", '    const B = ROOF_KIT.buf'))
 
     def test_the_beacon_survives_the_tdz(self):
         script = r'''

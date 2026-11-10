@@ -182,7 +182,11 @@ class Counters(unittest.TestCase):
 
     def test_sch_edges_and_street_tri_near_are_counted_never_timed(self):
         sch = cut('    schEdges = (x, z) => {', '  // the ground height under and beside the river')
-        self.assertIn('      SCH_STAT.calls++;   // Round 220: counted, never timed\n      let best = 6400, side = 0;', sch)
+        # Round 225 moved this pin on purpose: the reach gate sits between the counter and the walk, so a gated call is still
+        # counted ('sc' on the beacon and __dbg.perf read every call) and the walk's first line follows the gate
+        self.assertIn('      SCH_STAT.calls++;   // Round 220: counted, never timed\n'
+                      "      if (!schNear(x, z)) return [80, 0];   // Round 225: no edge within the search's block, the walk's own empty answer\n"
+                      '      let best = 6400, side = 0;', sch)
         self.assertNotIn(NOW, sch)
         self.assertIn('  const SCH_STAT = { calls: 0 };\n  PERF.sch = SCH_STAT;\n  if (SCH_POLYS) {', SRC)
         tri = cut('  function streetTriNear(ax,az,bx,bz,cx,cz) {', '  function rememberStreetTriangle(')
@@ -264,18 +268,21 @@ console.log(JSON.stringify({ calls: RK_STAT.calls, sampled: RK_STAT.sampled, ms:
 const SCHUYLKILL_DATA = { polys: [{ ring: [[0, 0], [100, 0], [100, 100], [0, 100]], holes: [] }] };
 ''' + block + '''
 const a = schEdges(50, -10), b = schEdges(50, 50), c = schEdges(50, 50);
-console.log(JSON.stringify({ calls: PERF.sch.calls, a: [Math.round(a[0]), a[1]], b: [Math.round(b[0]), b[1]], same: PERF.sch === SCH_STAT }));''')
-        self.assertEqual(out['calls'], 3)
+const far = schEdges(5000, 5000), far2 = schEdges(5000, 5000);   // Round 225: out of reach, answered by the gate, counted all the same
+console.log(JSON.stringify({ calls: PERF.sch.calls, a: [Math.round(a[0]), a[1]], b: [Math.round(b[0]), b[1]], same: PERF.sch === SCH_STAT, far, fresh: far !== far2 }));''')
+        self.assertEqual(out['calls'], 5)
         self.assertEqual(out['a'], [10, 1])    # 10 m outside the south edge
         self.assertEqual(out['b'], [50, -1])   # the centre, 50 m inside
         self.assertTrue(out['same'])
+        self.assertEqual(out['far'], [80, 0])
+        self.assertTrue(out['fresh'])
 
     def test_street_tri_near_counts_its_calls(self):
         decl = cut('  const TRI_NEAR = { calls: 0 };', '  // At a tier/cut boundary')
         fn = cut('  function streetTriNear(ax,az,bx,bz,cx,cz) {', '  function rememberStreetTriangle(')
         out = node('const PERF = {}; const TERRAIN_PATCH_CELL = 100; let terrainRoadGrid = null, streetSurfaceIndex = null;\n' + decl + fn + '''
 const none = streetTriNear(0, 0, 10, 0, 0, 10);
-terrainRoadGrid = new Set(['0:0']);
+terrainRoadGrid = new Map([['0:0', []]]); terrainRoadGrid.bits = cellBits(terrainRoadGrid);   // Round 225: the Map carries its key set as a bitmap, and the question goes to that (cellBits rides this cut)
 const hit = streetTriNear(0, 0, 10, 0, 0, 10), miss = streetTriNear(500, 500, 510, 500, 500, 510);
 console.log(JSON.stringify({ calls: PERF.triNear.calls, none, hit, miss }));''')
         self.assertEqual(out['calls'], 3)

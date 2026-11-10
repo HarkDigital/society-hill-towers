@@ -47,6 +47,43 @@ be pinned in the hash as `t=yyyymmdd,minutes`, alongside a camera as
 waiting for a scoreboard fetch. `?lights=<team|colour|hex|off>` does the same from
 the URL.
 
+## The entry orbit (the first view)
+
+What every visitor sees first, and until Round 225 no pose table held it. After Enter
+the camera circles City Hall: the orbit's target is (-1603, 78, -802), and Enter sets
+`orbit.goalR = 700` at polar angle `goalPhi` 1.22 from +y (app.js, the `orbit` object
+and the `btnEnter` handler). So the eye rides a ring 700 sin 1.22 = 657.4 m out
+horizontally at y = 78 + 700 cos 1.22 = 318.6 (240.6 m over the target), looking down
+20.1 degrees at the target. The azimuth is measured on xz from +x (east) toward +z
+(south), and the circle turns that way at 0.045 rad a second (a lap in about 140 s).
+It starts from azimuth 30 degrees (`goalTheta` 0.52) and already turns behind the
+veil (`introSpin`), so where a visitor enters depends on how long the build took:
+any of the eight can be the first view.
+
+| Name      | Azimuth | Eye stands | pos x, y, z               |
+|-----------|---------|------------|---------------------------|
+| orbit-000 | 0       | east       | -945.6, 318.6, -802.0     |
+| orbit-045 | 45      | south east | -1138.2, 318.6, -337.2    |
+| orbit-090 | 90      | south      | -1603.0, 318.6, -144.6    |
+| orbit-135 | 135     | south west | -2067.8, 318.6, -337.2    |
+| orbit-180 | 180     | west       | -2260.4, 318.6, -802.0    |
+| orbit-225 | 225     | north west | -2067.8, 318.6, -1266.8   |
+| orbit-270 | 270     | north      | -1603.0, 318.6, -1459.4   |
+| orbit-315 | 315     | north east | -1138.2, 318.6, -1266.8   |
+
+Aim each with `"look": [-1603, 78, -802]` in a `poses.json` rather than a yaw and a
+pitch (`render.mjs` works them out), and take every azimuth twice: by day and at 21:30
+(clock minutes 1290).
+
+```json
+{ "name": "orbit-000-day",   "pos": [-945.6, 318.6, -802.0], "look": [-1603, 78, -802], "clock": [2026, 10, 12, 780] },
+{ "name": "orbit-000-night", "pos": [-945.6, 318.6, -802.0], "look": [-1603, 78, -802], "clock": [2026, 10, 12, 1290] }
+```
+
+The staged plan (Round 225 on) asks for every look change's side by side at these
+poses as well as the older ones. If the orbit's constants change in app.js, recompute
+the table: x = -1603 + h cos a, z = -802 + h sin a, with h = goalR sin goalPhi.
+
 ## Probes worth knowing
 
 These answer questions faster than any screenshot, and they answer them for the

@@ -19,6 +19,11 @@
   within its own mesh's reach, each mesh shown only once its picture has landed; the placeholder is premultiplied; no new
   program writes gl_FragDepth; every stream the near level uploads is a 4-byte float stream (the phones' padded copies,
   Round 158); libStep runs once a frame and the recovery tier builds neither near mesh.
+- Round 225: both towers are solid to the flight (their twelve records leave the outer districts' loop at BRIDGE_SKIP before
+  its hitNote, and the builder noted nothing: the flight passed through them). The builder runs here with the page's own
+  flight walls (the HIT block cut from app.js) in place of a stand-in: over every 4 m cell round both towers the column is
+  what is drawn at the cell's centre (the appended plans to their tops, the slopes' own triangles), never more than HIT_CLR
+  under it nor a HIT_DY step over it, and none where nothing is drawn; the eye stops at a shaft and passes over the needle.
 """
 import json
 from pathlib import Path
@@ -40,6 +45,7 @@ def cut(start, end, src=SRC):
 SPECS = cut('  const LIB_SPECS = [', '  // the near level (LIB.base')
 BUILD = cut('      if (REAL) {\n        const DIRS = [[1, 0]', '      // --- One Liberty Place (17th & Market)')
 PYR4 = cut('      const pyr4 = (cx, cz, w, y0, y1, rT) => {', '      const neon = ')
+HIT = cut('  const HIT_ON = ', '  // the outer districts\' wall colours, sampled')   # Round 225: the flight's walls, as the page runs them
 BOX = cut('  function box(w, h, d, x, y, z, ry) {', '\n  }\n') + '\n  }\n'
 AREA = cut('  function signedArea(pts) {', '\n  }\n') + '\n  }\n'
 
@@ -140,6 +146,10 @@ const libU = { uLibBase: { value: 0 } };
 const fl = { nx: 0.98547, nz: 0.16983, dx: -0.16983, dz: 0.98547 };
 const ryG = Math.atan2(-fl.nz, fl.nx);
 const siteY = () => 5;
+const location = { search: '' }, REBUILD_OCC = [];
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function polyCentroid(p) { let x = 0, z = 0; for (const q of p) { x += q[0]; z += q[1]; } return [x / p.length, z / p.length]; }
+@@HIT@@
 @@BOX@@
 @@AREA@@
 @@PYR4@@
@@ -189,6 +199,50 @@ for (let t = 0; t < bi.length; t += 3) {
   const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
   if (n[0] * bn[a] + n[2] * bn[a + 2] <= 0) baseBad++;
 }
+// ---- Round 225: the flight's walls against what the builder drew. Drawn over a point: the appended plans to their tops, the
+// slopes' own triangles (the bays' gables, the tiers' cross gables, One's glazed pyramid) and the pyramid's top, where the
+// mast's steel foot stands on it
+const det = fl.nx * fl.dz - fl.dx * fl.nz;
+const frame = (T) => ({ P: (u, v) => [T.c[0] + fl.nx * u + fl.dx * v, T.c[1] + fl.nz * u + fl.dz * v], uv: (x, z) => { const dx = x - T.c[0], dz = z - T.c[1]; return [(dx * fl.dz - dz * fl.dx) / det, (dz * fl.nx - dx * fl.nz) / det]; } });
+const pip = (x, z, poly) => { let inn = false; for (let k = 0, m = poly.length - 1; k < poly.length; m = k++) { const a = poly[m], b = poly[k]; if ((a[1] > z) !== (b[1] > z) && x < a[0] + (z - a[1]) / (b[1] - a[1]) * (b[0] - a[0])) inn = !inn; } return inn; };
+const roofTris = [];
+for (const p of lmGlass) { const q = p.geom.attributes.position.array; for (let i = 0; i < q.length; i += 9) { const a = [q[i], q[i + 1], q[i + 2]], b = [q[i + 3], q[i + 4], q[i + 5]], d = [q[i + 6], q[i + 7], q[i + 8]], den = (b[2] - d[2]) * (a[0] - d[0]) + (d[0] - b[0]) * (a[2] - d[2]); if (Math.abs(den) > 1e-6) roofTris.push([a, b, d, den]); } }
+const drawnAt = (x, z) => {
+  let top = -Infinity;
+  for (const a of appended) if (a.y1 > top && pip(x, z, a.poly)) top = a.y1;
+  for (const [a, b, d, den] of roofTris) { const l0 = ((b[2] - d[2]) * (x - d[0]) + (d[0] - b[0]) * (z - d[2])) / den, l1 = ((d[2] - a[2]) * (x - d[0]) + (a[0] - d[0]) * (z - d[2])) / den, l2 = 1 - l0 - l1; if (l0 >= 0 && l1 >= 0 && l2 >= 0) { const y = l0 * a[1] + l1 * b[1] + l2 * d[1]; if (y > top) top = y; } }
+  for (const T of LIB_SPECS) if (T.spire.pyr) { const [u, v] = frame(T).uv(x, z), h = T.spire.pyr[3] / 2; if (Math.abs(u) < h && Math.abs(v) < h) top = Math.max(top, 5 + T.spire.pyr[1]); }
+  return top;
+};
+const hitBad = { ghost: 0, hole: 0, low: 0, high: 0 }; let hitSolid = 0, hitLow = 0, hitHigh = -Infinity;
+for (let j = Math.floor((-785 - 90) / HIT_CELL); j <= Math.floor((-688 + 90) / HIT_CELL); j++) for (let i = Math.floor((-1995 - 90) / HIT_CELL); i <= Math.floor((-1937 + 90) / HIT_CELL); i++) {
+  const d = drawnAt((i + 0.5) * HIT_CELL, (j + 0.5) * HIT_CELL), col = hitTop(i, j);
+  if (d === -Infinity) { if (col !== -Infinity) hitBad.ghost++; continue; }
+  hitSolid++;
+  if (col === -Infinity) { hitBad.hole++; continue; }
+  if (col < d - HIT_CLR - 1e-6) hitBad.low++; if (col >= d + HIT_DY) hitBad.high++;
+  hitLow = Math.max(hitLow, d - col); hitHigh = Math.max(hitHigh, col - d);
+}
+const colOf = (T, u, v) => { const p = frame(T).P(u, v); return hitTop(Math.floor(p[0] / HIT_CELL), Math.floor(p[1] / HIT_CELL)) - 5; };
+const levels = (T) => {   // every column height over a tower's ground, each once
+  const s = new Set();
+  for (let j = Math.floor((T.c[1] - 45) / HIT_CELL); j <= Math.floor((T.c[1] + 45) / HIT_CELL); j++) for (let i = Math.floor((T.c[0] - 45) / HIT_CELL); i <= Math.floor((T.c[0] + 45) / HIT_CELL); i++) { const t = hitTop(i, j); if (t > -Infinity) s.add(Math.round((t - 5) * 10) / 10); }
+  return [...s].sort((a, b) => a - b);
+};
+const flyAt = (T, u, v, y, du, dv, secs) => {   // from the tower's own (u, v), y over its ground, 60 m/s along (du, dv), 60 frames a second
+  const F = frame(T), p = F.P(u, v), pos = new V3(p[0], 5 + y, p[1]), w = [60 * (fl.nx * du + fl.dx * dv), 60 * (fl.nz * du + fl.dz * dv)], vel = new V3();
+  for (let f = 0; f < secs * 60; f++) { vel.set(w[0], 0, w[1]); hitFly(pos, vel, 1 / 60); }
+  return F.uv(pos.x, pos.z).concat(pos.y - 5);
+};
+const [ONE, TWO] = LIB_SPECS;
+const walls = {
+  bad: hitBad, solid: hitSolid, cells: HIT.cells, notes: HIT.notes, low: hitLow, high: hitHigh,
+  oneTop: colOf(ONE, 0, 0), twoTop: colOf(TWO, 0, 0), oneLevels: levels(ONE), twoLevels: levels(TWO),
+  // 72 m of flight at a face 62 to 67 m off: the eye meets the wall and has not yet slid along it (the faces lie 10 degrees
+  // across the grid, so a held stick walks the eye along a wall's cells and round its corner, as at any building)
+  oneEast: flyAt(ONE, 90, 0, 100, -1, 0, 1.2), oneSouth: flyAt(ONE, 3, 90, 150, 0, -1, 1.2), twoWest: flyAt(TWO, -90, 2, 60, 1, 0, 1.2), twoNorth: flyAt(TWO, 0, -90, 215, 0, 1, 1.2),
+  oneOver: flyAt(ONE, 90, 0, 300, -1, 0, 3), oneCrown: flyAt(ONE, 90, 0, 244, -1, 0, 1.4), stops: HIT.stops, pushes: HIT.pushes,
+};
 const top = (g) => { g.computeBoundingBox(); return g.boundingBox.max.y; };
 const lit = themeParts.filter((p) => p.mix === 1), white = themeParts.filter((p) => p.mix === 0);
 const red = white.filter((p) => p.color.r > 0.9 && p.color.g < 0.3);
@@ -209,10 +263,10 @@ console.log(JSON.stringify({
   steelLumMax: Math.max(...steel.map((p) => lum(p.color))), tubeLum: Math.max(...tubes.map((p) => lum(p.color))),
   tubeNight: [...new Set(tubes.map((p) => p.lit.getHexString()))], steelNight: [...new Set(steel.map((p) => p.lit.getHexString()))],
   trimLumMax: Math.max(...lmTrim.map((p) => lum(p.color))),
-  slopeLum: slopeCols.map(lum), slopeSat: slopeCols.map(sat), crownLum: lum(crownBody), crownSat: sat(crownBody), glassTop,
+  slopeLum: slopeCols.map(lum), slopeSat: slopeCols.map(sat), crownLum: lum(crownBody), crownSat: sat(crownBody), glassTop, walls,
 }));
 '''
-        for k, v in (('@@THREE@@', THREE), ('@@ART@@', art), ('@@SPECS@@', SPECS), ('@@BOX@@', BOX), ('@@AREA@@', AREA), ('@@PYR4@@', PYR4), ('@@BUILD@@', BUILD)):
+        for k, v in (('@@THREE@@', THREE), ('@@ART@@', art), ('@@SPECS@@', SPECS), ('@@BOX@@', BOX), ('@@AREA@@', AREA), ('@@PYR4@@', PYR4), ('@@HIT@@', HIT), ('@@BUILD@@', BUILD)):
             script = script.replace(k, v)
         cls.R = node(script)
 
@@ -270,6 +324,39 @@ console.log(JSON.stringify({
             self.assertLess(S, R['crownSat'] * 0.7)            # its hue halfway to grey (the photographs' pale silver blue)
         self.assertAlmostEqual(R['glassTop'], 5 + 254, delta=0.5)   # the pyramid is the crown's glass up to the foot
 
+    def test_the_flight_cannot_pass_through_them(self):
+        W = self.R['walls']                                  # Round 225
+        self.assertGreater(W['solid'], 200)                  # 2,362 and 1,321 sq m of plan and the bays proud of them, in 16 sq m cells
+        self.assertEqual(W['bad'], {'ghost': 0, 'hole': 0, 'low': 0, 'high': 0}, W)
+        self.assertLessEqual(W['low'], 2.5)                  # HIT_CLR: an eye set down on a column is never inside the glass
+        self.assertLess(W['high'], 1.6)                      # HIT_DY: a column rounds up, by less than a step
+        self.assertEqual(W['cells'], W['solid'])             # and no column anywhere else
+        has = lambda levels, y: any(y <= v < y + 1.6 for v in levels)
+        # One: the pyramid's last square (251.6 of its 254) at the centre, the base alone in the corners' notches (12), the
+        # shaft's flanks (185), the bays' eaves (206.5), the three tiers' (210, 225, 238)
+        self.assertTrue(251.6 <= W['oneTop'] < 251.6 + 1.6, W['oneTop'])
+        self.assertEqual(W['oneTop'], W['oneLevels'][-1])
+        for y in (12, 185, 206.5, 210, 225, 238):
+            self.assertTrue(has(W['oneLevels'], y), (y, W['oneLevels']))
+        self.assertTrue(12 <= W['oneLevels'][0] < 12 + 1.6)
+        # Two: its tier's ridge (253.5: the last strip 251.15), the shaft where the flanks set back (182), the stage over it
+        # (207), the bays' eaves (226.2) and the tier's (234.7); its base is under its shaft everywhere
+        self.assertTrue(251.15 <= W['twoTop'] < 251.15 + 1.6, W['twoTop'])
+        self.assertEqual(W['twoTop'], W['twoLevels'][-1])
+        for y in (182, 207, 226.2, 234.7):
+            self.assertTrue(has(W['twoLevels'], y), (y, W['twoLevels']))
+        self.assertGreaterEqual(W['twoLevels'][0], 182)
+        # the eye stops HIT_R off a face's cells (a cell's corner reaches 2.9 m past a wall that lies across the grid)
+        self.assertTrue(24.65 + 3 - 2.9 <= W['oneEast'][0] <= 24.65 + 3 + 2.9, W['oneEast'])     # the east bay's end
+        self.assertTrue(24.65 + 3 - 2.9 <= W['oneSouth'][1] <= 24.65 + 3 + 2.9, W['oneSouth'])
+        self.assertTrue(-19.6 - 3 - 2.9 <= W['twoWest'][0] <= -19.6 - 3 + 2.9, W['twoWest'])
+        self.assertTrue(-20.75 - 3 - 2.9 <= W['twoNorth'][1] <= -20.75 - 3 + 2.9, W['twoNorth'])  # the north bay, 5.5 m proud
+        self.assertTrue(9.2 + 3 - 2.9 <= W['oneCrown'][0] <= 9.2 + 3 + 2.9, W['oneCrown'])   # at 244 m: in over the bays and the lower tiers, to the top tier's ridge
+        self.assertAlmostEqual(W['oneCrown'][2], 244, places=3)
+        self.assertAlmostEqual(W['oneOver'][0], 90 - 180, delta=0.05)   # at 300 m, past the needle (a mast under a cell wide: no column)
+        self.assertAlmostEqual(W['oneOver'][2], 300, places=3)
+        self.assertGreater(W['stops'] + W['pushes'], 0)
+
     def test_the_near_level_streams_are_four_byte_floats(self):
         for s in self.R['streams']:
             self.assertTrue(s.startswith('Float32Array'), s)
@@ -301,6 +388,10 @@ class Wiring(unittest.TestCase):
         self.assertIn('    libStep();   // Round 195', SRC)
         self.assertNotRegex(BUILD, r'Uint8BufferAttribute|Int8BufferAttribute|Uint16BufferAttribute')
         self.assertIn('vdepthNoteOverlay(fg)', BUILD)
+        # Round 225: the flight's walls on the plans the builder appends, the gables and the pyramid by hitGable's rule
+        self.assertIn('wall(baseL, T.base); wall(shaftL, S.top);', BUILD)
+        self.assertIn('if (U) wall(notched(U.u[0], U.u[1], U.v[0], U.v[1], U.notch, U.steps), U.top);', BUILD)
+        self.assertEqual(BUILD.count('hitGable('), 3)
 
     def test_the_art(self):
         A = json.loads((ROOT / 'liberty_art.json').read_text())

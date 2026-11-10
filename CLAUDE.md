@@ -5,8 +5,8 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
-`app.js` (~33,200 lines, one IIFE) is the application and `rebuilds/` the seven landmark rebuilds (Round 161),
-`build.py` inlines them with the data into `society-hill-towers.html` (30.44 MB raw / 13.05 MB gzip; the generated art, 35 MB, is files under `art/` since Round 184). The old claude.ai
+`app.js` (~52,700 lines, one IIFE) is the application and `rebuilds/` the landmark rebuilds (seven in Round 161, nine files now),
+`build.py` inlines them with the data into `society-hill-towers.html` (33.8 MB raw / 14.26 MB gzip, measured live on Nov 10, 2026; the generated art, 782 files and 43.6 MB, is files under `art/` since Round 184). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -57,8 +57,8 @@ before any visual round rather than rediscovering it.
   call: load it on demand): the house fronts, tower tiles, tree and ground images are files under `3d-model/art/<kind>/`
   named by their content's hash (`art_files.py`), the page loads them by relative path from the small manifests it
   inlines (`artImage`, `artSrc` takes a phone's half copy), `build.py` refuses a manifest naming a missing file,
-  `deploy_philly3d.sh` ships `art/` before the page and never deletes there, and `app/scripts/copy-web.mjs` copies it
-  into `www/art`. Never inline those images again: they were 8 MB of the page's gzip.
+  `deploy_philly3d.sh` ships `art/` before the page and never deletes there (since Round 225 it sends only the files the
+  server lacks), and `app/scripts/copy-web.mjs` copies into `www/art` only the art a phone can ask for (Round 225). Never inline those images again: they were 8 MB of the page's gzip.
 - `build.py` must keep its guards: missing/undersized input, leftover `{{PLACEHOLDER}}`,
   `</script` inside a blob, page over `MAX_HTML` (75 MB since Sep 2, a runaway tripwire, not a
   target; the binding constraints are load time and phone memory).
@@ -301,6 +301,7 @@ texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, 
 The realism round two (Round 223) adds, each on by default under REAL: `?roofs16=0` (the flat roofs' sixteen surfaces back to Round 185's four; `__dbg.PERF.roofs(2)` paints the variants), `?cirrus=0` (no cirrus from `WX.high`; `?wx=cirrus` pins a clear deck under 60% high cloud, `__dbg.cirrus(k)` pins the amount), `?rivercity=0` (a phone's river back to the sky alone; `__dbg.riverCity()`), `?shadowbias=0` (the old fixed shadow biases; `__dbg.shadowBias(d, n)`), `?wind1=0` (the fixed sway in place of the live wind; `__dbg.wind(spd)`), `?snow2=0` (no ruts, caps or snow picture), `?wear=0` (no worn earth or kerb dust) and `?blades=0` (no blade signs; `?signs=0` blanks them with the boards).
 `?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
 broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
+`?rkcheck=0` leaves out the `?dev` roof-mask self-check for a timing run (Round 225; see The staged plan).
 
 ## The landmark rounds (Rounds 195 to 200)
 
@@ -364,6 +365,40 @@ files. The rules that keep it standing:
   twins excepted; `tests/test_zbuf.py` counts them); give any target a perspective camera draws into a float depth
   (`zrevFloatDepth`); a lost context is never a float-depth failure (`zrevLost`). The beacons carry `zc`. A computer's Auto
   and Sharper hold full resolution (Mike: sharpness always); a phone keeps 30 fps sharper.
+
+## The staged plan (Round 225 on)
+
+Mike approved a six-stage performance and realism plan on Nov 10, 2026 (his ask, Nov 9: improve the performance and loading,
+and make it more realistic looking). The plan and its whole record are in the checkout's ignored folder
+`.audit/2026-11-10-performance-and-realism/`: `PLAN.md` (read it first: the beacons' table, the stages, what still needs
+Mike), eleven `lens-*.md` files (79 proposals, each with two verifiers' verdicts), `synthesis-performance.md`,
+`synthesis-realism.md`, `critique.md`. Devlog Round 225 has what shipped and what is left of Stage 1. Its rules:
+- One shader train. A change to shared shader text makes every device compile those programs again once (30 to 57 s on a
+  cold public PC): Stage 1 changes no shader text, and every shader edit after it ships in one batched deploy, new looks
+  behind uniforms or flags.
+- Two ledgers. Every item carries its measured frame ms (Mac and iPhone) and phone megabytes before it is on by default; the
+  ASTC saving is spent once, on memory or on sharpness, as Mike picks.
+- One vertex layout. The roofs' new bits (Stage 2) and the walls' records (Stage 4) are laid out together.
+- Every look change ships behind a flag and goes to Mike as a private side by side, the entry orbit included (the capture
+  skill's `references/poses.md`). Nothing is on by default until he says.
+
+What Round 225 added (Stage 1's first batch: JavaScript and data only, nothing drawn changed):
+- `schEdges` answers `[80, 0]` from `schNear` where no edge is in reach, and `streetTriNear` reads `.bits` on its two Maps
+  (`cellBits`): a new writer to either Map must rebuild its bits (`tests/test_river_gate.py`).
+- The roof notes' masks come from `roofKitScan`, with `roofKitMask` the exact fallback and the reference
+  (`tests/test_roof_kit_scan.py`). Under `?dev` every scanned mask is checked against it: `__dbg.PERF.roofKitMask` must read
+  `differ` 0, and `?rkcheck=0` leaves the check out, so never compare a `?dev` load's `rk` with a beacon's.
+- `ROOF_KIT_ON` (`!TIER2`) is the one flag 'Fitting out the rooftops' and `roofClutter` read: no roof notes where no rooftop
+  hardware is laid.
+- `trafficReconcile` is one walk and the advance and the draw walk `trafficBusy` in run order, to the bit
+  (`tests/test_traffic_reconcile.py` holds the old text by hash): anything that puts a car on a run calls `trafficHold`.
+- A new building loop or landmark must call `hitNote`, as the Art Museum (`mass`) and One and Two Liberty Place now do; a
+  roof rising more than `HIT_CLR` over its eave goes through `hitGable` (`tests/test_collide_museum.py`).
+- The deploy skips art the server has (`rsync --ignore-existing`, so no file is re-dated) and refuses a staged file not
+  named by its content's hash (`python3 art_files.py check`); it never updates an art file in place.
+- The app copies only what a touch device can ask for, keyed by kind (`app/scripts/art-touch.mjs`, `KEEP_FULL`): load art
+  only as `artImage(artSrc(rec.x, rec.xHalf))` (`tests/test_app_art.py`).
+- The new tests carry wall-clock assertions, and the deploy refuses on any failing test: rerun one alone before believing it.
 
 ## Where things are
 

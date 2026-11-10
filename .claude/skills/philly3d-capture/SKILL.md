@@ -18,7 +18,7 @@ loudly, which is why this skill exists:
 
 Read `references/pane-gotchas.md` before a long session. It holds the timing and
 throttling facts that cost the most time to rediscover. `references/poses.md` has
-the camera pose tables.
+the camera pose tables, the entry orbit's eight poses (the first view) among them.
 
 ## The loop
 
@@ -63,6 +63,15 @@ http://localhost:8947/after.html?dev=1&dpr=1&v=1
 `v` on every reload.** `navigate` to a URL the pane already shows does not
 reload, so a rebuilt `after.html` keeps running the old build and you debug a
 ghost.
+
+**For a timing run add `rkcheck=0`** (`?dev=1&dpr=1&rkcheck=0`). Since Round 225,
+under `?dev` every roof mask the scanline answers is also asked of the old
+`roofKitMask`, which is how one load proves the two agree on its own engine
+(`__dbg.PERF.roofKitMask`: `differ` must read 0, `checked` equals `masks` less
+`fallbacks`). That second mask makes `rk` and the far steps dearer than a visitor's
+(4,010 ms against 811 ms for the same 284,102 calls in headless Chrome), so never
+compare a default `?dev` load's `rk` or build time with a beacon's, or with a run
+that had the check off.
 
 ### 4. Poll for `__dbg` in its own call
 
@@ -233,6 +242,9 @@ share of pixels over 24 levels from A next to the second A's. What made the nois
   over the Delaware, and a 0.35 m graze at Boathouse Row). The first Round 192 set had none and missed the mirror's lamps.
 - Pins and placards move between runs (the PATCO train by its timetable, a flight): crop the top blocks and look before
   calling a difference the change's.
+- **River and tree poses.** A parity pose set with its noise run now includes river and tree poses, and their water and
+  wind differ between two runs of the SAME build by up to about 1.3% of pixels (measured Nov 10 for Round 225:
+  kelly-drive 1.26%, r-banks-low 0.87%). Read those poses against the noise run, never against zero.
 
 ### 8. Syntax-check after every app.js edit
 

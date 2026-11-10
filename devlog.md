@@ -12939,3 +12939,317 @@ old box head) are unchanged. Every device and tier. The captures at Mike's pose 
 the phone path show each lens under its luminaire at the arm's end. `tests/test_lamp_head.py` holds the lens inside the
 luminaire's footprint and 5 mm under it.
 
+## Round 225 — the free seconds: the river's edge search, the roof masks, the traffic's stall, the museum solid to the flight, and the art sent once (Nov 10)
+
+Mike, Nov 9: "I want you to come up with ways to improve the performance and loading of this app. I also want you to
+delve into how to make it more realistic looking. I am open to all ideas. Have at it." Two earlier plans stood behind
+the question: the performance plan of Oct 22 (32 proposals, of which only the measurement round shipped, Round 220) and
+the realism plan of Oct 23 (R1, R3, R4, R5, R8, R9 and R10 shipped in Rounds 222 and 223). What was new: two weeks of
+real-device beacons and server logs that nobody had read, and a fresh research pass. Eleven lenses (AERIAL, ART,
+BUILDCPU, COMPILE, DELIVERY, FRAME, GEOMEM, OUTSIDE, REALDATA, RENDER and STREET), 79 proposals, each read against the
+code by two adversarial verifiers (one for mechanism and arithmetic, one for rules, regressions and devices), ranked in
+two syntheses (performance, realism) and put to a completeness critic. 5 proposals were refuted outright and most were
+amended. His decisions on Nov 9: the public's first visit comes first; all four realism areas are wanted (light and
+shadow, the aerial view, street life, landmarks and night); four rules may be reopened where the numbers justify it,
+each still his call before it ships (files beside the page, a patch to three.js r149, entering before everything is
+built, slow public PCs shedding distant detail, never resolution, never on his Mac or in Sharper); and people on the
+sidewalks, walking. He approved the six-stage plan on Nov 10. The plan and the whole record are in the checkout's
+ignored folder `.audit/2026-11-10-performance-and-realism/`: `PLAN.md`, the eleven `lens-*.md` files (every proposal
+with both verdicts), `synthesis-performance.md`, `synthesis-realism.md` and `critique.md`.
+
+What the real devices said, which is the reason for the round (MEASURED from the beacons and the nginx log, Oct 26 to
+Nov 9; `PLAN.md` has the full table):
+
+- Public Windows PCs (12 and 16 cores) reached Ready in 66, 100 and 103 s: 12 to 57 s of it compiling shaders inside the
+  14 flush renders, one program at a time at 0.35 to 0.41 s each, 40 to 50 s in JavaScript, and 9 to 21 s unexplained
+  between steps.
+- Apple devices with an empty shader cache (an iPad's first visit, the app's first run on a Mac, Mike's iPhone on Nov 7)
+  took 45 to 59 s, 32 to 34 s of it compiling 138 programs at 0.24 s each. Warm, the same work is 0.8 to 1.4 s.
+- After Ready the first frame then froze: 8.5 to 9.1 s on the cold Apple devices, 29 s on a cold PC, while the button
+  already said Explore the City.
+- Mike's iPhone app, warm: 11.2 to 12.6 s to Ready, of it the far roads 1.6 to 1.8 s, the label fit 1.2 to 1.8, the
+  outer loop 1.5 to 1.7, the street fit 1.5 to 1.8, the far ground 0.6 to 0.7, the roof-kit masks 0.5 to 0.9 (thrown
+  away on tier 2) and the traffic's heights 0.5.
+- Every deploy re-dated all 782 art files on the server, so a returning visitor downloaded the art again (up to 33.6 MB
+  on a computer).
+
+The headline the October plan could not see: on a first visit, and whenever a device's shader cache is empty, compiling
+shaders is the largest single cost on every platform, and Mike's own devices are nearly always warm. The beacons speak
+only for visitors who got as far as app.js.
+
+This round is the first part of the plan's Stage 1 ("free seconds, missing numbers, no dead button": JavaScript and data
+only, no shader text). Six items, each built in its own worktree on 1b476c2, reviewed adversarially, fixed and reviewed
+a second time where the first review asked (the roof masks, the traffic, the app's art), and merged. Every reviewer read
+the diff hunk by hunk for shader text: no GLSL string changed, so no device compiles anything again because of this
+round, and nothing drawn changes. The suite went from 1,194 to 1,277 tests (the loader's count on the merged branch;
+each branch's own run passed in its worktree with the usual 1 skipped and 1 expected failure).
+
+- **The river's edge search asked only where it can answer.** `schEdges`, the Schuylkill's nearest-edge search, built 25
+  string keys a call for 2.7 M calls a load, and 98% of them were nowhere near the river: of a 50 m grid of the far
+  box's 359,159 points, 8,487 (2.36%) lie inside Round 222's `schNear` bitmap, and 19 of the towns' 153,861 road points.
+  `streetTriNear` asked its two Maps by string the same way, two to six keys for every street triangle, 2.6 M triangles
+  a load on the phone path (Round 124's comment counts 2.9 M; both figures are in the record). Now `schEdges` has one
+  line after its counter, `if (!schNear(x, z)) return [80, 0];` (app.js 6094 at the merge): a fresh array holding
+  exactly what the walk returns when it finds nothing, and every call is still counted (`sc` on the beacon).
+  `streetTriNear` reads a byte-a-cell bitmap over the keys' own box (`cellBits`, `cellBitsHit`), which hangs on each Map
+  as `.bits` and is built on the last line of `initStreetSurfaces` and of `initTerrainPatches`, so it is released where
+  the Map is: 5,628 bytes for the 2,009 terrain cells and 8,228 for the 3,667 label cells. The proof is
+  `tests/test_river_gate.py` (19 tests), which cuts the page's own code from app.js and runs it with and without the
+  change over the shipped data, both numbers compared with Object.is. `schEdges`: 0 of 1,955,628 answers differing (wide
+  roads 174,405, city roads 379,011, the towns' 153,861, the traffic's points 348,558, the far grid 359,159, the
+  centreline at 10 m 4,064, 26 offsets along every outline edge's normal 70,928, both ground builders' own nodes
+  465,642). A per-cell proof covers every point there is: over 180,918 cells round the edge grid, 0 where the walk could
+  find an edge and `schNear` says no. `riverCarve` at every node the far strips (334,240), the NW patch (28,980) and the
+  outer districts' strips (102,422) make: 0 heights differing, so the drawn ground, and with it Round 89's invariant,
+  `__dbg.riverCheck()` and `__dbg.bankCheck()`, cannot move. `streetTriNear`: 0 of 1,027,750 answers differing against
+  the Round 124 walk kept verbatim in the test, 153,008 of them yes. Under JavaScriptCore (osascript): the far grid and
+  the outline offsets, 0 differing. The reviewer recomputed it without the patch's test, the old code cut from git's
+  1b476c2 against the new on seeded random inputs: 0 of 4,652,999 `schEdges` points and 0 of 3,421,377 triangles. Speed,
+  on an M2 Max at load average 22 to 41 (other agents working), so upper figures: over the far ring's 201,644 road
+  vertices 2.53 to 0.087 microseconds a call under Node 24 and 1.85 to 0.066 under JavaScriptCore (29 and 28 times); the
+  far grid 986 ms to 43 ms under Node; `streetTriNear` 1.26 to 1.81 down to 0.041 to 0.072 microseconds a call. The
+  reviewer's own bench read 3.48 to 0.132 (26 times) at load 27. Pins moved on purpose in `tests/test_build_timers.py`:
+  the counter's adjacency pin now holds counter, gate, then the walk's first line, the call count gains two gated calls,
+  and the `streetTriNear` stand-in is a Map with the page's own `cellBits`. The proposal's part (d), integer keys for
+  the single string-keyed lookups left on per-segment paths (`ovpGrid`, `wideRoadGrid`, `ySnapF`, `nwParkAt`), was not
+  built, per the plan: only if a timer names one.
+- **Roof-kit masks by an exact scanline, and no roof notes where no rooftop hardware is laid.** `roofKitMask` asked
+  `pointInPoly` up to 240 times a roof over 317,502 roofs across the three packed tiers, the largest per-record cost of
+  the ring loops (`rk` on the beacons: 0.53 to 0.88 s on Mike's iPhone, 3.4 to 4.4 s on the Windows desktops by the far
+  step), and tier 2 computed every note and then threw them all away. `roofKitScan` projects the footprint into the
+  box's frame once and reads each sample's parity from its row's edge crossings (18 rows; a cell one sample has put off
+  the roof asks no more). The two answers can only part where a sample sits on the footprint's edge to within the
+  arithmetic, so the scan refuses to answer within `RK_EPS`, 1e-7 m, of an edge and `roofKitFast` falls back to the
+  untouched `roofKitMask` there and for a roof with a real hole. `ROOF_KIT_ON` (`!TIER2`, app.js 419) is the one flag
+  'Fitting out the rooftops' and `roofClutter` both read: tier 2 takes no roof notes, and a tier 2 phone skips the
+  oriented box too; the day tier 2 gets its rooftops back (Round 219's list) is that line alone.
+  `tests/test_roof_kit_scan.py` (13 tests) runs every record of `wide.b64`, `city.b64` and `outskirts.b64` and the
+  core's buildings from `scene.json` through both functions under Node 24 and under JavaScriptCore (the framework's jsc
+  shell, JIT on): 320,111 masks (91,031, 176,978, 49,493 and 2,609), 0 differing on both engines, 6,629 and 6,642
+  fallbacks (2.07%; the engines fall back on slightly different roofs because `Math.hypot` differs by an ulp), and 146
+  and 148 masks differing with the margin at 0, which shows the fallback is needed and that the comparison can see a
+  wrong mask. Time over the three tiers' 317,502 roofs on the same busy M2 Max: 6,184 to 1,792 ms under Node and 4,982
+  to 1,157 ms under JavaScriptCore inside the test, 6,272 to about 1,150 ms in a tight Node loop. In the real page, the
+  reviewers' headless Chrome loads through the capture skill's `render.mjs`: on the computer path 283,950 masks, 5,920
+  fallbacks, 278,030 checked, 0 differing; on the phone path at tier 0 242,881 masks, 0 differing; at `?lite=2` on both
+  paths 0 masks and 0 `roofKitNote` calls; `PERF.roofKit` identical to the base build's (283,945 roofs, 22,094 cells,
+  226,821 partial, 5 empty, the same histogram). `rk` in that page for its 284,102 calls: 3,264 ms at the base, 811 ms
+  with the scan, 75% less (headless Chrome on the Mac, not a device). Under `?dev` every scanned mask is also asked of
+  the old function and counted (`__dbg.PERF.roofKitMask`, and `mask` on `__dbg.roofKit()`: `{ masks, fallbacks, checked,
+  differ, check }`; a `differ` over 0 is a console error `render.mjs` prints), which is how one load proves the equality
+  on its own engine. That check makes a `?dev` load's `rk` dearer than before the scan (4,010 ms on the same page), so
+  `?rkcheck=0` leaves it out for a timing run: never compare a `?dev` `rk` with a beacon's. The first review's
+  should-fix was that the gate left out the core: `scene.json`'s 2,834 buildings (2,609 masks after `roofClutter`'s own
+  gates) with unquantized coordinates and the only real holes in the data. They are a fourth source now, with the
+  Liberty Bell Center as `lbellSplit` leaves it: 0 differing, and the 3 fallbacks are the three courtyards. The test's
+  timing floor went from "twice as fast" to "no dearer" (the reviewer saw 2.1 times once at load average 39). One pin
+  moved on purpose: `tests/test_recovery.py`'s tier 2 switch now pins the flag. Learned: osascript's JavaScriptCore runs
+  with its JIT off (12 times slower on a plain loop, 315 s for this comparison); the framework's `jsc` shell has it, so
+  use that for any heavy JavaScriptCore test.
+- **The traffic's once-a-second stall.** `trafficReconcile` walked all 46,131 runs four times a call, once a second and
+  on every frame of a time-slider drag: a three-argument `Math.hypot` and two smoothsteps a run, every run's cars for
+  the inbound counts, a `Math.sin` hash of a large argument a run (the dearest: V8 reduces an argument in the tens of
+  millions the slow way, about half a microsecond each) and a `filter()` array a run, though only a run within
+  `CAR_VIEW.warm` of the eye can want a car. Now one walk: a run whose middle is `CAR_VIEW.warm` plus a metre or more
+  from the eye in plan is passed by with want, target and inbound 0, which is what the old arithmetic gave it; the
+  jitter is read from a table built on the first call (`trafficIndex`, never inside `trafficPrepareGraph`, whose runs
+  `tests/test_traffic_link.py` compares key for key); the targets and needs are worked from one run-ordered list (the
+  near runs, and a far run only while it is on `trafficBusy`, so a car left behind on a far run is still retired); the
+  inbound counts walk `trafficBusy`; `carFeed` reads the run's own index (`r.ri`) in place of `indexOf`.
+  `trafficAdvance` and `trafficDraw` walk `trafficBusy` in place of every run a frame, after `trafficBusySort` puts it
+  in run order, so the cars are advanced and drawn in exactly the old order. `carSpotRank`, the deadband,
+  `CAR_MIN_LIFE`, the closed runs and the bus yielding are the same code. The proof is `tests/test_traffic_reconcile.py`
+  (12 tests) over `tests/traffic_recon_checks.js`: the page's traffic section evaluated twice under Node with the real
+  fleet, once as committed and once with the 1b476c2 text of the four old pieces put back, the same seeded dice, the
+  same ten-leg flight as a computer (cap 3,000) and as a phone (550) over the 45,294 runs the page's own linker makes of
+  the shipped `traffic.b64` on synthetic terrain (the page's own count is the audit's 46,131). Compared with Object.is
+  after each of 86 reconciles a device and after every frame: 0 differences over 7,790,568 run values (want, target,
+  inbound), 86,751 needs, 1,128,223 car-frames, as many instance slots and 2,132,864 lamps, the churn counters and the
+  dice state included; under JavaScriptCore (osascript, a phone's settings) 0 over 37 reconciles, 1,675,878 run values
+  and 68,775 car-frames. Seven deliberate breaks of the new code were each caught. Under Node 24 on the busy Mac, old
+  and new taking turns in one process (the audit measured the old function alone at 9.3 to 10.4 ms on a quiet machine),
+  at a steady 5 pm over City Hall: the walks 19.2 to 20.4 ms a call at best down to 3.2 to 3.4 on a computer's settings
+  (2,964 cars) and 17.2 to 19.9 down to 1.94 to 1.96 on a phone's (542 cars); the advance plus the draw 2.6 to 2.9 ms a
+  frame to 2.0 to 2.1 and 0.83 to 0.94 to 0.37 to 0.38; under osascript's JavaScriptCore the walks 49 to 51 ms to 3.
+  Cost: 0.37 MB for the jitter table and 0.18 MB for the list. The review's should-fix: the proof rests on the old text
+  in the harness being the old function, and the test only looked for four substrings of it, so the four old texts are
+  now pinned by length and sha256 taken from git's 1b476c2 (`OLD_TEXTS`; `OLD_RECONCILE` is 2,219 characters). The
+  flight's closed blocks now close at mid-leg with `closureTraffic`'s own line, cut from app.js: 133 cars killed by the
+  closure on a computer's settings, 53 on a phone's, 30 under JavaScriptCore, where the first cut killed none. Both
+  reviewers reran the comparison against git's whole 1b476c2 traffic section with their own seeds and flights (0
+  differences in 29,259,924 and in 23,190,528 run values), and with the `?real=0` settings (cap 2,200), which the
+  committed flight never runs: 0 again, twice, by hand. Pin moved on purpose: `tests/vehicles_checks.js` calls
+  `trafficHold(r)` after its hand-placed cars. What is left of the call while the eye moves is the births (`carSpawn`'s
+  18 tries on about 490 blocked attempts a call, `carFeed`'s searches: roughly 3 to 9 ms a call in the test flight under
+  load), untouched, and they cannot be trimmed to the bit because they throw dice. The verifiers had asked for a beacon
+  timer before the per-frame half was built; it was built on the bit-equal proof instead, so the gain on a device is
+  unmeasured. One known divergence, impossible on the page: with an eye height that is not a number, the old code made
+  every run's want NaN and the new one leaves a far idle run's at 0; neither makes a need or a retirement.
+- **The Art Museum and Liberty Place are solid to the flight.** The audit found the flight passed straight through the
+  museum: its OSM footprint (record 66278, 36.4 m over 11,687 sq m) leaves the outer districts' loop at `BRIDGE_SKIP`
+  before the loop's own `hitNote`, and the block that builds it noted nothing. The same omission stood beside it: all
+  twelve records of One and Two Liberty Place leave at the same `continue`, and the realistic builder noted nothing
+  either. Now the museum's `mass` helper draws each box exactly as before and notes the same quad to its own top (the
+  centre block, the rear range and both wings, the porticos' podiums and entablatures; the colonnades solid under their
+  entablatures, their gaps being 2.1 and 4.8 m against an eye 6 m across), and `hitGable` (new, in the HIT block) notes
+  a roof that rises more than `HIT_CLR` over its eave as strips narrowing to the ridge, each strip's column the roof's
+  own height at its outer edge. Liberty Place notes its base, shaft and Two's upper stage, the bays under their gables,
+  each tier under its cross gable and One's glazed pyramid as squares stepping in; the mast and finial are thinner than
+  a 4 m cell. The terrace, the forecourt, Rocky's pedestal and the steps take no note on purpose: on the shipped DEM the
+  hill lies 0.44 to 0.86 m under the deck across the open court and 2.22 m at most in the slots beside the centre block,
+  and no flight of steps stands more than 1.5 m over it, so the eye's floor (the ground plus 2.5 m) is already over all
+  of them and a column there would be a kerb at the top of the steps. Under Node on the real blocks
+  (`tests/test_collide_museum.py`, 7 tests; one more each in `tests/test_collide.py` and
+  `tests/test_remodel_liberty.py`): the museum 1,258 cells and 29 notes, Liberty 239 cells and 110 notes, every column
+  within 2.5 m under and 1.6 m over what is drawn at its cell's centre (worst 2.23 and 1.44 at the museum, 2.46 and 1.49
+  at Liberty), and the reviewer's sha256 over every `appendBuilding` call and trim part is identical before, after and
+  with `?collide=0`. On the real page (the reviewer's headless run, the base build against the patch): `__dbg.collide()`
+  6,441,931 cells, 345,029 notes and 7,121 KB to 6,443,428, 345,168 and 7,122, exactly 1,497 cells and 139 notes more; a
+  flight up the Parkway axis 14 m over the deck passed through to u = -100 and now stops at u = 28.26, 3 m off the
+  portico; a drop onto the central ridge fell 40 m under the deck and now lands at the deck plus 34.39; an eye at the
+  deck plus 2.6 comes up the steps and crosses the court as before; a level flight into One Liberty's east face ended
+  18.0 m from the axis, inside the shaft, and now stops at 26.3 m. A search for Rocky parks 220 m out and about 130 m
+  over the deck, so the first input is never inside a column. The page grew 3,976 bytes.
+- **The deploy stops re-dating all 782 art files.** Every deploy staged the art with a fresh `cp -R` and sent it with
+  `rsync -az`, so all 782 files (43,584,928 bytes) took the deploy's own second on the server, and nginx's ETag is a
+  file's time and size: every cached copy was void after each deploy (the audit's `curl -sI` on Nov 10: files baked Oct
+  12 to 24 all answering last-modified Oct 25 22:50:18; up to 33.6 MB downloaded again on a computer, 10.2 MB on a
+  phone). The art rsync in `deploy_philly3d.sh` now runs `--ignore-existing`: a file the server has is never touched
+  again. `cp -Rp` would have re-dated everything once more (local times are an accident of git and Dropbox), and
+  `--size-only` still resets a skipped file's time. That is right only while a name cannot come to mean other bytes, so
+  the staged copy must pass `python3 art_files.py check` (`art_files.unhashed`: every file named by the first 10 hex of
+  its own sha256, a stray .DS_Store included) or the deploy stops before the server is touched. What the old rsync did
+  on the way is now done on purpose: the modes of what is already there are put right first (a chmod moves no time), the
+  listing check compares every file's size as well as its name (an existing wrong file is no longer overwritten), both
+  listings are sorted here under the C locale, and one existing file's ETag is read before and after, a move being a
+  warning and never a failed deploy. Measured: 782 of 782 files hash-named, 0 exceptions, and git's history never
+  modified an art path under its name. Run through a stand-in remote shell with this Mac's rsync, never the deploy
+  script: with the flag an existing file kept its time, bytes and mode and the new file arrived, and the flag reached
+  the receiving command line; the reviewer's harness over the script's own block sent 782 files to an empty server, 0 to
+  a full one dated Oct 25 (0 re-dated, a 600 file and a 700 folder repaired, ETag unchanged), stopped on a truncated
+  file, and with the old plain `-az` re-dated all 782. On the live site, headers only, 25 of 25 sampled content-lengths
+  equal the local sizes and the ETag is exactly hex time, hex size. `tests/test_art_files.py` gained 11 tests (18 in
+  all). The script itself has never been run: its first deploy is the test of its server-side lines.
+- **The app carries only the art a phone can ask for.** `IN_APP` forces `isTouch`, and `artSrc` answers a record's half
+  copy wherever it has one, so the app bundled 365 full-size files it never read. `app/scripts/copy-web.mjs` now reads
+  the art list from the page it is about to copy (every quoted `art/...` string, build.py's own rule) and
+  `app/scripts/art-touch.mjs` splits it: a file is left out when its `-half` twin is named too and its kind is not in
+  `KEEP_FULL`, a table keyed by art kind and empty today, so the full-size fronts can come back one kind at a time if
+  compressed textures are later spent on sharpness. Measured by running both scripts: `www` went from 783 files,
+  77,397,158 bytes to 418 files, 43,985,386 bytes (the page is 33,812,230 of it; the first commit's 33,811,717 was its
+  length in characters); the art from 782 files, 43,584,928 bytes to 417 files, 10,173,156; 365 files, 33,411,772 bytes,
+  76.7% of the art, left out. `www/art` is brought to the list by name, where the old delete and recopy rewrote 43 MB
+  inside Dropbox on every sync; a second run prints "0 copied, 417 already there, 0 removed". `tests/test_app_art.py`
+  (19 tests) is the guard, because a file the app does not hold fails in silence (`artImage` answers null and the
+  procedural look stands): it runs the page's own `artSrc` line under Node with `isTouch` true over every record of the
+  24 manifests and holds the carried list to its answers (417 = 417), and it parses every `artImage` and `artSrc` call
+  in app.js. The review passed the patch and found three silent failure modes, closed in a second commit. The call-site
+  test read only the text `artImage(` and `artSrc(`, and eight shapes passed it while asking for a file the app no
+  longer carries (a bare reference handed to `.map`, an alias, a call behind a string holding ` //`, `api.artImage` in a
+  rebuild, a fetch, an image loader, an `<img>` element): now every mention of either name must be a read call, every
+  `fetch` is pinned by its first argument (21 calls), and the other routes to a picture are counted; 23 of 23 mutations
+  caught. `copy-web.mjs` removed files from whatever `SHT_APP_WWW` pointed at, and pointed at the source it deleted the
+  source's own full-size files and exited 0: it refuses by real path before any write. And art on disk that the page's
+  scan did not find was a note and exit 0: it is fatal now, since the page and its folder agree exactly or nothing
+  ships. Also: a file already in `www` is kept only with its source's bytes, and the page is read once. The second
+  reviewer staged the trimmed `www` behind a logging server and ran `render.mjs --touch` over nine poses: 288 distinct
+  art files requested, every one answered (253 halves and 35 with no half), nothing failed, no console message. That is
+  the phone path by touch emulation, not `IN_APP` by its user-agent marker, and it asked for 288 of the 417.
+
+Every item's review passed with no must-fix. The should-fixes are in the items above (the core in the roof gate, the
+traffic reference pinned by hash, the app's three refusals). Left as they were, each recorded so nobody rediscovers it:
+
+- Wall-clock assertions now sit in the suite `deploy_philly3d.sh` refuses to deploy on: the river gate three times
+  faster than the walk under Node and JavaScriptCore and the bitmap faster than the walk (measured 25 to 40 times), the
+  roof scan no dearer than the old mask (2.1 to 5.3 times), the traffic walks three times faster at best and twice at
+  the median and the frame lower (7 to 14 times). The margins are wide and each alternates old and new in one process;
+  if one ever flakes on a loaded machine, the equality is the gate and the speed is the beacons' job.
+- `tests/test_art_files.py`'s rsync test fails, never skips, under a `TMPDIR` whose path holds a space. The deploy's
+  ETag warning reads as a re-dating when its second `curl` simply fails. An art file on the server at the right size
+  with wrong bytes is neither repaired nor detected for 21 of the 25 kinds (the four the script hashes over https are
+  fronts, tiles, trees and ground); the old rsync overwrote on every deploy. `unhashed` allows jpg and the disk test
+  does not. The dry run against the real server was not done.
+- `hitGable`'s promise that no column stands over the roof it notes holds for strips wider than a cell; a short, steep
+  roof from a later caller could get a column over its slopes (One Liberty's last pyramid square, 4.4 m, is at most
+  about 0.5 m over).
+- The same omission found and NOT fixed, each inferred from reading and each Mike's or a later round's call: `?real=0`'s
+  Round 84 Liberty Places and the Round 81 City Hall fallback note nothing; the New Jersey and the Moshulu note nothing
+  while the Olympia and the Becuna do (Round 215); the bridge towers `BRIDGE_SKIP` drops carry no column; Lincoln
+  Financial Field is ground only while Citizens Bank Park is noted (Round 217); record 66290 (7.6 m, 977 sq m, north of
+  the museum's north wing) is dropped by the museum's circle and neither drawn nor noted; and neither the museum nor
+  Liberty Place calls `roofNote`, so `losClear` and the placards' roof grid do not see them (fixing that changes what is
+  drawn).
+- Five contrived shapes still pass the app's call-site test (another route on a line after a string holding ` //`,
+  `Object.assign(new Image, ...)`, a tag in a variable, an SVG `<image>`); none exists in the code. The stricter guard
+  will need a re-pin when a new feed or the measurement round's beacon work lands: it pins the beacon's `fetch` line
+  among others.
+
+What is INFERRED for the devices until the next beacons. No device or browser timing was taken for the river or the
+traffic, and the roof masks' only in-page figure is headless Chrome on the Mac. The plan's expected gains for the whole
+of Stage 1: Mike's iPhone warm from 12.5 s to about 10 to 10.8 s, the Mac from 26.9 s toward 18 to 22 s, Windows 5 to 12
+s of JavaScript off. By item: the river's gate 1.2 to 1.5 s on the iPhone, 4 to 7 s on Windows and 3.5 to 5 s on the
+Mac; the roof masks 0.4 to 0.95 s, 2.9 to 4 s and 2 to 3.5 s; the traffic about 10 ms off one frame a second. The proof
+to read on the next real beacons: `ts` (the traffic's heights) from 0.5 s to about 0.1 s, `fg` and `fr` down and `sc`
+unchanged, `rk` down by three quarters and `rk` and `rkn` 0 on tier 2, iPhone Ready down 1.75 to 2.5 s. And since no
+shader text changed, the deploy itself is a test: the phone's first launch after it should flush in about 1.4 s; if it
+takes 30 s, updates empty the shader cache whatever changed. The app's exported archive is inferred to fall from about
+58 to about 25 MB.
+
+What the reports left to be read on the merged build and at its first deploy (the line at the foot of this entry says
+what was): one read of `__dbg.riverCheck()`, `__dbg.bankCheck()`, `PERF.terrainPatches` and `PERF.streetLabels` on the
+merged build (they follow from the exactness and were never read on a live page); one `?dev` load in the iOS simulator
+reading `__dbg.PERF.roofKitMask` (`differ` 0, `checked` equal to `masks` less `fallbacks`; the jsc shell and headless
+Chrome are the nearest run so far); `__dbg.collide(-3121, -2251)` (about T+32 at the museum's ridge) and
+`__dbg.collide(-1995, -785)` (One Liberty) once more on the merged page; the deploy's own readings (it should print the
+count of files the box does not have, no ETag warning, and an art file still answering last-modified Oct 25); and for
+the app, `npm run sync` printing "the 417 files a phone can ask for, 10.2 MB" and "left out: 365 full-size files", one
+simulator launch on the trimmed bundle before the first TestFlight build from it, and the archive's size against build
+30.
+
+The plan's rules, which every later round keeps:
+
+- **One shader train.** A release that changes shared shader text makes every device compile those programs again once
+  (30 to 57 s on a cold public PC). Stage 1 changes no shader text, and every shader edit after it ships in one batched
+  deploy, with new looks behind uniforms or flags so they can be turned on later for free.
+- **Two ledgers.** Every item is entered with its measured frame ms (Mac and iPhone) and phone megabytes before it is on
+  by default. The ASTC saving is spent once, on memory or on sharpness, as Mike picks.
+- **One vertex layout.** The roofs' new bits (Stage 2) and the walls' records (Stage 4) are laid out together.
+- **Every look change** ships behind a flag and goes to Mike as a private page of before and after pairs, taken at the
+  entry orbit as well as the old poses. Nothing is on by default until he says.
+
+Left of Stage 1, in the plan's words: the weather hook before the first compile (10 to 25 programs compile twice today;
+`wxHookAll()` at the top of `flushUploads`, the four disposes gone, every program's source identical on both device
+paths); Enter lit only when a tap can be answered (the enable moved to the end of the first drawn frame); a computer's
+veil showing the city rising (one composite a flush; a change to the loading screen, so Mike sees it first); measurement
+round two (per-program compile, link and first status query on cold loads, per-flush and per-step facts, GPU bytes split
+with a crumb every second for the 20 s after Ready, `?cold=n` and the four-program probe that decides Stage 3, and with
+it the traffic reconcile's maximum and the count of `artImage`'s nulls this round left for it); the service worker's
+reload, measured before it is changed; Camden at its measured heights (614 of 1,195 buildings east of the river stand at
+exactly 10.5 m; `wide.b64` repacked only under a diff test that allows height words alone); and the entry orbit's
+captures (the eight poses are in the capture skill's `references/poses.md` since this round; the captures themselves,
+the retaken day set and the staged light trials are not taken yet). Asked of Mike in Stage 1: three minutes of flying
+the site on the Mac, once more with `?dpr=1`, and his go on the two VPS edits (a year of caching for the art, gzip for
+visitors behind a proxy).
+
+MEASURED AFTER THE MERGE (headless Chrome on the M2 Max through the capture skill's `render.mjs`, the machine quiet, the old
+page and the new alternating twice on each path, `?rkcheck=0`): a computer's Ready 35.2 and 33.2 s before, 26.3 and 26.4 s
+after; the phone path 35.2 and 34.7 s before, 25.9 and 26.2 s after. By part on a computer: 'Raising the rest of
+Philadelphia' 11.2 and 10.7 s to 6.7 and 6.7 (its record loop 4.0 and 3.8 to 2.2 and 2.3, the far ground 1.82 and 1.78 to
+1.11 and 1.07, the far roads 4.39 and 4.30 to 2.51 and 2.47), the towns 2.84 and 2.87 to 1.70 and 1.73, 'Fitting streets'
+2.39 and 2.44 to 1.82 and 1.85, the traffic step 1.46 and 1.54 to 0.48 and 0.47 (its sampling 1.21 and 1.30 to 0.21),
+`roofKitNote` 3.77 and 3.22 to 0.78 and 0.85 s; 'Lettering the streets' unchanged at 1.3 to 1.4 s, as expected. A quarter
+off the build on this machine; the devices' own seconds stay INFERRED until their next beacons.
+
+Parity, the new build against the old, as lossless captures at 24 poses on a computer and 8 on the phone path (the entry
+orbit from four sides, the skyline, the river from the air and from its banks, the museum, the stadiums, street level,
+four at night; traffic, transit, ships and flights off, the weather pinned clear) beside a second run of the old build
+for the noise: every pose at its noise floor (0.0000% of pixels over 24 levels on fourteen of the 24, the river and tree
+poses at the 0.07 to 1.3% their own two runs differ by). The one pose above its noise, the Schuylkill from the air at
+1.63% against 0.19%, was a live Amtrak train on the corridor and the wind in a grove's shadows: turn the K layer off in a
+parity set. Read on the merged page on both paths: `__dbg.riverCheck()` as before (the one known sample 4 cm over the
+sheet at Manayunk's island), `__dbg.bankCheck()` as before (0 drowned), `PERF.terrainPatches` (382,057 surfaces, 103,042
+triangles, 32,374 trimmed), the street labels (3,773 of 3,774 drawn, 243,696 triangles, 27 warped) and the road strips
+(394,941 draped, 56,599 fans, 3,292,852 triangles on a computer) all identical; the roof notes' histogram identical, and
+under `?dev` 278,030 scanned masks on a computer and 238,107 on the phone path checked against `roofKitMask` in Chrome
+with 0 differing; the collision notes 345,029 to 345,168, the museum's and Liberty Place's masses; no console error, no
+failed step. The suite: 1,277 tests (1,194 before the round).
