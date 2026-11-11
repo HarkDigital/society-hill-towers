@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 231.
+Last updated: Nov 11, 2026, after Round 232.
 
 ## The ask
 
@@ -93,6 +93,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 - **Round 231** (Stage 1, the batch's fourth package): Camden at its measured heights, shipped at Mike's word after
   the before and after.
+
+- **Round 232** (Mike's ask, outside the stages): the green berm on the Society Hill Towers' north lawn by Dock Street is
+  no longer drawn; its spot still keeps the trees off, so no tree moved.
 
 ## In flight (finish these first)
 

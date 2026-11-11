@@ -33042,22 +33042,17 @@ if (uOlLamp > 0.001) {
     return B;
   }
   // the lawns' berms and the Baskin bronze ("Old Man, Young Man, The Future", 1966) where Round 4 put them (bermSpots keeps the
-  // trees off the berms), the berms one mesh and the bronze one, on the remodel's path
+  // trees off the berms), the bronze one mesh, on the remodel's path. Round 232 (Mike: "the big green blob at the north side
+  // of the society hill towers needs to be removed"): the berms are no longer drawn. Only one of the seven ever passed the
+  // filters, a 32 by 13 m flattened sphere on the lawn by Dock Street. Their spots are still
+  // kept, so the trees stay off that ground as before: dropping them would plant trees there and renumber every later tree
   function shtLandscape() {
-    const bp = [];
     for (let k = 0; k < 7; k++) {
       const ang = k * (Math.PI * 2 / 7) + 0.4;
       const rr = PLAZA_R + 24 + hash01(k * 3.1) * 14;
       const bx = towersCenter.x + Math.cos(ang) * rr, bz = towersCenter.z + Math.sin(ang) * rr;
       if (nearRoad(bx, bz, 6) || insideBuilding(bx, bz) || nearBuildingEdge(bx, bz, 9) || Math.hypot(bx - 16, bz - 77) < 48) continue;
-      const sx = 13 + hash01(k) * 6, sz = 6 + hash01(k * 7) * 3, ry = ang + Math.PI / 2;
-      bermSpots.push([bx, bz, sx, sz, ry]);
-      const g = new THREE.SphereGeometry(1, 14, 8); g.scale(sx, 1.5, sz); g.rotateY(ry); g.translate(bx, cityY(bx, bz) + 0.1, bz);
-      bp.push({ geom: g, color: new THREE.Color(COLORS.park) });
-    }
-    if (bp.length) {
-      const m = new THREE.Mesh(mergeColored(bp), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 }));
-      m.receiveShadow = true; m.matrixAutoUpdate = false; m.name = 'sht-berms'; groupCity.add(m); SHT.plaza.push(m);
+      bermSpots.push([bx, bz, 13 + hash01(k) * 6, 6 + hash01(k * 7) * 3, ang + Math.PI / 2]);
     }
     const bx = towersCenter.x - 16, bz = towersCenter.z + 28, by = siteY(bx, bz, 'ground') + LAYER.plaza;
     const fig = (w, h, d, x, y, z, ry) => { const g = new THREE.BoxGeometry(w, h, d); g.rotateY(ry); g.translate(bx + x, by + y, bz + z); return g; };

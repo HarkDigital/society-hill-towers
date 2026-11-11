@@ -13978,3 +13978,20 @@ six poses at 0.0005% or under; `orbit-n` 0.0124% (127 pixels across the Delaware
 at 33.2 m, and two sheds held at their defaults by name); Camden City Hall at its 13 m default; 420 buildings in the
 central box still at 10.5 m until the tiles east of the river are streamed.
 
+## Round 232 — the green blob off the towers' north lawn (Nov 11)
+
+Mike, Nov 11, from philly3d.com/#p=50.8,3.8,-111.3,-2.211,-0.116: "the big green blob at the north side of the society
+hill towers needs to be removed". It was the one lawn berm of Round 4's seven that passes the placement filters on the
+remodel's path (`shtLandscape`): a flattened sphere 32 by 13 m and 1.5 m high, bounding box (-0.2, -96.4) to
+(32.1, -83.4), in `COLORS.park`, sitting on the lawn between the paths by Dock Street.
+
+**Changed.** `shtLandscape` no longer builds the `sht-berms` mesh. Its spots still go into `bermSpots`, which the tree
+planter and the procedural trees read: dropping them would plant trees on that ground and renumber every later tree in
+the city (the Round 228 rule), so the trees stand exactly where they stood. `?sht=0` and `?real=0` build Round 194's
+plaza, berms included, as their escape hatch always has.
+
+**Verified.** Headless captures (`render.mjs`) of Mike's link pose, an oblique from the north-west and a top-down, before
+and after at 1 pm: the blob gone, the lawn, the paths and every tree under and round it unchanged; a probe of the scene
+finds one `sht-berms` mesh on the old build and none on the new; no failed step, no console error. The page is 138 bytes
+smaller.
+
