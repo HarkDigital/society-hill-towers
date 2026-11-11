@@ -1151,7 +1151,8 @@
   // where the JavaScript before the draw goes (jp is its median and says no more; one Windows PC spends 26 to 33 ms of a
   // 50 ms frame there and the pins' reads explain 2.4 to 4.4): five parts of every frame drawn after Enter, summed. The
   // pins' landing with the GPU timer's frame mark; the clock, the weather, the light, the camera and the shadow's aim; the
-  // live layers (transit, Indego, flights, ships, trains, traffic); every other step up to the labels and the address;
+  // live layers (transit, Indego, flights, ships, trains, traffic, and behind ?people=1 the walkers, who read the traffic's
+  // runs and its view); every other step up to the labels and the address;
   // and the pins' own update with their capture's submission
   function measJs(t0, t1, t2, t3, t4, t5) { const J = MEAS.js; J[0] += t1 - t0; J[1] += t2 - t1; J[2] += t3 - t2; J[3] += t4 - t3; J[4] += t5 - t4; MEAS.jsN++; }
   // the pins' capture on the CPU (occRender, for the pins alone): its ms from the first hide to the render's return, the

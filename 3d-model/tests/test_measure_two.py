@@ -840,10 +840,15 @@ class Wiring(unittest.TestCase):
         i = f.index('    const tj1 = performance.now();')
         self.assertLess(f.index('    pinOccPoll();'), i)
         self.assertIn('    const tj1 = performance.now();   // Round 229: the marks that split the JavaScript before the draw (measJs)\n    measFrame(rawMs, once);', f)
-        order = ['const tj1 = ', 'applyLighting();', 'const tj2 = performance.now();\n    updateTransit(now, dt);', 'updateTraffic(now, dt);\n    const tj3 = performance.now();',
+        order = ['const tj1 = ', 'applyLighting();', 'const tj2 = performance.now();\n    updateTransit(now, dt);', 'updateTraffic(now, dt);', 'const tj3 = performance.now();',
                  'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on || !MEAS.lit) measLit();', 'if (!ENTER.lit) enterLight();']
         at = [f.index(x) for x in order]
         self.assertEqual(at, sorted(at))
+        # the third part ends with the traffic and, on the line after it, the walkers (Round 227, behind ?people=1): they
+        # read the traffic's runs and its view, so their fill is timed with it and not with the steps after
+        body = [ln.split('   //')[0] for ln in f.splitlines()]
+        k = body.index('    updateTraffic(now, dt);')
+        self.assertEqual(body[k + 1:k + 3], ['    if (PEOPLE_ON) peopleStep(now);', '    const tj3 = performance.now();'])
         self.assertEqual(f.count('measLit()'), 1)
         # a cold load's wraps come off before the button can light, on the line before it (a warm load's went at Ready, and
         # the frame's snapshot is taken either way)
