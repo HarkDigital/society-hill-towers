@@ -16,7 +16,7 @@ const clock={y:2026,m:10,d:12,minutes:870};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
 const smooth=(a,b,v)=>{let t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
 const hash01=n=>{let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);};
-const ZREV={on:false},REAL=true,SNOW2_ON=true,wxSurfU={uSnowAcc:{value:0},uWet:{value:0}},LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
+const ZREV={on:false},REAL=true,SNOW2_ON=true,wxSurfU={uSnowAcc:{value:0},uWet:{value:0}},LITE=false,TIER2=false,location={search:SEARCH},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
 const isTouch=TOUCH,NEAR_R=804.67,SCORES={games:[]},SEPTA_STOPS=undefined;
 const inCore=()=>CORE_HW!==null,roadHalfW=()=>CORE_HW===null?4.5:CORE_HW,groundMeshLandY=()=>0,groundMeshY=()=>0,siteY=()=>0;
 const _sp=new V3(),_sq=new THREE.Quaternion(),_ss=new V3(),_sm=new THREE.Matrix4(),_sc=new THREE.Color();
@@ -25,9 +25,12 @@ const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLamp
 const renderer={domElement:{height:800}},CORE_EXT={x0:-640,x1:770,z0:-520,z1:850};
 `;
 const out = {};
-const make = (touch, art, furn, coreHw) => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + traffic +
+// SEARCH: the page's query (Round 233: '?parked=old&carscale=1' is Round 188's parking and real-size cars, '' the new plan)
+const OLD = '?parked=old&carscale=1';
+const make = (touch, art, furn, coreHw, search = '') => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', 'SEARCH', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + traffic +
   'return {CAR_MODELS,carArtGeom,vehLoft,VART,trafficRuns,trafficCreateFleet,trafficFleet,PARKED,parkedInit,parkedLay,carSample,runHydrants,parkHalfW,FURN,furnInit,furnCell,TRAFFIC,camera,setReady:()=>{trafficReady=true;},' +
-  'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw);
+  'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms,' +
+  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
 // the cars: every kind's near and far body at its real size, every uv inside the atlas
 for (const touch of [false, true]) {
   const a = make(touch, true);
@@ -36,7 +39,8 @@ for (const touch of [false, true]) {
     g0.computeBoundingBox();
     const b = g0.boundingBox, uv = g0.attributes.uv.array;
     let uvOk = true; for (const v of uv) if (!(v >= 0 && v <= 1)) uvOk = false;
-    return { name: m.name, l: m.l, w: m.w, h: m.h, len: b.max.x - b.min.x, wid: b.max.z - b.min.z, top: b.max.y, bottom: b.min.y,
+    const box = a.carGeom(k); box.computeBoundingBox();
+    return { name: m.name, k: a.CAR_K, realL: m.real.l, realW: m.real.w, realH: m.real.h, boxLen: box.boundingBox.max.x - box.boundingBox.min.x, boxTop: box.boundingBox.max.y, l: m.l, w: m.w, h: m.h, len: b.max.x - b.min.x, wid: b.max.z - b.min.z, top: b.max.y, bottom: b.min.y,
       tris: g0.attributes.position.count / 3, farTris: g1.attributes.position.count / 3, finite: Array.from(g0.attributes.position.array).every(Number.isFinite), uvOk,
       parts: [...new Set(Array.from(g0.attributes.aPart.array))].sort() };
   });
@@ -47,7 +51,7 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
   return { xs: Float32Array.from(pts.map((p) => p[0])), ys: Float32Array.from(pts.map(() => 0.3)), zs: Float32Array.from(pts.map((p) => p[1])), cum: Float32Array.from(cum), len, cls, oneway, aadt: 1000,
     mx: (pts[0][0] + pts.at(-1)[0]) / 2, mz: (pts[0][1] + pts.at(-1)[1]) / 2, cars: [], conn: [[], []], want: 0 }; };
 {
-  const a = make(false, false);
+  const a = make(false, false, undefined, undefined, OLD);
   a.trafficRuns.push(run([[0, 0], [0, -200]], 5, true), run([[0, 0], [200, 0]], 5, false), run([[0, 0], [-200, 0]], 3, false));
   for (const r of a.trafficRuns) r.conn[0] = [9, 0];   // each meets the others at the origin
   a.trafficCreateFleet(); a.setReady(); a.parkedInit(); a.parkedLay(0);
@@ -98,7 +102,7 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
 // the moving lanes against the parked rows: every class, one-way or two, every drawn half width from 2 to 9 m; wherever a
 // kerb parks, its cars' centres stand the widest van's width clear of every moving lane's (a parked car at hw - 1.12)
 {
-  const a = make(false, false);
+  const a = make(false, false, undefined, undefined, OLD);
   const bad = [];
   let parkedCases = 0, oneSide = 0;
   for (const cls of [2, 3, 4, 5]) for (const oneway of [false, true]) for (let hw = 2; hw <= 9.001; hw += 0.05) {
@@ -123,13 +127,13 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
 // a two-way tertiary street outside the core (PARK_HW 4.5): both kerbs park, clear of the lanes moved in to 1.3 m; and a
 // one-lane one-way street in the core 2.8 m to the kerb: one kerb parks and the moving car keeps to the other half
 {
-  const a = make(false, false);
+  const a = make(false, false, undefined, undefined, OLD);
   a.trafficRuns.push(run([[0, 0], [300, 0]], 4, false));
   a.trafficCreateFleet(); a.setReady(); a.parkedInit(); a.parkedLay(0);
   const zs = [];
   for (const p of a.PARKED.meshes) { const e = p.m.instanceMatrix.array; for (let i = 0; i < p.m.count; i++) zs.push(Math.round(e[i * 16 + 14] * 100) / 100); }
   out.tertiary = { n: zs.length, offsets: [...new Set(zs.map((z) => Math.abs(z)))].sort(), sides: [...new Set(zs.map(Math.sign))].sort(), lane: a.carOffset(a.trafficRuns[0], 0) };
-  const b = make(false, false, undefined, 2.8);
+  const b = make(false, false, undefined, 2.8, OLD);
   b.trafficRuns.push(run([[0, 0], [300, 0]], 5, true));
   b.trafficCreateFleet(); b.setReady(); b.parkedInit(); b.parkedLay(0);
   const zb = [];
@@ -137,6 +141,60 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
   const r = b.trafficRuns[0], lane = b.carOffset(r, 0), sample = {};
   b.carSample(r, 150, 1, lane, sample);
   out.narrowOneWay = { n: zb.length, z: [...new Set(zb)].sort(), laneZ: Math.round(sample.z * 100) / 100, hw: 2.8 };
+}
+// Round 233, the new plan (Mike: "There are parked cars clogging up many streets"): every car at CAR_K; each parked car
+// its own flank off the kerb; a moving van passing the widest parked one with PARK_AIR to spare on every class and width,
+// on the street; no two-way or multi-lane street losing a kerb it parked under Round 188; a narrow one-way street's blocks
+// split between both kerbs and one about PARK_BOTH; each block side's fill about its class's mean
+{
+  const a = make(false, false), o = make(false, false, undefined, undefined, OLD);
+  const vanW = a.CAR_MODELS[5].w, bad = [], lost = [];
+  let cases = 0;
+  for (const cls of [2, 3, 4, 5]) for (const oneway of [false, true]) for (let hw = 2; hw <= 9.001; hw += 0.05) {
+    const r = { cls, oneway, mx: hw * 7.1, mz: cls * 3.3, xs: [0, 100], zs: [0, 0], ys: [0.3, 0.3] };
+    const sides = a.parkedSides(r, hw), was = o.parkedSides(r, hw);
+    if (was.length === 2 && sides.length < 2 && !(oneway && a.carLaneCount(r) === 1)) lost.push({ cls, oneway, hw: +hw.toFixed(2) });
+    if (!sides.length) continue;
+    cases++;
+    const shift = sides.length === 1 && oneway && a.carLaneCount(r) === 1 ? -sides[0] * 1.07 : 0, lanes = [];
+    for (let l = 0; l < a.carLaneCount(r); l++) {
+      if (oneway) lanes.push((l - (a.carLaneCount(r) - 1) * 0.5) * 3.2 + shift);
+      else lanes.push(a.CAR_OFFW[cls], -a.CAR_OFFW[cls]);
+    }
+    for (const sd of sides) {
+      const u = sd * (hw - a.parkKerbIn(5));
+      for (const l of lanes) {
+        if (Math.abs(u - l) < vanW + a.PARK_AIR - 1e-9) bad.push({ cls, oneway, hw: +hw.toFixed(2), side: sd, lane: l, sep: +Math.abs(u - l).toFixed(3) });
+        if (Math.abs(l) + vanW / 2 > hw + 1e-9) bad.push({ cls, oneway, hw: +hw.toFixed(2), lane: l, off: true });
+      }
+    }
+  }
+  // twenty parallel one-way residential blocks, 300 m each, and ten two-way tertiaries apart from them, laid at 14:30; each
+  // side's fill counted against its own slots (the hydrants and bus stops take theirs before the fill)
+  const P = make(false, false);
+  for (let i = 0; i < 20; i++) P.trafficRuns.push(run([[-300 + i * 30, -150], [-300 + i * 30, 150]], 5, true));
+  for (let i = 0; i < 10; i++) P.trafficRuns.push(run([[-150, 200 + i * 20], [150, 200 + i * 20]], 4, false));
+  P.trafficCreateFleet(); P.setReady(); P.parkedInit(); P.parkedLay(0);
+  const where = (x, z) => {
+    if (Math.abs(z) <= 151) { const ri = Math.round((x + 300) / 30); if (ri >= 0 && ri < 20 && Math.abs(x - (-300 + ri * 30)) < 4) return ['r', ri, x > -300 + ri * 30 ? 0 : 1, Math.abs(x - (-300 + ri * 30))]; }
+    else if (z > 190) { const tj = Math.round((z - 200) / 20); if (tj >= 0 && tj < 10 && Math.abs(z - (200 + tj * 20)) < 5) return ['t', tj, z > 200 + tj * 20 ? 0 : 1, Math.abs(z - (200 + tj * 20))]; }
+    return null;
+  };
+  const cnt = { r: Array.from({ length: 20 }, () => [0, 0]), t: Array.from({ length: 10 }, () => [0, 0]) }, slotN = { r: Array.from({ length: 20 }, () => [0, 0]), t: Array.from({ length: 10 }, () => [0, 0]) }, offs = [];
+  for (const rows of P.PARKED.slots.values()) for (let i = 0; i < rows.length; i += 7) { const w = where(rows[i], rows[i + 2]); if (w) slotN[w[0]][w[1]][w[2]]++; }
+  for (const p of P.PARKED.meshes) { const e = p.m.instanceMatrix.array; for (let i = 0; i < p.m.count; i++) {
+    const w = where(e[i * 16 + 12], e[i * 16 + 14]); if (!w) continue;
+    cnt[w[0]][w[1]][w[2]]++; if (w[0] === 'r') offs.push([p.kind, w[3]]);
+  } }
+  const res = cnt.r, both = res.filter((c) => c[0] && c[1]).length;
+  const sideFill = []; res.forEach((c, ri) => c.forEach((n, sd) => { if (slotN.r[ri][sd]) sideFill.push(n / slotN.r[ri][sd]); }));
+  const tSlots = slotN.t.flat().reduce((s, v) => s + v, 0), tCars = cnt.t.flat().reduce((s, v) => s + v, 0);
+  const kerbOk = offs.every(([k, d]) => Math.abs(d - (3.5 - P.PARK_KERB - P.CAR_MODELS[k].w / 2)) < 0.01);
+  out.parked2 = { carK: a.CAR_K, park2: a.PARK2, oldPark2: o.PARK2, oldK: o.CAR_K, clear: +a.PARK_CLEAR.toFixed(3), cases, nBad: bad.length, bad: bad.slice(0, 6), lost,
+    both, blocks: res.length, sideFillMin: +Math.min(...sideFill).toFixed(2), sideFillMax: +Math.max(...sideFill).toFixed(2),
+    sideFillMean: +(sideFill.reduce((s, v) => s + v, 0) / sideFill.length).toFixed(3), kerbOk, nOffs: offs.length,
+    tertBoth: cnt.t.filter((c) => c[0] && c[1]).length, tertFill: +(tCars / tSlots).toFixed(3), resSlots: slotN.r.flat().reduce((s, v) => s + v, 0),
+    knobs: (() => { const q = make(false, false, undefined, undefined, '?parkboth=0&parkfill=1.25&carscale=0.92'); return { both: q.PARK_BOTH, fill: q.PARK_FILL.k, k: q.CAR_K }; })() };
 }
 // the vehicles' own lamp share, written by their own patch on the materials' real shaders (review: a text replace on
 // another patch's output matched nothing once that output changed)

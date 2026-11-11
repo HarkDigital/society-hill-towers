@@ -17,7 +17,13 @@ The review before the merge (Oct 13): the headlights' pools from a call that run
 paved surfaces (a green has no sixteenth texture unit to spare); the vehicles' lamp share from their own patch, never a text
 replace on another patch's output; nothing that moves casts into a depth pass no mover redraws; the parked rows clear of
 every moving lane; the sun's shade reading the shadow map where it lands, both shades fading with the fog, none flattened
-off a deck or under a train; the moving traffic's far copies, and no empty mesh drawn."""
+off a deck or under a train; the moving traffic's far copies, and no empty mesh drawn.
+
+Round 233 (Mike, Nov 11: "There are parked cars clogging up many streets ... cars need to be scaled down in size a bit"):
+every car drawn at CAR_K 0.88 of its real size (the box cars too); each parked car its own flank off the kerb; a moving van
+passing the widest parked one with 0.3 m of air on every class and width, and no two-way or multi-lane street losing a kerb
+it parked before; a narrow one-way street's blocks split between both kerbs and one; each block side its own fill about its
+class's mean. Round 188's checks still run, under ?parked=old&carscale=1, which must reproduce them exactly."""
 import json
 from pathlib import Path
 import shutil
@@ -80,8 +86,13 @@ class Runtime(unittest.TestCase):
         cls.r = json.loads(run.stdout)
 
     def test_cars_are_their_real_size(self):
+        # their real size taken to CAR_K (Round 233): the loft at exactly that, the box cars built real and scaled
         for key, budget in (('cars', 760), ('carsTouch', 420)):
             for c in self.r[key]:
+                self.assertEqual(c['k'], 0.88)
+                for a, b in (('l', 'realL'), ('w', 'realW'), ('h', 'realH')):
+                    self.assertAlmostEqual(c[a], c[b] * 0.88, delta=1e-9)
+                self.assertTrue(c['realL'] * 0.88 <= c['boxLen'] <= (c['realL'] + 0.3) * 0.88, c['name'])
                 self.assertTrue(c['finite'] and c['uvOk'], c['name'])
                 self.assertAlmostEqual(c['len'], c['l'], delta=0.02)
                 self.assertAlmostEqual(c['wid'], c['w'], delta=0.04)
@@ -92,7 +103,7 @@ class Runtime(unittest.TestCase):
                 self.assertEqual(c['parts'], [0, 1, 2], c['name'])   # body, tyre treads, underside
 
     def test_parked_cars(self):
-        p = self.r['parked']
+        p = self.r['parked']   # Round 188's rules and real sizes (?parked=old&carscale=1)
         self.assertGreater(p['oneway'], 40)            # 200 m of one-way street, both kerbs
         self.assertGreater(p['secondary'], 30)         # the two-way secondary, both kerbs
         self.assertEqual(p['twoWayRes'], 0)            # the two-way residential street's lanes fill its 7 m
@@ -106,7 +117,7 @@ class Runtime(unittest.TestCase):
         self.assertGreater(p['nearestToHydrant'], 4.5)  # and every car keeps its 15 feet
 
     def test_parked_rows_clear_the_moving_lanes(self):
-        c = self.r['clearance']
+        c = self.r['clearance']   # Round 188's rules (?parked=old&carscale=1), as they were
         self.assertEqual(c['nBad'], 0, c['bad'])          # every class, both kinds of street, 2 to 9 m: the widest van's width clear
         self.assertGreater(c['parkedCases'], 400)
         self.assertGreater(c['oneSide'], 0)               # a narrow one-lane one-way street parks one kerb
@@ -125,6 +136,30 @@ class Runtime(unittest.TestCase):
         self.assertLess(n['z'][0] * n['laneZ'], 0)
         self.assertGreaterEqual(abs(n['z'][0] - n['laneZ']), 2.05)
         self.assertLessEqual(abs(n['laneZ']) + 1.025, n['hw'])   # and stays on the street
+
+    def test_the_new_parking_plan(self):
+        p = self.r['parked2']
+        self.assertEqual((p['carK'], p['park2'], p['oldK'], p['oldPark2']), (0.88, True, 1, False))
+        self.assertEqual(p['clear'], 3.186)                 # the van's flank 0.18 m off the kerb, its width and 0.3 m of air
+        self.assertGreater(p['cases'], 400)
+        self.assertEqual(p['nBad'], 0, p['bad'])            # a moving van passes the widest parked one with 0.3 m, on the street
+        self.assertEqual(p['lost'], [])                     # no two-way or multi-lane street loses a kerb it parked
+        self.assertTrue(p['kerbOk'])                        # every car its own flank off the kerb
+        self.assertGreater(p['nOffs'], 300)
+        self.assertTrue(6 <= p['both'] <= 16, p['both'])    # of 20 narrow one-way blocks, about PARK_BOTH 0.6 on both kerbs
+        self.assertGreaterEqual(p['sideFillMin'], 0.4)      # a block side's fill: a residential block 52 to 88% by day
+        self.assertLessEqual(p['sideFillMax'], 0.97)
+        self.assertTrue(0.62 <= p['sideFillMean'] <= 0.78, p['sideFillMean'])
+        self.assertEqual(p['tertBoth'], 10)                 # a two-way tertiary still parks both kerbs
+        self.assertTrue(0.5 <= p['tertFill'] <= 0.7, p['tertFill'])
+        self.assertEqual(p['knobs'], {'both': 0, 'fill': 1.25, 'k': 0.92})   # ?parkboth, ?parkfill and ?carscale are read
+
+    def test_parking_escapes(self):
+        self.assertIn("const PARK2 = PARKED.on && !/[?&]parked=old\\b/.test(location.search);", SRC)
+        self.assertIn("const CAR_K = REAL ? clamp(", SRC)
+        # a parked car's slot keeps its kind before its kerb offset is taken, and the lamps' heights scale with the cars
+        self.assertIn('const kind = parkedKind(hash01(roll * 17.3)), u = hw - parkKerbIn(kind);', SRC)
+        self.assertIn('(m.real.h > 1.7 ? 0.84 : 0.68) * CAR_K', SRC)
 
     def test_vehicle_lamp_share_lands(self):
         L = self.r['lampShare']
