@@ -20,8 +20,12 @@ What this file pins:
 import ast
 import json
 import math
+import os
 import pathlib
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -207,6 +211,24 @@ class VinePage(unittest.TestCase):
         self.assertIn("if (ce[e2 ? 1 : 0] !== 0) continue;", self.step, 'the old end face stands down where a portal or the ground ends the cut')
         self.assertIn('PERF.portals = portalStat', self.step)
 
+    def test_a_pier_covers_each_end_of_the_headwall(self):
+        """The corridor's last stretch is not square to the way into its tunnel (the bake gives the mouth its own
+        direction), so the cut's wall ends short of the headwall's face on one side: by the mouth's half width times
+        the sine of the angle between them, 0.33 m at the west mouth. A pier 0.5 m out from the face covers the end."""
+        self.assertIn('for (const sg of [-1, 1]) { const pc = at(-0.2, sg * (hw + 0.33)); boxAt(pc[0], pc[1], dx, dz, 0.6, 0.7, floor - 0.6, top, tint(cWall, 1)); }', self.portal)
+        ov = json.loads((ROOT / 'overpasses.json').read_text())
+        worst = 0.0
+        for m in ov['por']:
+            ends = [(run[0], run[1]) for run in ov['cor']] + [(run[-1], run[-2]) for run in ov['cor']]
+            e, b = min(ends, key=lambda q: math.hypot(q[0][0] - m[0], q[0][1] - m[1]))
+            self.assertLess(math.hypot(e[0] - m[0], e[1] - m[1]), 1.0, 'a mouth stands on its corridor end')
+            dx, dz = b[0] - e[0], b[1] - e[1]
+            L = math.hypot(dx, dz)
+            short = m[5] * abs(m[3] * dz / L - m[4] * dx / L)       # how far the wall's end stands off the mouth's own line
+            worst = max(worst, short)
+            self.assertLess(short, 0.45, 'the pier (0.5 m out from the face) covers the end of the wall at %s' % m[:2])
+        self.assertGreater(worst, 0.2, 'the west mouth is the one that showed it')
+
     def test_no_new_material_and_no_shader_text(self):
         """Mike's plan (Round 225): a release that edits shared shader text makes every device compile again. The
         mouths are parts of the overpasses' own mesh and the cut's own collars."""
@@ -245,6 +267,244 @@ class VinePage(unittest.TestCase):
         """vineCut rounds a run's end by its half width; an approach's own cut starts on the end's own line."""
         self.assertIn('if (square && (t < 0 || t > 1)) continue;', self.s)
         self.assertIn('if (ce[e2 ? 1 : 0] !== 2) continue;', self.step, 'and the corridor wall steps in to the approach wall there')
+
+
+@unittest.skipUnless(shutil.which('node'), 'Node.js unavailable')
+class LawnUnder(unittest.TestCase):
+    """The slivers (Round 226's last open item: from the lowest eye the flight allows, the world's underside showed
+    beside the far ends of the two approach cuts). The cause, measured on the page with a plan view from overhead and a
+    pick through each magenta pixel of the walk: the lawn put back over opened ground cells has no ground mesh under
+    it, and trimTerrainPatch takes a road's triangle out of it and leaves nothing in its place. So (1) wherever the
+    lawn stood over what cut it, the step had no riser (a street laid flat across the old cut's valley 0.5 m under the
+    lawn beside it; an approach wall's top, a chord between stations 13 m apart, 0.3 m under a lawn that is a 5 m
+    lattice), and (2) under a street's sheet where the lawn was cut away there was no floor (a motorway's sheet lies
+    0.6 m over its ground), seen in from under the sheet's far edge. From straight overhead there was no hole at all.
+
+    lawnUnder gives the lawn a floor under what cut it and a riser at every step. This runs the page's own text (the
+    trim and lawnUnder, cut from app.js) under Node on a lawn over one opened cell, a bank with a hump in it, with a
+    street laid flat across it and a cut through it, and looks from every side: an eye at least 2.5 m over the ground
+    looks at a point under the lawn, and the ray must hit the lawn, a road, the floor or a riser before it comes under
+    the ground at the cell's rim. With the trim alone thousands of rays in 30,000 get through; with lawnUnder none of
+    120,000 does."""
+
+    @classmethod
+    def setUpClass(cls):
+        src = (ROOT / 'app.js').read_text()
+
+        def fn(name):
+            i = src.index('\n  function ' + name + '(') + 1
+            return src[i:src.index('\n  }\n', i) + 5]
+
+        def line(a):
+            i = src.index(a)
+            return src[i:src.index('\n', i) + 1]
+
+        cls.src = src
+        cls.fn = fn('lawnUnder')
+        a = src.index("step('Raising the overpasses'")
+        cls.step = src[a:src.index('  // ------------------------------------------------ trees', a)]
+        js = (line('  const TERRAIN_PATCH_CELL = 50, TERRAIN_PATCH_CLEARANCE') + 'let terrainRoadGrid = null;\n'
+              + line('  const TRS = { w: new Float32Array(9 * 65536), n: 0 };') + line('  const TERRAIN_PATCH_STATS = ')
+              + line('  const LAWN_DROP = ') + line('  function lerp(a, b, t) {')
+              + ''.join(fn(n) for n in ('signedArea', 'tidyRing', 'triangleGrade', 'streetBounds', 'streetIntersection', 'trsAdd',
+                                        'trsPoly', 'trsOverlap', 'terrainPatchCells', 'outsideConvex', 'trimTerrainPatch', 'zoneSpans', 'lawnUnder'))
+              + LAWN_HARNESS)
+        with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False) as f:
+            f.write(js)
+        try:
+            r = subprocess.run(['node', f.name], capture_output=True, text=True, timeout=600)
+        finally:
+            os.unlink(f.name)
+        if r.returncode:
+            raise AssertionError(r.stderr[-3000:])
+        cls.res = json.loads(r.stdout)
+
+    def test_the_trim_alone_is_open(self):
+        """The harness sees the defect: without the floor and the risers, rays get under the lawn in every scene."""
+        for name in ('street', 'cut', 'both'):
+            self.assertGreater(self.res[name]['without'], 100, name)
+
+    def test_no_ray_reaches_the_underside(self):
+        for name in ('street', 'cut', 'both'):
+            r = self.res[name]
+            self.assertEqual(0, r['with'], '%s: %d rays under the lawn, the first %s' % (name, r['with'], r['where'][:2]))
+            self.assertGreater(r['st']['floor'], 10, name)
+            self.assertGreater(r['st']['riser'], 50, name)
+            self.assertGreater(r['st']['rim'], 0, name + ': the street and the cut both leave the cell under its rim')
+
+    def test_the_floor_lies_under_what_cut_it(self):
+        """Never grass through the asphalt: every corner and middle of every floor triangle is at least the trim's own
+        clearance under every road over it."""
+        for name in ('street', 'cut', 'both'):
+            r = self.res[name]
+            self.assertGreater(r['floorTris'], 10, name)
+            self.assertEqual(0, r['over'], name)
+            self.assertGreaterEqual(r['low'], 0.08 - 1e-4, name)
+
+    def test_nothing_under_a_tunnels_roof(self):
+        """A riser hung from the lawn over the tunnel to the cut's floor would stand across the mouth: over a roof the
+        floor and the risers stop on it."""
+        r = self.res['roof']
+        self.assertGreater(r['plain'], 20, 'the scene does go below the roof line without one')
+        self.assertEqual(0, r['roofed'])
+        self.assertGreater(r['inside'], 100)
+        self.assertEqual(0, r['out'], "nothing in a headwall's own footprint")
+
+    def test_a_deep_cut_keeps_its_own_walls(self):
+        """The corridor and an approach near its mouth lie metres under the lawn and have walls with parapets. A floor
+        laid under them would hang under a bridge's deck, and a riser beside them in the cut's own air."""
+        r = self.res['deep']
+        self.assertEqual(0, r['alone'], 'a lawn only a deep cut touches gets nothing')
+        self.assertGreater(r['both'], 50, "the street beside it still gets its floor")
+        self.assertEqual(0, r['floorInCut'], "and that floor stops at the cut's line")
+        self.assertIn('if (step > LAWN_STEP) { deep.push(sPoly); continue; }', self.fn)
+        self.assertIn('for (const sPoly of t.deep) rem = rem.flatMap((part) => outsideConvex(part, sPoly));', self.fn)
+
+    def test_the_page_lays_it_under_the_one_lawn(self):
+        s = self.src
+        step = self.step
+        lay = step[step.index('const lawnLay = () => {'):step.index('const portalStat = []')]
+        self.assertIn('const un = lawnUnder(g2.attributes.position.array, rimE, zones);', lay, "the lawn's own triangles, as the trim will read them")
+        self.assertEqual(1, lay.count('noTrim: true'), 'the lawn itself still goes through the trim: its kept pieces are the ones drawn before')
+        self.assertIn('for(const p of collarParts)if(!p.noTrim)p.geom=trimTerrainPatch(p.geom);', step, 'the trim drops a triangle with no area in plan, which is every riser')
+        self.assertIn('groundMeshY(X + cw * (0.5 + di), Z + ch * (0.5 + dj)) !== null', lay, 'a rim riser only toward drawn ground: an opened cell with no lawn is the cut, and a riser stood across it')
+        self.assertIn('tunnelBox.push([mx, mz, dx, dz, hw, vo, u1, roof - 0.1]);', step)
+        self.assertIn('zones.push([rect(-0.8, 0.05, b[4] + 0.7), Infinity], [rect(0.05, b[6] + 0.5, b[5]), b[7]]);', lay, 'the headwall keeps the under-lawn out, the box keeps it over its roof')
+        self.assertIn('PERF.lawnUnder = un.st;', lay)
+
+    def test_no_new_material_and_no_shader_text(self):
+        for word in ('onBeforeCompile', 'ShaderMaterial', 'THREE.', 'Material(', 'gl_Frag', 'uniform ', 'polygonOffset'):
+            self.assertNotIn(word, self.fn, word)
+        step = self.step
+        self.assertEqual(1, step.count('const collarMat = groundSurfMat('), "on the collars' own mesh")
+        self.assertEqual(1, step.count('new THREE.Mesh(mergeColored(collarParts), collarMat)'))
+
+    def test_the_kept_pieces_are_the_trims(self):
+        """lawnUnder walks the trim's own steps in the trim's own order to find the pieces it puts risers under."""
+        trim = self.src[self.src.index('  function trimTerrainPatch(g) {'):self.src.index('  const LAWN_DROP = ')]
+        for text in ('if(overlap.length<3 || Math.abs(signedArea(overlap))<1e-7)continue;', 'if(overlap.every(q=>height(...q)<sHeight(...q)-TERRAIN_PATCH_CLEARANCE))continue;',
+                     'pieces=pieces.flatMap(piece=>outsideConvex(piece,sPoly));', 'if(!pieces.length)break;', 'piece=tidyRing(piece);if(!piece)continue;'):
+            self.assertIn(text, trim)
+            self.assertIn(text.replace(' ', ''), self.fn.replace(' ', '').replace('(q)=>', 'q=>').replace('(piece)=>', 'piece=>'), text)
+
+
+LAWN_HARNESS = r"""
+// ---- the harness (tests/test_vine_portals.py): a lawn over one opened cell, roads through it, rays from above
+const THREE = { BufferGeometry: class { constructor() { this.attributes = {}; this.index = null; } setAttribute(n, a) { this.attributes[n] = a; } computeVertexNormals() {} dispose() {} },
+  Float32BufferAttribute: class { constructor(arr, n) { this.array = new Float32Array(arr); this.count = this.array.length / n; } getX(i) { return this.array[i * 3]; } getY(i) { return this.array[i * 3 + 1]; } getZ(i) { return this.array[i * 3 + 2]; } } };
+const PERF = {};
+function remember(tris) {   // rememberTerrainRoad without the core's cap test: [x, y, z] triangles
+  for (const t of tris) {
+    const poly = t.map((p) => [p[0], p[2], p[1]].map(Math.fround)), bounds = streetBounds(poly);
+    const id = trsAdd(poly);
+    terrainPatchCells(bounds, (key) => { if (!terrainRoadGrid.has(key)) terrainRoadGrid.set(key, []); terrainRoadGrid.get(key).push(id); });
+  }
+}
+function scene(cfg) {
+  terrainRoadGrid = new Map(); TRS.n = 0;
+  const N = 5, C = 25, X = 100, Z = 200, roads = [];
+  // the ground: a bank falling to the south (the old cut's valley side), with a hump in it
+  const gy = (x, z) => 3 - 0.22 * (z - Z) + 0.6 * Math.sin((x - X) / 6) * Math.cos((z - Z) / 7);
+  const quad = (a, b, c, d) => { roads.push([a, b, c], [a, c, d]); };
+  // a street laid flat across the bank (its sheet at its centreline's height and a lift): over the lawn on the low side, under it on the high side
+  if (cfg.street) { const zc = Z + 9, hw = 4, y = gy(X + 12, zc) + 0.6; quad([X - 20, y, zc - hw - 1.5], [X + 45, y, zc - hw + 1.5], [X + 45, y, zc + hw + 1.5], [X - 20, y, zc + hw - 1.5]); }
+  // an approach's shoulder, level, well under the lawn at one end and over it at the other
+  if (cfg.cut) { const zc = Z + 19, y0 = gy(X, zc) - 0.9; quad([X - 20, y0, zc - 3], [X + 45, y0 + 0.2, zc - 2], [X + 45, y0 + 0.2, zc + 4], [X - 20, y0, zc + 3]); }
+  // the expressway's own cut, 5 m under the lawn: its walls close it, and nothing is laid under it or hung beside it
+  let deepBox = null;
+  if (cfg.deep) { const zc = Z + 14, y0 = gy(X, zc) - 5; quad([X - 20, y0, zc - 4], [X + 45, y0, zc - 4], [X + 45, y0, zc + 4], [X - 20, y0, zc + 4]); deepBox = [zc - 4, zc + 4]; }
+  remember(roads);
+  const tris = [], rimE = [];
+  const P = (a, b) => { const x = X + C * a / N, z = Z + C * b / N; return [x, gy(x, z), z]; };
+  for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) {
+    const p00 = P(a, b), p10 = P(a + 1, b), p11 = P(a + 1, b + 1), p01 = P(a, b + 1);
+    tris.push(...p00, ...p01, ...p11, ...p00, ...p11, ...p10);
+    rimE.push((a === 0 ? 1 : 0) | (b + 1 === N ? 2 : 0), (a + 1 === N ? 2 : 0) | (b === 0 ? 4 : 0));
+  }
+  const pos = new Float32Array(tris);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  const kept = Array.from(trimTerrainPatch(g).attributes.position.array);
+  const un = lawnUnder(pos, rimE, cfg.zone !== undefined ? [[[[X + 8, Z - 1], [X + 18, Z - 1], [X + 18, Z + C + 1], [X + 8, Z + C + 1]], cfg.zone]] : undefined);   // a strip across the cell: a tunnel's box under the lawn
+  return { X, Z, C, gy, roads, kept, un, lawn: tris, deepBox };
+}
+function triList(arr) { const o = []; for (let k = 0; k + 8 < arr.length; k += 9) o.push([[arr[k], arr[k + 1], arr[k + 2]], [arr[k + 3], arr[k + 4], arr[k + 5]], [arr[k + 6], arr[k + 7], arr[k + 8]]]); return o; }
+function hit(o, d, t) {   // Moller-Trumbore, both faces, a hair generous at the edges: the distance along the ray, or Infinity
+  const [a, b, c] = t, e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+  const px = d[1] * e2[2] - d[2] * e2[1], py = d[2] * e2[0] - d[0] * e2[2], pz = d[0] * e2[1] - d[1] * e2[0], det = e1[0] * px + e1[1] * py + e1[2] * pz;
+  if (Math.abs(det) < 1e-12) return Infinity;
+  const tx = o[0] - a[0], ty = o[1] - a[1], tz = o[2] - a[2], u = (tx * px + ty * py + tz * pz) / det;
+  if (u < -1e-6 || u > 1 + 1e-6) return Infinity;
+  const qx = ty * e1[2] - tz * e1[1], qy = tz * e1[0] - tx * e1[2], qz = tx * e1[1] - ty * e1[0], v = (d[0] * qx + d[1] * qy + d[2] * qz) / det;
+  if (v < -1e-6 || u + v > 1 + 2e-6) return Infinity;
+  const s = (e2[0] * qx + e2[1] * qy + e2[2] * qz) / det;
+  return s > 1e-9 ? s : Infinity;
+}
+function planY(t, x, z) {   // a triangle's height over a plan point, or null outside it
+  const [a, b, c] = t, d = (b[2] - c[2]) * (a[0] - c[0]) + (c[0] - b[0]) * (a[2] - c[2]);
+  if (Math.abs(d) < 1e-12) return null;
+  const u = ((b[2] - c[2]) * (x - c[0]) + (c[0] - b[0]) * (z - c[2])) / d, v = ((c[2] - a[2]) * (x - c[0]) + (a[0] - c[0]) * (z - c[2])) / d, w = 1 - u - v;
+  return u >= -1e-7 && v >= -1e-7 && w >= -1e-7 ? u * a[1] + v * b[1] + w * c[1] : null;
+}
+function rays(sc, withUnder, n, seed) {
+  // an eye at least 2.5 m over the ground anywhere round the cell looks at a point in it. The ray leaks if it comes to
+  // the cell's underside: below the ground at the cell's rim on its way out, or 30 m under the cell, having hit nothing
+  let a = seed >>> 0; const rnd = () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const occ = triList(sc.kept).concat(sc.roads, withUnder ? triList(sc.un.pos) : []);
+  const { X, Z, C, gy } = sc; let leaks = 0; const where = [];
+  // the ground at the cell's rim as the lawn has it: the lattice's points, straight between them
+  const rimY = (x, z) => { const u = Math.min(4.999999, Math.max(0, (x - X) / 5)), v = Math.min(4.999999, Math.max(0, (z - Z) / 5)), i = Math.floor(u), j = Math.floor(v);
+    const onX = Math.min(Math.abs(x - X), Math.abs(x - X - C)) < Math.min(Math.abs(z - Z), Math.abs(z - Z - C)), xs = x - X < C / 2 ? X : X + C, zs = z - Z < C / 2 ? Z : Z + C;
+    return onX ? gy(xs, Z + j * 5) + (gy(xs, Z + j * 5 + 5) - gy(xs, Z + j * 5)) * (v - j) : gy(X + i * 5, zs) + (gy(X + i * 5 + 5, zs) - gy(X + i * 5, zs)) * (u - i); };
+  for (let i = 0; i < n; i++) {
+    const ex = X - 15 + rnd() * (C + 30), ez = Z - 15 + rnd() * (C + 30), ey = gy(ex, ez) + 2.5 + rnd() * rnd() * 12;
+    const tx = X + rnd() * C, tz = Z + rnd() * C, ty = gy(tx, tz) - 0.3 - rnd() * 2.5;   // a point under the lawn: through it if nothing is in the way
+    let d = [tx - ex, ty - ey, tz - ez]; const L = Math.hypot(...d); d = d.map((v) => v / L);
+    if (d[1] > -0.02) continue;
+    let best = Infinity; for (const t of occ) { const s = hit([ex, ey, ez], d, t); if (s < best) best = s; }
+    // where the ray leaves the cell's column (or goes 30 m under it)
+    let sOut = (-30 + gy(tx, tz) - ey) / d[1], sIn = 0;
+    for (const [o, dd, lo, hi] of [[ex, d[0], X, X + C], [ez, d[2], Z, Z + C]]) {
+      if (Math.abs(dd) < 1e-12) { if (o < lo || o > hi) sOut = -1; continue; }
+      const s0 = (lo - o) / dd, s1 = (hi - o) / dd; sIn = Math.max(sIn, Math.min(s0, s1)); sOut = Math.min(sOut, Math.max(s0, s1));
+    }
+    if (sOut <= sIn) continue;
+    // it enters the column over the ground (the eye is over the ground and the ground outside the cell is whole)
+    const pin = [ex + d[0] * sIn, ey + d[1] * sIn, ez + d[2] * sIn]; if (pin[1] < rimY(pin[0], pin[2]) - 1e-6) continue;
+    if (best <= sOut + 1e-6) continue;   // (a riser at the rim stands on the column's own side)
+    const po = [ex + d[0] * sOut, ey + d[1] * sOut, ez + d[2] * sOut];
+    // (over a road where it leaves the cell, or at its very edge, it is in that road's own cut, which goes on past the cell)
+    if (po[1] < rimY(po[0], po[2]) - 1e-4 && !sc.roads.some((t) => [[0, 0], [0.15, 0], [-0.15, 0], [0, 0.15], [0, -0.15]].some((o) => { const y = planY(t, po[0] + o[0], po[2] + o[1]); return y !== null && y <= po[1] + 1e-6; }))) { leaks++; if (where.length < 8) where.push([ex, ey, ez, tx, ty, tz].map((v) => +v.toFixed(2))); }
+  }
+  return { leaks, where };
+}
+
+const res = {};
+for (const [name, cfg] of [['street', { street: 1 }], ['cut', { cut: 1 }], ['both', { street: 1, cut: 1 }]]) {
+  const sc = scene(cfg), a = rays(sc, false, 30000, 11), b = rays(sc, true, 120000, 23);
+  // the floor under what cut it: every level triangle of the under-lawn, at its corners and its middle, against every road over the point
+  let over = 0, floorTris = 0, low = Infinity;
+  for (const t of triList(sc.un.pos)) {
+    const ar = (t[1][0] - t[0][0]) * (t[2][2] - t[0][2]) - (t[1][2] - t[0][2]) * (t[2][0] - t[0][0]);
+    if (Math.abs(ar) < 1e-5) continue;
+    floorTris++;
+    const pts = t.concat([[(t[0][0] + t[1][0] + t[2][0]) / 3, (t[0][1] + t[1][1] + t[2][1]) / 3, (t[0][2] + t[1][2] + t[2][2]) / 3]]);
+    for (const q of pts) for (const r of sc.roads) { const y = planY(r, q[0], q[2]); if (y !== null) { if (q[1] > y - 0.08 + 1e-4) over++; low = Math.min(low, y - q[1]); } }
+  }
+  res[name] = { st: sc.un.st, kept: sc.kept.length / 9, tris: sc.un.pos.length / 9, without: a.leaks, with: b.leaks, where: b.where, over, floorTris, low };
+}
+{ // a roof under the lawn (lower than the lawn everywhere in this cell): nothing of the under-lawn goes below it over the roof,
+  // and nothing at all is laid where the zone's height is Infinity
+  const R = -3.3, plain = scene({ street: 1, cut: 1 }), roofed = scene({ street: 1, cut: 1, zone: R }), out = scene({ street: 1, cut: 1, zone: Infinity });
+  const count = (sc, test) => { let n = 0; const p = sc.un.pos; for (let k = 0; k < p.length; k += 3) if (p[k] > sc.X + 8.05 && p[k] < sc.X + 17.95 && test(p[k + 1])) n++; return n; };   // (a sill's outer corner follows its riser's cut, so it may stand LAWN_INSET over a zone's line)
+  res.roof = { plain: count(plain, (y) => y < R - 1e-6), roofed: count(roofed, (y) => y < R - 1e-6), inside: count(plain, () => true), out: count(out, () => true), tris: roofed.un.pos.length / 9 };
+}
+{ // a deep cut alone leaves the lawn as the trim left it; with a street beside it the street's floor stops at the cut's line
+  const alone = scene({ deep: 1 }), both = scene({ deep: 1, street: 1 });
+  const inCut = (sc) => { let n = 0; const p = sc.un.pos; for (let k = 0; k < p.length; k += 9) { const zs = [p[k + 2], p[k + 5], p[k + 8]], xs = [p[k], p[k + 3], p[k + 6]]; const flat = Math.abs((xs[1] - xs[0]) * (zs[2] - zs[0]) - (zs[1] - zs[0]) * (xs[2] - xs[0])) > 1e-5; if (flat && (zs[0] + zs[1] + zs[2]) / 3 > sc.deepBox[0] + 0.05 && (zs[0] + zs[1] + zs[2]) / 3 < sc.deepBox[1] - 0.05) n++; } return n; };
+  res.deep = { alone: alone.un.pos.length / 9, both: both.un.pos.length / 9, floorInCut: inCut(both), st: both.un.st };
+}
+console.log(JSON.stringify(res));
+"""
 
 
 if __name__ == '__main__':
