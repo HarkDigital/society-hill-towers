@@ -65,7 +65,7 @@ right) plus the host's height in dm shifted left by 2, and the panel's turn to i
 ten-thousandths). The tags come from fetch_shops.businesses over the same cached tiles, checked row for row against
 shops_raw.json.
 
-Round 226 (Camden at its measured heights): --host-heights does one thing and bakes nothing. A heights-only repack of
+Round 229 (Camden at its measured heights): --host-heights does one thing and bakes nothing. A heights-only repack of
 wide.b64 moves hosts under panels this bake hung when they stood at their defaults, and the page clamps a panel, its
 awning and its blade sign to the host's height from the sidecar (hostH), not to the wall it draws: after the repack
 Buster's Liquor's 3.6 m panel hung on a 3.2 m wall and Friend's Cafe's 3.75 m on 3.3. The whole bake cannot be rerun
@@ -116,7 +116,7 @@ def area2(poly):
 
 
 def host_heights(body, rec, stride, rows, scenes):
-    """Round 226: the sidecar's host heights after a heights-only repack. body: storefronts.b64's int16 body (8 a
+    """Round 229: the sidecar's host heights after a heights-only repack. body: storefronts.b64's int16 body (8 a
     record); rec: the sidecar's int16 records (`stride` a record), not modified; rows: lidar_east_heights.json's rows
     [set, building, way, form, old, new, ...]; scenes: {'wide': buildings, 'south': buildings}. Returns (the new
     records, changed, problems), changed one [record, old dm, new dm, set, building] per record rewritten.

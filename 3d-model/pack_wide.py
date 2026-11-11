@@ -37,7 +37,7 @@ ap.add_argument('--allow-missing', action='store_true',
                 help='pack even when an optional input (scene_south.json, parts_wide.json, '
                      'wide_landmarks_research.json) is missing; what it carried is dropped')
 ap.add_argument('--against', metavar='OLD_WIDE_B64',
-                help='a repack that must move heights and nothing else (Round 226): compare the new pack with this '
+                help='a repack that must move heights and nothing else (Round 229): compare the new pack with this '
                      'earlier wide.b64 record by record, write the changed records to wide_repack.json, and write '
                      'NOTHING (exit 1) if a record count, the order, a ring, a type, a roof word, a road, an area or '
                      'wide_walls.b64 differs. Copy the committed wide.b64 aside first and pass the copy')
@@ -246,7 +246,7 @@ def roof_word(b, cx, cz):
     return v - 65536 if v > 32767 else v
 
 from pack_common import dedupe_stacked, inset_ring, nudge_coplanar   # Round 71: shared with pack_city.py and pack_outskirts.py
-from pack_common import repack_diff   # Round 226: the heights-only guard behind --against
+from pack_common import repack_diff   # Round 229: the heights-only guard behind --against
 
 body = []
 recs = []                             # (cx, cz, area, h, minH, (record, wall byte, hint byte)) before the stacked-part dedupe
@@ -384,7 +384,7 @@ if _walls:
     wb = struct.pack('<4i', 0x53485457, nb, len(pal), bpr) + bytes(v for c in pal for v in c) + bytes(walls) \
         + (bytes(hints) if _hinted else b'')
 if ARGS.against:
-    # Round 226: a heights-only repack. Nothing is written unless the new pack is the old one with height words
+    # Round 229: a heights-only repack. Nothing is written unless the new pack is the old one with height words
     # changed (and the storey pitch they carry), record for record, and the wall colours come out byte for byte
     _old = base64.b64decode(open(ARGS.against).read())
     _changes, _problems = repack_diff(_old, buf)
