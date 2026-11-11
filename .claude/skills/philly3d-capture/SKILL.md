@@ -223,6 +223,9 @@ share of pixels over 24 levels from A next to the second A's. What made the nois
 - **Traffic.** `trafficReconcile` runs every 1,000 ms of REAL time, not per frame, so a build whose frames are faster
   spawns its cars somewhere else even where main matches itself exactly. Click `btnTraffic` off in every pose's `js`
   (or expect cars in the diff).
+- **People.** The walkers (Round 227) are off unless the page is opened with `?people=1`; under it they move by the
+  real second, so `__dbg.people(false)` takes them out of a parity pose and `__dbg.peopleAt(t)` pins their second for a
+  capture that must repeat (`__dbg.peopleAt(null)` lets it go).
 - **Ships.** Blocking `ais.json` through Chrome's `setBlockedURLs` is not enough: ships still arrive over the aisstream
   WebSocket. Click `btnShips` off in the pose instead.
 - **Flights.** Live aircraft and their pins come and go between runs (every top difference block of Round 192's second

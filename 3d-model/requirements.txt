@@ -7,7 +7,7 @@
 #   pip3 install --user -r requirements.txt
 #
 shapely>=2.0,<3          # lidar_join, lidar_core, opa_join, roof_colors, pack_city
-numpy>=1.24,<3           # lidar_core, roof_colors, bake_street_sdf
+numpy>=1.24,<3           # lidar_core, roof_colors, bake_street_sdf, bake_people_walk
 pyproj>=3.4,<4           # lidar_core (EPSG:6347 -> WGS84)
 laspy[lazrs]>=2.4,<3     # lidar_core (COPC .laz tiles)
 Pillow>=10,<12           # roof_colors, bake_street_sdf, brand/make_brand

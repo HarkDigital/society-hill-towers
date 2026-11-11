@@ -44500,6 +44500,655 @@ float pinOccGate() {
     const moved = Math.hypot(camera.position.x - PARKED.lx, camera.position.y - PARKED.ly, camera.position.z - PARKED.lz);
     if (moved > PARKED.step || key !== PARKED.key) { PARKED.key = key; parkedLay(now); }
   }
+  // ---- people on the sidewalks (Round 227. Mike, Nov 9, 2026: people on the sidewalks, walking; the plan's STREET-1 as
+  // both verifiers amended it). The data and the logic only: where a walker may walk, who is there at a given second, and
+  // one call that fills a buffer with the walkers near the eye. No mesh, no material and no program is made here (the
+  // drawing is its own section, after the traffic's step), and nothing runs unless the page is opened with ?people=1: every look change goes to
+  // Mike behind a flag first. Tier 2 has no traffic runs and gets nobody from this section.
+  //
+  // WHERE. A walker keeps to a walk line behind the kerb of a street the typical traffic runs on: the run's centreline set
+  // off by the drawn half width (parkHalfW, the parked cars' rule) and a setback. The setback comes from the baked
+  // distance to the nearest wall on that side (people_walk.b64, bake_people_walk.py: the flight's 4 m columns cannot say
+  // where a wall stands to a metre, and the far ring's footprints are gone once built): with ROOM metres between the kerb
+  // and the wall the walker keeps 0.8 m off the wall, never more than 2.0 m and never under 0.7 m behind the kerb, and a
+  // side with under 1.4 m gets nobody. Never on a motorway or a trunk road (class 0 and 1), a deck or a bridge
+  // (parkedRunOK), or a closed block; and a stretch whose walk line lies in another drawn street (streetInside: a median,
+  // a slip lane's island, the other carriageway) gets nobody.
+  //
+  // THE GRAPH. The traffic's linker joins run ends only, so two streets that cross in the middle of both (every crossing
+  // of two long ways: 6,818 on the network in plan, the overpasses among them) are not joined, and a walk over conn alone
+  // runs straight across them (it finds 7,421 faces, three quarters of the kerb on faces over 1,200 m round).
+  // The walkers have their own nodes: peopleCross finds, per run and only when the eye comes near, where another run
+  // crosses it at its own height, and a run between two such nodes or ends is a PIECE. A half edge is a piece walked one
+  // way with the block on the walker's right; at its end peopleNext takes the first way out counter-clockwise from the
+  // way it came (the sharpest right turn), which keeps the block on the right and makes the half edges' orbits the
+  // street blocks' faces.
+  //
+  // THE TRAILS. A face is traced once (peopleTrace) and cut into trails: a closed loop when every corner joins, else
+  // the stretches between the cuts, each walked out and back. The cuts: a side nobody may walk, a dead end (the walker
+  // turns round rather than cross the roadway's end), a corner whose join would cut through a street. A face over
+  // faceCap metres or faceMax pieces round (a park, a river bank, the outside of the network) is not traced as one: each
+  // of its pieces is its own out-and-back trail. A closed face under medianW metres wide is the strip between two
+  // carriageways and gets nobody, as does any side with another drawn street within 7 m behind its walk line and no wall
+  // between. A trail holds its walk line as points on the DRAWN ground at the walker's own line (furnY), with the corners
+  // joined where the two walk lines meet, so a walker rounds a corner on the sidewalk.
+  //
+  // WHO. Slots, not agents: slot k of a trail stands at s = (s0 + v t) mod P, with s0, v (1.1 to 1.6 m/s), its figure, its
+  // way round, its step's phase and its side of the line all from an integer hash of the trail's seed and k, and t in
+  // real seconds, so nobody is born or retired, the same people are there when the eye comes back, and a capture is
+  // repeatable (__dbg.peopleAt pins t). A trail has its length times a density by class and tier in slots; how many are
+  // PRESENT follows the model clock, the weekday and the weather, each slot's own byte against the hour's share (the
+  // parked cars' way), and a slot's presence changes only while carSpotRank says it is off the screen.
+  //
+  // THE CALL. peopleFill(out, ex, ey, ez, R, cap) writes PEOPLE.stride floats a walker (x, y, z, the heading's x and z
+  // as a unit vector on the ground, figure index, step phase 0 to 1, fade 0 to 1) for the walkers within R of the eye and
+  // returns how many; nothing when the eye is PEOPLE.eyeMax over the ground. It allocates nothing, keys nothing by a
+  // string, and traces at most PEOPLE.traceMs of new faces a call. __dbg.people() reports, __dbg.people(false) stops it.
+  const PEOPLE_ON = /[?&]people=(?:1|sharp)\b/.test(location.search) && !TIER2;   // sharp: a computer's twice-size atlas (PEOPLE_SHARP)
+  if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;   // nothing reads the walls: let the text go
+  const PEOPLE_T0 = Date.UTC(2026, 0, 1);   // t counts real seconds from here, so the same instant gives the same street on any device
+  const PEOPLE = { live: PEOPLE_ON, ready: false, r: isTouch ? 80 : 150, cap: isTouch ? 150 : 600, stride: 8, figures: 12,
+    minWalk: 1.4, wallGap: 0.8, setMin: 0.7, setMax: 2.0, lat: 0.35, streetClear: 0.1, strip: [2.5, 5, 7], faceCap: 1600, faceMax: 64, medianW: 8, eyeMax: 60, ahead: 40, cell: 64,
+    traceMs: isTouch ? 1.0 : 1.5, keep: isTouch ? 2500 : 9000, t: null, rk: 1, frame: 0, ways: 0, boost: null, rec: null, trails: [], nPts: 0, nSlots: 0, flushes: 0, gen: 0, closedSig: 0, dowKey: 0, dow: 0,
+    stat: { drawn: 0, present: 0, slots: 0, active: 0, pending: 0, traced: 0, dropped: 0, ms: 0, fills: 0 },
+    // why a side or a corner was refused, counted (__dbg.people().why). sides: walked, no walk line (class, deck, closed, no room), under 3 m,
+    // its middle in a street, an end that never leaves one, nothing left between its cuts, another street within 7 m behind it. corners: met, touching, round a bend, slanted,
+    // then refused: the meeting point in a street, the bend's way round in one, the slant in one, a turn whose lines never meet
+    sides: null, corners: null };
+  // walkers a metre of walk line when every slot is present, by class 0 to 5: Center City (river to river, Vine Street
+  // to South Street, the detailed core inside it), the rest of the outer districts, then the far ring and the towns. The
+  // plan's figures: 0.15 on a shopping street down to 0.03 on a rowhouse grid; Mike's to tune. PEOPLE.boost, when a later
+  // round sets it, is (run, run index, side bit) => a multiplier: the hook for the open storefronts on a block's edge
+  // (STOREFRONT_INFO's hours are read per panel in sfStep, not per run, so they are not cheap to read here)
+  const PEOPLE_DENS = [[0, 0, .15, .15, .08, .05], [0, 0, .10, .08, .05, .03], [0, 0, .06, .05, .03, .02]];
+  const PEOPLE_CC = { x0: -3400, x1: 800, z0: -1500, z1: 900 };
+  const PEOPLE_WIDE = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };   // pack_wide.py's WIDE
+  // the share of the slots present by the model clock's hour, a weekday and a weekend
+  const PEOPLE_WD = [.04, .02, .01, .01, .02, .06, .2, .45, .65, .6, .6, .7, .85, .8, .7, .7, .8, .95, .9, .7, .5, .35, .2, .08];
+  const PEOPLE_WE = [.1, .06, .03, .02, .02, .03, .06, .15, .3, .5, .7, .85, .95, 1, .95, .9, .85, .8, .7, .6, .5, .4, .28, .16];
+  function peopleHash(a, b) {   // two integers to 32 bits, the same on every engine (Math.imul; hash01's sine is not V8's to the bit under JavaScriptCore)
+    let h = Math.imul(a ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 0x7f4a7c15, 0xc2b2ae35);
+    h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12; h = Math.imul(h, 0x297a2d39); h ^= h >>> 15;
+    return h >>> 0;
+  }
+  // people_walk.b64 (bake_people_walk.py): per way of traffic.b64, intervals along it with a 6-bit code a side
+  function peopleBlob() {
+    if (PEOPLE.rec) return true;
+    if (typeof PEOPLE_WALK_B64 === 'undefined' || !PEOPLE_WALK_B64) return false;
+    const bin = unb64(PEOPLE_WALK_B64, 'PEOPLE_WALK');
+    PEOPLE_WALK_B64 = null;
+    if (bin.length < 16) return false;
+    const hdr = new Int32Array(bin.buffer, 0, 4), nw = hdr[1], nr = hdr[2], nb = (nw + 7) >> 3;
+    if (hdr[0] !== 0x53485057 || nw < 0 || nr < 0 || bin.length < 16 + nb + 2 * nr || (PEOPLE.ways && PEOPLE.ways !== nw)) return false;
+    const lo = 16 + nb, hi = lo + nr, code = new Uint16Array(nr), pos = new Uint16Array(nr), way = new Int32Array(nw + 1);
+    let k = 0, kl = hi + nr;
+    for (let w = 0; w < nw; w++) {
+      way[w] = k;
+      if (!(bin[16 + (w >> 3)] >> (w & 7) & 1)) continue;
+      for (let p = 0; k < nr;) { const v = bin[lo + k] | bin[hi + k] << 8; code[k] = v; pos[k] = p; k++; if (v & 0x1000) break; p += bin[kl++]; }
+    }
+    way[nw] = k;
+    if (k !== nr || kl !== bin.length) return false;
+    PEOPLE.rec = { way, code, pos, unit: (hdr[3] & 255) / 10, base: (hdr[3] >> 16 & 255) / 10 };
+    return true;
+  }
+  // a run side's code: the least among the intervals the run's own stretch of its way overlaps, the stretch drawn in 3 m
+  // at each end (to its middle at most) so an interval it only touches is not read. bake_people_walk.py's lookup() is
+  // this function in Python, and tests/test_people_walk.py holds the two equal for every run side
+  function peopleClearCode(ri, b) {
+    const r = trafficRuns[ri], R = PEOPLE.rec, w = r.wi, s0 = PEOPLE.arc0[ri], s1 = s0 + r.len, t = Math.min(3, (s1 - s0) / 2), lo = s0 + t, hi = s1 - t, U = R.unit;
+    let best = 63;
+    for (let k = R.way[w], k1 = R.way[w + 1]; k < k1; k++) {
+      const st = R.pos[k] * U, en = k + 1 < k1 ? R.pos[k + 1] * U : Infinity;
+      if (st <= hi && en > lo) { const c = b ? R.code[k] >> 6 & 63 : R.code[k] & 63; if (c < best) best = c; }
+    }
+    return best;
+  }
+  // a run side's walk line: metres from the centreline, or -1 where nobody walks. b 0 is the page's side +1 (the right
+  // of the run's own direction), b 1 its left
+  function peopleOff(ri, b) {
+    const P = PEOPLE, i = ri * 2 + b;
+    let o = P.off[i];
+    if (o !== 0) return o;
+    const r = trafficRuns[ri];
+    o = -1;
+    if (r.cls >= 2 && r.cls <= 5 && !r.closed && parkedRunOK(r)) {
+      const c = peopleClearCode(ri, b), wall = c === 63 ? Infinity : c === 62 ? 10 : P.rec.base + c / 10, hw = parkHalfW(r), room = wall - hw;
+      if (room >= P.minWalk) o = hw + clamp(room - P.wallGap, P.setMin, P.setMax);
+    }
+    return (P.off[i] = o);
+  }
+  function peopleDensity(ri, b) {
+    const r = trafficRuns[ri], W = PEOPLE_WIDE, CC = PEOPLE_CC, x = r.mx, z = r.mz;
+    const d = PEOPLE_DENS[(x > CC.x0 && x < CC.x1 && z > CC.z0 && z < CC.z1) || inCore(x, z) ? 0 : x > W.x0 && x < W.x1 && z > W.z0 && z < W.z1 ? 1 : 2][r.cls] || 0;
+    return PEOPLE.boost ? d * PEOPLE.boost(r, ri, b) : d;
+  }
+  function peopleShare() {
+    const P = PEOPLE, key = clock.y * 10000 + clock.m * 100 + clock.d;
+    if (key !== P.dowKey) { P.dowKey = key; P.dow = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay(); }
+    const tbl = P.dow === 0 || P.dow === 6 ? PEOPLE_WE : PEOPLE_WD, h = clock.minutes / 60, h0 = ((Math.floor(h) % 24) + 24) % 24, f = h - Math.floor(h);
+    const wet = Math.max(WXFX.rain, WXFX.hail, 0.8 * WXFX.snow);   // rain from 0.5 up leaves four in ten
+    return clamp((tbl[h0] + (tbl[(h0 + 1) % 24] - tbl[h0]) * f) * (1 - 0.6 * clamp(wet * 2, 0, 1)), 0, 1);
+  }
+  // the section's scratch, made with the first fill and never before (without the flag nothing here is allocated):
+  // _plX a pair of runs' crossings and a run's own list while it is sorted; _plN the half edge peopleNext answers with;
+  // _plQ a piece's points; _plF a face's members while it is traced and cut into trails (the half edges, each walkable
+  // member's walk line as points and the distance along it to each, where it is cut at either end, a corner's extra
+  // points) and a trail's points while they are laid; _plA the point peopleAlong answers with
+  let _plX = null, _plN = null, _plQ = null, _plF = null, _plA = null;
+  function peopleInit() {
+    const P = PEOPLE, runs = trafficRuns, N = runs.length, C = P.cell;
+    P.ready = false;
+    if (!_plX) {
+      _plX = { a: new Float64Array(64), b: new Float64Array(64), n: 0, s: new Float64Array(256), q: new Int32Array(256), sq: new Float64Array(256), ord: [] };
+      _plN = { ri: 0, k: 0, d: 0, turn: false };
+      _plQ = { x: new Float64Array(256), z: new Float64Array(256), n: 0 };
+      _plF = { ri: new Int32Array(80), k: new Int32Array(80), d: new Int8Array(80), nx: new Float64Array(80), nz: new Float64Array(80), ok: new Uint8Array(80), link: new Uint8Array(80), fs: new Int32Array(80), fc: new Int32Array(80), len: new Float64Array(80), ca: new Float64Array(80), cb: new Float64Array(80), jn: new Uint8Array(80), jx: new Float64Array(480), jz: new Float64Array(480), x: new Float64Array(2048), z: new Float64Array(2048), l: new Float64Array(2048), n: 0, ox: new Float64Array(2048), oz: new Float64Array(2048) };
+      _plA = { x: 0, z: 0 };
+      P.sides = new Int32Array(7); P.corners = new Int32Array(8);
+    }
+    // the decoder tags every run with its way and its start's distance along it only under the flag; without them, or
+    // without the walls, nobody walks
+    if (!N || runs[0].wi === undefined || !peopleBlob()) { P.live = false; return; }
+    const arc0 = new Float64Array(N), bb = new Float32Array(N * 4);
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0, acc = 0; i < N; i++) {
+      // the linker's pieces of one run follow one another, each starting where the one before ended
+      const r = runs[i], p = i ? runs[i - 1] : null;
+      acc = p && p.wi === r.wi && p.ws === r.ws ? acc + p.len : 0;
+      arc0[i] = r.ws + acc;
+      let a = Infinity, b = -Infinity, c = Infinity, d = -Infinity;
+      for (let j = 0; j < r.xs.length; j++) { const x = r.xs[j], z = r.zs[j]; if (x < a) a = x; if (x > b) b = x; if (z < c) c = z; if (z > d) d = z; }
+      bb[i * 4] = a - 12; bb[i * 4 + 1] = b + 12; bb[i * 4 + 2] = c - 12; bb[i * 4 + 3] = d + 12;   // 12 m: past the widest walk line
+      if (a - 12 < x0) x0 = a - 12; if (b + 12 > x1) x1 = b + 12; if (c - 12 < z0) z0 = c - 12; if (d + 12 > z1) z1 = d + 12;
+    }
+    // the runs in cells, compressed rows (a count pass, a prefix sum, a fill pass): each run in every cell its box touches
+    const gx0 = Math.floor(x0 / C), gz0 = Math.floor(z0 / C), gw = Math.floor(x1 / C) - gx0 + 1, gh = Math.floor(z1 / C) - gz0 + 1;
+    const start = new Int32Array(gw * gh + 1);
+    let cellRuns = null;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < N; i++) {
+        const xa = Math.floor(bb[i * 4] / C) - gx0, xb = Math.floor(bb[i * 4 + 1] / C) - gx0, za = Math.floor(bb[i * 4 + 2] / C) - gz0, zb = Math.floor(bb[i * 4 + 3] / C) - gz0;
+        for (let x = Math.max(0, xa); x <= xb && x < gw; x++) for (let z = Math.max(0, za); z <= zb && z < gh; z++) { const c = x * gh + z; if (pass) cellRuns[start[c]++] = i; else start[c + 1]++; }
+      }
+      if (!pass) { for (let c = 0; c < gw * gh; c++) start[c + 1] += start[c]; cellRuns = new Int32Array(start[gw * gh]); }
+    }
+    for (let c = gw * gh; c > 0; c--) start[c] = start[c - 1];
+    start[0] = 0;
+    Object.assign(P, { arc0, bb, gx0, gz0, gw, gh, cellStart: start, cellRuns, runStamp: new Int32Array(N), xStamp: new Int32Array(N), xTick: 0,
+      xOff: new Int32Array(N), xN: new Int32Array(N).fill(-1), pieceBase: new Int32Array(N), off: new Float32Array(N * 2), nPieces: 0, xLen: 0,
+      xS: new Float32Array(4096), xQ: new Int32Array(4096), xSQ: new Float32Array(4096), sideTrail: new Int32Array(8192).fill(-1), act: new Int32Array(4096),
+      trails: [], nPts: 0, nSlots: 0 });
+    P.ready = true;
+  }
+  // the traces let go: a closure that changed (a closed block is walked by nobody) or a long flight's cache. The
+  // crossings stay: they are the network's own
+  function peopleReset() {
+    const P = PEOPLE;
+    if (!P.ready) return;
+    P.trails = []; P.nPts = 0; P.nSlots = 0; P.sideTrail.fill(-1); P.off.fill(0); P.gen++;
+  }
+  function peopleClosed() {   // closureTraffic calls this once it has marked the runs
+    let sig = 0;
+    for (let i = 0; i < trafficRuns.length; i++) if (trafficRuns[i].closed) sig = (sig + Math.imul(i + 1, 0x9e3779b1)) | 0;
+    if (sig !== PEOPLE.closedSig) { PEOPLE.closedSig = sig; peopleReset(); }
+  }
+  // where runs a and b (a under b: one order whoever asks, so both get the same numbers) cross in the middle of both, at
+  // one height: pairs (distance along a, distance along b) into _plX
+  function peopleCrossPair(ai, bi) {
+    const A = trafficRuns[ai], B = trafficRuns[bi], bb = PEOPLE.bb, X = _plX;
+    const bx0 = bb[bi * 4] + 12, bx1 = bb[bi * 4 + 1] - 12, bz0 = bb[bi * 4 + 2] + 12, bz1 = bb[bi * 4 + 3] - 12;
+    X.n = 0;
+    for (let j = 0; j < A.xs.length - 1; j++) {
+      const ax = A.xs[j], az = A.zs[j], ex = A.xs[j + 1], ez = A.zs[j + 1];
+      if (Math.max(ax, ex) < bx0 || Math.min(ax, ex) > bx1 || Math.max(az, ez) < bz0 || Math.min(az, ez) > bz1) continue;
+      const vx = ex - ax, vz = ez - az;
+      for (let m = 0; m < B.xs.length - 1; m++) {
+        const cx = B.xs[m], cz = B.zs[m], dx = B.xs[m + 1] - cx, dz = B.zs[m + 1] - cz, den = vx * dz - vz * dx;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((cx - ax) * dz - (cz - az) * dx) / den;
+        if (t < 0 || t > 1) continue;
+        const u = ((cx - ax) * vz - (cz - az) * vx) / den;
+        if (u < 0 || u > 1) continue;
+        const sa = A.cum[j] + t * (A.cum[j + 1] - A.cum[j]), sb = B.cum[m] + u * (B.cum[m + 1] - B.cum[m]);
+        if (sa < 1.5 || sa > A.len - 1.5 || sb < 1.5 || sb > B.len - 1.5) continue;   // at an end the linker's own node stands (or a near miss)
+        if (Math.abs(A.ys[j] + (A.ys[j + 1] - A.ys[j]) * t - B.ys[m] - (B.ys[m + 1] - B.ys[m]) * u) > 1.5) continue;   // a deck over a street: the linker's height rule
+        let dup = false;
+        for (let k = 0; k < X.n && !dup; k++) dup = Math.abs(X.a[k] - sa) < 0.5 && Math.abs(X.b[k] - sb) < 0.5;   // a crossing on a shared vertex is found twice
+        if (dup || X.n >= X.a.length) continue;
+        X.a[X.n] = sa; X.b[X.n++] = sb;
+      }
+    }
+  }
+  // a run's crossings, once: sorted by distance along it, each with the other run and the distance along that
+  function peopleCross(ri) {
+    const P = PEOPLE;
+    if (P.xN[ri] >= 0) return;
+    const bb = P.bb, C = P.cell, X = _plX, tick = ++P.xTick, gh = P.gh;
+    const xa = Math.max(0, Math.floor(bb[ri * 4] / C) - P.gx0), xb = Math.min(P.gw - 1, Math.floor(bb[ri * 4 + 1] / C) - P.gx0), za = Math.max(0, Math.floor(bb[ri * 4 + 2] / C) - P.gz0), zb = Math.min(gh - 1, Math.floor(bb[ri * 4 + 3] / C) - P.gz0);
+    let n = 0;
+    P.xStamp[ri] = tick;
+    for (let x = xa; x <= xb; x++) for (let z = za; z <= zb; z++) for (let q = P.cellStart[x * gh + z], q1 = P.cellStart[x * gh + z + 1]; q < q1; q++) {
+      const qi = P.cellRuns[q];
+      if (P.xStamp[qi] === tick) continue;
+      P.xStamp[qi] = tick;
+      if (bb[qi * 4] + 24 > bb[ri * 4 + 1] || bb[qi * 4 + 1] - 24 < bb[ri * 4] || bb[qi * 4 + 2] + 24 > bb[ri * 4 + 3] || bb[qi * 4 + 3] - 24 < bb[ri * 4 + 2]) continue;   // the boxes without their 12 m
+      if (ri < qi) peopleCrossPair(ri, qi); else peopleCrossPair(qi, ri);
+      for (let k = 0; k < X.n && n < 255; k++) { X.s[n] = ri < qi ? X.a[k] : X.b[k]; X.q[n] = qi; X.sq[n++] = ri < qi ? X.b[k] : X.a[k]; }
+    }
+    const ord = X.ord;
+    ord.length = n;
+    for (let k = 0; k < n; k++) ord[k] = k;
+    ord.sort((u, v) => X.s[u] - X.s[v] || X.q[u] - X.q[v]);
+    if (P.xLen + n > P.xS.length) {
+      const m = Math.max(P.xS.length * 2, P.xLen + n), s = new Float32Array(m), q = new Int32Array(m), sq = new Float32Array(m);
+      s.set(P.xS); q.set(P.xQ); sq.set(P.xSQ); P.xS = s; P.xQ = q; P.xSQ = sq;
+    }
+    for (let k = 0; k < n; k++) { P.xS[P.xLen + k] = X.s[ord[k]]; P.xQ[P.xLen + k] = X.q[ord[k]]; P.xSQ[P.xLen + k] = X.sq[ord[k]]; }
+    P.xOff[ri] = P.xLen; P.xLen += n; P.xN[ri] = n;
+    P.pieceBase[ri] = P.nPieces; P.nPieces += n + 1;
+    if (P.nPieces * 2 > P.sideTrail.length) { const a = new Int32Array(Math.max(P.sideTrail.length * 2, P.nPieces * 2)).fill(-1); a.set(P.sideTrail); P.sideTrail = a; }
+  }
+  // which of run q's crossings is the one with run ri at sq along q (-1: none, which the one order above rules out)
+  function peopleCrossIndex(q, ri, sq) {
+    const P = PEOPLE;
+    peopleCross(q);
+    for (let j = P.xOff[q], j1 = j + P.xN[q]; j < j1; j++) if (P.xQ[j] === ri && Math.abs(P.xS[j] - sq) < 0.05) return j - P.xOff[q];
+    return -1;
+  }
+  // the map angle (east 0, north a quarter turn) a walker leaves the point s of run r by, heading d along it
+  function peopleAng(r, s, d) {
+    const cum = r.cum;
+    let lo = 0, hi = cum.length - 1;
+    if (d > 0) { while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] <= s + 1e-3) lo = m; else hi = m; } hi = lo + 1; }
+    else { while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] >= s - 1e-3) hi = m; else lo = m; } lo = hi - 1; }
+    return Math.atan2(-(r.zs[hi] - r.zs[lo]) * d, (r.xs[hi] - r.xs[lo]) * d);
+  }
+  // the half edge after (run ri, piece k, heading d): into _plN. turn is set where it is the same piece walked back
+  function peopleNext(ri, k, d) {
+    const P = PEOPLE, runs = trafficRuns, r = runs[ri], n = P.xN[ri], TAU = 2 * Math.PI;
+    let best = Infinity, bri = ri, bk = k, bd = -d;
+    if (d > 0 ? k < n : k > 0) {
+      // a crossing: the way on along this run and the other run's two ways, in one cyclic order by angle, then by
+      // (run, heading), so the walk is a permutation of the half edges even where two ways leave along one line
+      const i = P.xOff[ri] + (d > 0 ? k : k - 1), s = P.xS[i], q = P.xQ[i], sq = P.xSQ[i], a0 = peopleAng(r, s, -d), pid = ri * 2 + (d > 0 ? 0 : 1);
+      const j = peopleCrossIndex(q, ri, sq), rq = runs[q];
+      let bid = -1;
+      for (let c = 0; c < (j < 0 ? 1 : 3); c++) {
+        const cr = c ? q : ri, cd = c === 0 ? d : c === 1 ? 1 : -1, id = cr * 2 + (cd > 0 ? 1 : 0);
+        let th = peopleAng(c ? rq : r, c ? sq : s, cd) - a0;
+        th -= TAU * Math.floor(th / TAU); if (th === 0 && id < pid) th = TAU;
+        if (th < best || (th === best && id < bid)) { best = th; bid = id; bri = cr; bd = cd; bk = c === 0 ? (d > 0 ? k + 1 : k - 1) : cd > 0 ? j + 1 : j; }
+      }
+    } else {
+      // a run's end: the linker's own node. The ways out in one cyclic order by angle, then by end, so the walk is a
+      // permutation of the half edges even where two runs leave a node along one line
+      const e = d > 0 ? 1 : 0, conn = r.conn[e], p = ri * 2 + e, a0 = peopleAng(r, e ? r.len : 0, -d);
+      let bid = -1;
+      for (let c = 0; c < conn.length; c += 2) {
+        const qi = conn[c], qe = conn[c + 1], rq = runs[qi], id = qi * 2 + qe;
+        let th = peopleAng(rq, qe ? rq.len : 0, qe ? -1 : 1) - a0;
+        th -= TAU * Math.floor(th / TAU); if (th === 0 && id < p) th = TAU;
+        if (th < best || (th === best && id < bid)) { best = th; bid = id; bri = qi; bd = qe ? -1 : 1; }
+      }
+      if (bid >= 0) { peopleCross(bri); bk = bd > 0 ? 0 : P.xN[bri]; }
+    }
+    _plN.turn = bri === ri && bk === k && bd === -d;
+    _plN.ri = bri; _plN.k = bk; _plN.d = bd;
+  }
+  // a piece's points in walking order, set off metres to the walker's right (0: the centreline): its two ends and the
+  // run's own vertices between them, into _plQ
+  function peoplePiece(ri, k, d, off) {
+    const P = PEOPLE, r = trafficRuns[ri], o = P.xOff[ri], cum = r.cum, xs = r.xs, zs = r.zs, m = cum.length;
+    const lo = k > 0 ? P.xS[o + k - 1] : 0, hi = k < P.xN[ri] ? P.xS[o + k] : r.len, Q = _plQ;
+    if (m + 2 > Q.x.length) { Q.x = new Float64Array(m * 2 + 2); Q.z = new Float64Array(m * 2 + 2); }
+    const X = Q.x, Z = Q.z, w = off * d;   // the right of a walker heading d is d times the run's own right
+    let ja = 1, jb = m - 2, c = 0;
+    while (ja < m - 1 && cum[ja] <= lo + 0.01) ja++;
+    while (jb > 0 && cum[jb] >= hi - 0.01) jb--;
+    {
+      const a = ja - 1, l = cum[ja] - cum[a] || 1, t = clamp((lo - cum[a]) / l, 0, 1), tx = (xs[ja] - xs[a]) / l, tz = (zs[ja] - zs[a]) / l;
+      X[c] = xs[a] + (xs[ja] - xs[a]) * t - tz * w; Z[c++] = zs[a] + (zs[ja] - zs[a]) * t + tx * w;
+    }
+    for (let j = ja; j <= jb; j++) {
+      let tx = xs[j + 1] - xs[j - 1], tz = zs[j + 1] - zs[j - 1];
+      const l = Math.hypot(tx, tz) || 1;
+      tx /= l; tz /= l;
+      X[c] = xs[j] - tz * w; Z[c++] = zs[j] + tx * w;
+    }
+    {
+      const b = jb + 1, l = cum[b] - cum[jb] || 1, t = clamp((hi - cum[jb]) / l, 0, 1), tx = (xs[b] - xs[jb]) / l, tz = (zs[b] - zs[jb]) / l;
+      X[c] = xs[jb] + (xs[b] - xs[jb]) * t - tz * w; Z[c++] = zs[jb] + (zs[b] - zs[jb]) * t + tx * w;
+    }
+    if (d < 0) for (let i = 0, j = c - 1; i < j; i++, j--) { const x = X[i], z = Z[i]; X[i] = X[j]; Z[i] = Z[j]; X[j] = x; Z[j] = z; }
+    Q.n = c;
+    return hi - lo;
+  }
+  // a face's members while it is traced and cut into trails: the half edges, then each walkable member's walk line (its
+  // points and the distance along it to each) and where it is cut at either end
+  function peopleAlong(i, a) {   // the point a metres along member i's walk line, into _plA
+    const F = _plF, s = F.fs[i], e = s + F.fc[i] - 1;
+    let j = s;
+    while (j < e - 1 && F.l[j + 1] < a) j++;
+    const l = F.l[j + 1] - F.l[j] || 1, t = clamp((a - F.l[j]) / l, 0, 1);
+    _plA.x = F.x[j] + (F.x[j + 1] - F.x[j]) * t; _plA.z = F.z[j] + (F.z[j + 1] - F.z[j]) * t;
+  }
+  // member i's walk line laid into the face's buffers; false where nobody may walk it: no walk line on that side, a point
+  // of its middle in a drawn street (a median, an island, the other carriageway), or an end that never leaves one
+  function peopleMember(i) {
+    const P = PEOPLE, F = _plF, ri = F.ri[i], d = F.d[i], off = peopleOff(ri, d > 0 ? 0 : 1);
+    if (off <= 0) { P.sides[1]++; return false; }
+    peoplePiece(ri, F.k[i], d, off);
+    const n = _plQ.n;
+    if (F.n + n > F.x.length) { for (const key of ['x', 'z', 'l']) { const a = new Float64Array((F.n + n) * 2); a.set(F[key]); F[key] = a; } }
+    F.fs[i] = F.n; F.fc[i] = n;
+    let L = 0;
+    for (let j = 0; j < n; j++) {
+      if (j) L += Math.hypot(_plQ.x[j] - _plQ.x[j - 1], _plQ.z[j] - _plQ.z[j - 1]);
+      F.x[F.n + j] = _plQ.x[j]; F.z[F.n + j] = _plQ.z[j]; F.l[F.n + j] = L;
+    }
+    F.n += n; F.len[i] = L;
+    if (L < 3) { P.sides[2]++; return false; }
+    const E = Math.min(14, 0.35 * L), C = P.streetClear, wc = peopleClearCode(ri, d > 0 ? 0 : 1), wall = wc >= 62 ? Infinity : P.rec.base + wc / 10;
+    for (let a = E, m = Math.max(1, Math.ceil((L - 2 * E) / 8)), st = (L - 2 * E) / m, q = 0; q <= m; q++, a += st) {
+      peopleAlong(i, a);
+      const x = _plA.x, z = _plA.z;
+      if (streetInside(x, z, C)) { P.sides[3]++; return false; }
+      // and no other street close behind the line (the walker's right) with no wall between: a strip that narrow between
+      // two roadways is a median or an island, whatever the face it lies on (a long boulevard's median is a face too long
+      // to be measured). A row of houses between a street and the small street behind it is no median: the baked wall says so
+      peopleAlong(i, Math.min(L, a + 1));
+      let nx = -(_plA.z - z), nz = _plA.x - x;
+      const nl = Math.hypot(nx, nz) || 1;
+      nx /= nl; nz /= nl;
+      for (let k = 0; k < 3; k++) if (wall > off + P.strip[k] && streetInside(x + nx * P.strip[k], z + nz * P.strip[k], 0)) { P.sides[6]++; return false; }
+    }
+    // the ends as a cut would leave them: in from each until the line is clear of the street it meets, and a metre more
+    const lim = Math.min(24, 0.45 * L);
+    let a = 0, b = 0;
+    for (; a <= lim; a += 1.5) { peopleAlong(i, a); if (!streetInside(_plA.x, _plA.z, C)) break; }
+    for (; b <= lim; b += 1.5) { peopleAlong(i, L - b); if (!streetInside(_plA.x, _plA.z, C)) break; }
+    if (a > lim || b > lim) { P.sides[4]++; return false; }
+    F.ca[i] = a ? a + 1 : 0; F.cb[i] = b ? L - b - 1 : L;
+    if (F.cb[i] - F.ca[i] < 2) { P.sides[5]++; return false; }
+    P.sides[0]++;
+    return true;
+  }
+  // the corner from member i to member j, the one after it round the face: both walk lines cut where they meet, or a
+  // short way round on the outside of a bend, or a slant across a step in the setback; false where none is clear of the
+  // streets, and the walkers of each then turn round at the corner
+  function peopleJoin(i, j) {
+    const P = PEOPLE, F = _plF, as = F.fs[i], ae = as + F.fc[i] - 1, bs = F.fs[j], be = bs + F.fc[j] - 1, La = F.len[i], C = P.streetClear;
+    F.jn[i] = 0;
+    for (let a = ae - 1; a >= as && La - F.l[a + 1] < 30; a--) {
+      const ax = F.x[a], az = F.z[a], vx = F.x[a + 1] - ax, vz = F.z[a + 1] - az;
+      for (let b = bs; b < be && F.l[b] < 30; b++) {
+        const cx = F.x[b], cz = F.z[b], dx = F.x[b + 1] - cx, dz = F.z[b + 1] - cz, den = vx * dz - vz * dx;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((cx - ax) * dz - (cz - az) * dx) / den, u = ((cx - ax) * vz - (cz - az) * vx) / den;
+        if (t < 0 || t > 1 || u < 0 || u > 1) continue;
+        if (streetInside(ax + vx * t, az + vz * t, C)) { P.corners[4]++; return false; }
+        F.cb[i] = F.l[a] + t * (F.l[a + 1] - F.l[a]); F.ca[j] = F.l[b] + u * (F.l[b + 1] - F.l[b]);
+        P.corners[0]++;
+        return true;
+      }
+    }
+    const ex = F.x[ae], ez = F.z[ae], sx = F.x[bs], sz = F.z[bs], gap = Math.hypot(sx - ex, sz - ez);
+    let hax = ex - F.x[ae - 1], haz = ez - F.z[ae - 1], hbx = F.x[bs + 1] - sx, hbz = F.z[bs + 1] - sz;
+    const la = Math.hypot(hax, haz) || 1, lb = Math.hypot(hbx, hbz) || 1;
+    hax /= la; haz /= la; hbx /= lb; hbz /= lb;
+    const cross = hax * hbz - haz * hbx, dot = hax * hbx + haz * hbz;
+    if (gap < 0.4) { F.cb[i] = La; F.ca[j] = 0; P.corners[1]++; return true; }
+    if (cross < -0.17) {
+      // a bend to the left, the walker on its outside: round the node at the walk lines' own distance
+      const nx = F.nx[i], nz = F.nz[i], r0 = Math.hypot(ex - nx, ez - nz), r1 = Math.hypot(sx - nx, sz - nz), a0 = Math.atan2(ez - nz, ex - nx);
+      let da = Math.atan2(sz - nz, sx - nx) - a0;
+      da -= 2 * Math.PI * Math.round(da / (2 * Math.PI));
+      const steps = Math.min(6, Math.ceil(Math.abs(da) / 0.6));
+      for (let q = 1; q < steps; q++) {
+        const f = q / steps, rr = r0 + (r1 - r0) * f, x = nx + Math.cos(a0 + da * f) * rr, z = nz + Math.sin(a0 + da * f) * rr;
+        if (streetInside(x, z, C)) { F.jn[i] = 0; P.corners[5]++; return false; }
+        F.jx[i * 6 + F.jn[i]] = x; F.jz[i * 6 + F.jn[i]++] = z;
+      }
+      F.cb[i] = La; F.ca[j] = 0;
+      P.corners[2]++;
+      return true;
+    }
+    if (dot > 0.85) {
+      // straight on with a step sideways (the next run's setback is another): a slant over 3 m of each
+      const ta = Math.min(3, 0.3 * La), tb = Math.min(3, 0.3 * F.len[j]);
+      peopleAlong(i, La - ta);
+      const mx = _plA.x, mz = _plA.z;
+      peopleAlong(j, tb);
+      if (streetInside((mx + _plA.x) / 2, (mz + _plA.z) / 2, C)) { P.corners[6]++; return false; }
+      F.cb[i] = La - ta; F.ca[j] = tb;
+      P.corners[3]++;
+      return true;
+    }
+    P.corners[7]++;
+    return false;
+  }
+  // members i0 to i1 (round the face) as one trail: the walk line's points on the drawn ground, then its slots
+  function peopleTrail(i0, count, closed, nFace) {
+    const P = PEOPLE, F = _plF;
+    let n = 0, want = 0;
+    if (F.ox.length < F.n + count * 8 + 8) { F.ox = new Float64Array((F.n + count * 8 + 8) * 2); F.oz = new Float64Array(F.ox.length); }
+    const X = F.ox, Z = F.oz;
+    const put = (x, z) => { if (!n || Math.hypot(x - X[n - 1], z - Z[n - 1]) > 0.05) { X[n] = x; Z[n++] = z; } };
+    for (let c = 0; c < count; c++) {
+      const i = (i0 + c) % nFace, a = F.ca[i], b = F.cb[i], s = F.fs[i], e = s + F.fc[i];
+      if (b - a > 0.1) {
+        peopleAlong(i, a); put(_plA.x, _plA.z);
+        for (let j = s; j < e; j++) if (F.l[j] > a + 0.05 && F.l[j] < b - 0.05) put(F.x[j], F.z[j]);
+        peopleAlong(i, b); put(_plA.x, _plA.z);
+        want += (b - a) * peopleDensity(F.ri[i], F.d[i] > 0 ? 0 : 1);
+      }
+      if (closed || c < count - 1) for (let q = 0; q < F.jn[i]; q++) put(F.jx[i * 6 + q], F.jz[i * 6 + q]);
+    }
+    if (closed && n > 1 && Math.hypot(X[0] - X[n - 1], Z[0] - Z[n - 1]) > 0.05) { X[n] = X[0]; Z[n++] = Z[0]; }
+    else if (closed && n > 1) { X[n - 1] = X[0]; Z[n - 1] = Z[0]; }
+    if (n < 2) return -2;
+    // the last word: a trail with a point on a drawn street is nobody's (the checks above sample a line every 8 m and leave
+    // out its ends; 86 points of 522,122 on the whole network slipped between them)
+    for (let j = 0; j < n; j++) if (streetInside(X[j], Z[j], 0)) { P.stat.dropped++; return -2; }
+    const xs = new Float32Array(n), ys = new Float32Array(n), zs = new Float32Array(n), cum = new Float32Array(n);
+    let L = 0;
+    for (let j = 0; j < n; j++) {
+      if (j) L += Math.hypot(X[j] - X[j - 1], Z[j] - Z[j - 1]);
+      xs[j] = X[j]; zs[j] = Z[j]; cum[j] = L; ys[j] = furnY(X[j], Z[j]);
+    }
+    L = cum[n - 1];
+    if (L < 6) return -2;
+    // the trail's seed: its first member, by run, piece and side (the same on every load: a piece's own index is not)
+    const seed = (F.ri[i0] * 512 + F.k[i0] * 2 + (F.d[i0] > 0 ? 0 : 1)) | 0;
+    const ns = Math.min(400, Math.floor(want) + (peopleHash(seed, -1) / 4294967296 < want - Math.floor(want) ? 1 : 0)), per = closed ? L : 2 * L;
+    const T = { seed, closed, len: L, P: per, xs, ys, zs, cum, n: ns, s0: new Float32Array(ns), v: new Float32Array(ns), pu: new Uint8Array(ns), fig: new Uint8Array(ns), ph: new Uint8Array(ns), lat: new Uint8Array(ns), on: new Uint8Array(ns), stamp: 0, seen: -9 };
+    for (let k = 0; k < ns; k++) {
+      const h1 = peopleHash(seed, k * 3), h2 = peopleHash(seed, k * 3 + 1), h3 = peopleHash(seed, k * 3 + 2);
+      T.s0[k] = h1 / 4294967296 * per;
+      T.v[k] = (1.1 + 0.5 * (h2 & 0xffff) / 65536) * (closed && (h2 >>> 16 & 1) ? -1 : 1);
+      T.lat[k] = h2 >>> 24; T.pu[k] = h3 & 255; T.fig[k] = (h3 >>> 8 & 0xffff) % P.figures; T.ph[k] = h3 >>> 24;
+    }
+    P.trails.push(T); P.nPts += n; P.nSlots += ns;
+    return P.trails.length - 1;
+  }
+  // the face's nf members (in _plF) cut into trails, and every member's side told which trail is its own (-2: none)
+  function peopleFace(nf, closed) {
+    const P = PEOPLE, F = _plF;
+    F.n = 0;
+    for (let i = 0; i < nf; i++) { F.jn[i] = 0; F.ok[i] = peopleMember(i) ? 1 : 0; }
+    let all = closed && nf > 1;
+    for (let i = 0; i < nf; i++) {
+      const j = (i + 1) % nf;
+      // a dead end: the same piece walked back. The walker turns round there
+      const back = F.ri[j] === F.ri[i] && F.k[j] === F.k[i] && F.d[j] === -F.d[i];
+      F.link[i] = closed && nf > 1 && F.ok[i] && F.ok[j] && !back && peopleJoin(i, j) ? 1 : 0;
+      if (!F.link[i]) all = false;
+    }
+    // a corner's cut can pass the cut at a short member's other end: such a member keeps no points, the corners meet
+    const side = (i) => (P.pieceBase[F.ri[i]] + F.k[i]) * 2 + (F.d[i] > 0 ? 0 : 1);
+    if (all) {
+      let i0 = 0, kmin = Infinity;
+      for (let i = 0; i < nf; i++) { const key = F.ri[i] * 512 + F.k[i] * 2 + (F.d[i] > 0 ? 0 : 1); if (key < kmin) { kmin = key; i0 = i; } }
+      const tid = peopleTrail(i0, nf, true, nf);
+      for (let i = 0; i < nf; i++) P.sideTrail[side(i)] = tid;
+      return;
+    }
+    for (let i = 0; i < nf; i++) {
+      if (!F.ok[i]) { P.sideTrail[side(i)] = -2; continue; }
+      if (F.link[(i + nf - 1) % nf] && nf > 1) continue;   // not a trail's first member
+      let count = 1;
+      while (count < nf && F.link[(i + count - 1) % nf]) count++;
+      const tid = peopleTrail(i, count, false, nf);
+      for (let c = 0; c < count; c++) P.sideTrail[side((i + c) % nf)] = tid;
+    }
+  }
+  // the face the side b of piece k of run ri lies on, traced and cut into trails
+  function peopleTrace(ri, k, b) {
+    const P = PEOPLE, F = _plF, d0 = b ? -1 : 1, cap = P.faceMax;
+    let n = 0, len = 0, area = 0, closed = false, turn = false, cr = ri, ck = k, cd = d0, px = 0, pz = 0, fx = 0, fz = 0;
+    for (;;) {
+      peopleCross(cr);
+      F.ri[n] = cr; F.k[n] = ck; F.d[n] = cd;
+      len += peoplePiece(cr, ck, cd, 0);
+      const Q = _plQ;
+      for (let j = 0; j < Q.n; j++) { if (n || j) area += px * Q.z[j] - Q.x[j] * pz; else { fx = Q.x[0]; fz = Q.z[0]; } px = Q.x[j]; pz = Q.z[j]; }
+      F.nx[n] = px; F.nz[n] = pz;   // the node this member ends at
+      n++;
+      peopleNext(cr, ck, cd);
+      if (_plN.turn) turn = true;
+      cr = _plN.ri; ck = _plN.k; cd = _plN.d;
+      if (cr === ri && ck === k && cd === d0) { closed = true; break; }
+      if (n >= cap || len > P.faceCap) break;
+    }
+    P.stat.traced++;
+    if (!closed) { peopleFace(1, false); return; }   // a face too long to walk round: this piece alone, out and back
+    area = Math.abs(area + px * fz - fx * pz) / 2;
+    if (!turn && 2 * area / len < P.medianW) {   // the strip between two carriageways
+      for (let i = 0; i < n; i++) P.sideTrail[(P.pieceBase[F.ri[i]] + F.k[i]) * 2 + (F.d[i] > 0 ? 0 : 1)] = -2;
+      return;
+    }
+    peopleFace(n, true);
+  }
+  // THE CALL: the walkers within R of the eye into out, PEOPLE.stride floats each; returns how many
+  function peopleFill(out, ex, ey, ez, R, cap) {
+    const P = PEOPLE, S = P.stat;
+    if (!PEOPLE_ON || !P.live) return 0;
+    if (!P.ready) { if (!trafficReady || !trafficRuns.length) return 0; peopleInit(); if (!P.ready) return 0; }
+    const t0 = performance.now();
+    S.fills++; S.drawn = S.present = S.slots = S.active = S.pending = 0;
+    const high = ey - furnY(ex, ez);
+    if (!(high < P.eyeMax)) { S.ms = performance.now() - t0; return 0; }
+    if (P.trails.length > P.keep) { peopleReset(); P.flushes++; }   // a long flight's cache let go (about 2 KB a trail)
+    R = R || P.r; cap = Math.min(cap || P.cap, Math.floor(out.length / P.stride));
+    const Re = R * P.rk, Rc = Re + P.ahead, Rc2 = Rc * Rc, C = P.cell, gh = P.gh, bb = P.bb, stamp = ++P.frame, act = P.act;
+    const kh = 1 - smooth(P.eyeMax - 12, P.eyeMax, high), t = P.t !== null ? P.t : (Date.now() - PEOPLE_T0) / 1000, shareQ = Math.round(peopleShare() * 256);
+    let nAct = 0, budget = true;
+    const xa = Math.max(0, Math.floor((ex - Rc) / C) - P.gx0), xb = Math.min(P.gw - 1, Math.floor((ex + Rc) / C) - P.gx0), za = Math.max(0, Math.floor((ez - Rc) / C) - P.gz0), zb = Math.min(gh - 1, Math.floor((ez + Rc) / C) - P.gz0);
+    for (let x = xa; x <= xb; x++) for (let z = za; z <= zb; z++) for (let q = P.cellStart[x * gh + z], q1 = P.cellStart[x * gh + z + 1]; q < q1; q++) {
+      const ri = P.cellRuns[q];
+      if (P.runStamp[ri] === stamp) continue;
+      P.runStamp[ri] = stamp;
+      const dx = ex < bb[ri * 4] ? bb[ri * 4] - ex : ex > bb[ri * 4 + 1] ? ex - bb[ri * 4 + 1] : 0, dz = ez < bb[ri * 4 + 2] ? bb[ri * 4 + 2] - ez : ez > bb[ri * 4 + 3] ? ez - bb[ri * 4 + 3] : 0;
+      if (dx * dx + dz * dz > Rc2) continue;
+      if (P.xN[ri] < 0) { if (!budget) { S.pending++; continue; } peopleCross(ri); }
+      for (let k = 0, np = P.xN[ri] + 1; k < np; k++) for (let b = 0; b < 2; b++) {
+        let tid = P.sideTrail[(P.pieceBase[ri] + k) * 2 + b];
+        if (tid === -1) {
+          if (!budget) { S.pending++; continue; }
+          peopleTrace(ri, k, b);
+          tid = P.sideTrail[(P.pieceBase[ri] + k) * 2 + b];
+          if (performance.now() - t0 > P.traceMs) budget = false;
+        }
+        if (tid < 0) continue;
+        const T = P.trails[tid];
+        if (T.stamp === stamp) continue;
+        T.stamp = stamp;
+        if (nAct < act.length) act[nAct++] = tid;
+      }
+    }
+    let n = 0, present = 0, slots = 0, view = false;
+    const R2 = Re * Re, f0 = Re * 0.8, latK = P.lat / 255;
+    for (let a = 0; a < nAct; a++) {
+      const T = P.trails[act[a]], per = T.P, L = T.len, cum = T.cum, xs = T.xs, ys = T.ys, zs = T.zs, last = cum.length - 1, on = T.on, fresh = T.seen !== stamp - 1;
+      T.seen = stamp;
+      slots += T.n;
+      for (let k = 0; k < T.n; k++) {
+        const want = T.pu[k] < shareQ ? 1 : 0;
+        if (fresh) on[k] = want;   // a trail the eye has just come to: nobody is watching it yet
+        if (!on[k] && !want) continue;
+        const v = T.v[k];
+        let s = T.s0[k] + v * t, dir = v < 0 ? -1 : 1;
+        s -= per * Math.floor(s / per);
+        if (!T.closed && s > L) { s = per - s; dir = -1; }   // the way back
+        let lo = 0, hi = last;
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cum[m] > s) hi = m; else lo = m; }
+        const sl = cum[hi] - cum[lo] || 1, u = (s - cum[lo]) / sl, hx = (xs[hi] - xs[lo]) / sl * dir, hz = (zs[hi] - zs[lo]) / sl * dir, w = T.lat[k] * latK;
+        // each keeps to the right of the line's middle by its own share of 0.35 m, so two ways pass
+        const x = xs[lo] + (xs[hi] - xs[lo]) * u - hz * w, y = ys[lo] + (ys[hi] - ys[lo]) * u, z = zs[lo] + (zs[hi] - zs[lo]) * u + hx * w;
+        if (on[k] !== want) {
+          // the hour's share has moved past this slot: it comes or goes only where nobody can see it
+          if (!view) { carRefreshView(); view = true; }
+          if (carSpotRank(x, y, z) !== 0) on[k] = want;
+          if (!on[k]) continue;
+        }
+        present++;
+        const dx = x - ex, dy = y - ey, dz = z - ez, d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 > R2) continue;
+        if (n >= cap) continue;
+        const dd = Math.sqrt(d2), o = n * 8, ph = T.ph[k] / 256 + Math.abs(v) * t / 1.5;
+        out[o] = x; out[o + 1] = y; out[o + 2] = z; out[o + 3] = hx; out[o + 4] = hz; out[o + 5] = T.fig[k];
+        out[o + 6] = ph - Math.floor(ph);
+        out[o + 7] = (1 - smooth(f0, Re, dd)) * smooth(1.5, 4, dd) * kh;
+        n++;
+      }
+    }
+    // over the cap the circle draws in a little each call, and lets out again when there is room: no walker pops
+    if (n >= cap) P.rk = Math.max(0.4, P.rk * 0.94); else if (n < cap * 0.8 && P.rk < 1) P.rk = Math.min(1, P.rk * 1.02);
+    S.drawn = n; S.present = present; S.slots = slots; S.active = nAct; S.ms = performance.now() - t0;
+    return n;
+  }
+  // __dbg.people(): the count of everything; __dbg.people(false) and (true) switch the fill at run time (a parity capture)
+  function peopleDbg(on) {
+    const P = PEOPLE, S = P.stat;
+    if (on !== undefined && PEOPLE_ON) P.live = !!on && (P.ready || !!trafficRuns.length);
+    const o = { on: PEOPLE_ON, live: P.live, ready: P.ready, t: P.t, loops: 0, shuttles: 0, trails: P.trails.length, slots: P.nSlots, points: P.nPts, pieces: P.nPieces || 0, traced: S.traced, dropped: S.dropped, flushes: P.flushes,
+      share: PEOPLE_ON ? +peopleShare().toFixed(3) : 0, why: P.sides ? { sides: Array.from(P.sides), corners: Array.from(P.corners) } : null, radiusK: +P.rk.toFixed(2), fill: { drawn: S.drawn, present: S.present, slots: S.slots, trails: S.active, pending: S.pending, ms: +S.ms.toFixed(3), fills: S.fills } };
+    for (const T of P.trails) if (T.closed) o.loops++; else o.shuttles++;
+    if (PEOPLE_ON && typeof peopleDrawDbg === 'function') o.draw = peopleDrawDbg();   // the drawing's own count (typeof: this section also runs under Node, alone)
+    if (P.ready) {
+      // the walkable share of the kerb length within the fill's radius of the eye (the sides traced so far)
+      const ex = camera.position.x, ez = camera.position.z, R = P.r, C = P.cell, seen = new Set();
+      let kerb = 0, walk = 0, untraced = 0;
+      for (let x = Math.floor((ex - R) / C) - P.gx0; x <= Math.floor((ex + R) / C) - P.gx0; x++) for (let z = Math.floor((ez - R) / C) - P.gz0; z <= Math.floor((ez + R) / C) - P.gz0; z++) {
+        if (x < 0 || z < 0 || x >= P.gw || z >= P.gh) continue;
+        for (let q = P.cellStart[x * P.gh + z]; q < P.cellStart[x * P.gh + z + 1]; q++) {
+          const ri = P.cellRuns[q], r = trafficRuns[ri];
+          if (seen.has(ri) || r.cls < 2 || Math.hypot(r.mx - ex, r.mz - ez) > R) continue;
+          seen.add(ri);
+          if (P.xN[ri] < 0) { untraced += 2 * r.len; kerb += 2 * r.len; continue; }
+          for (let k = 0; k <= P.xN[ri]; k++) {
+            const lo = k ? P.xS[P.xOff[ri] + k - 1] : 0, hi = k < P.xN[ri] ? P.xS[P.xOff[ri] + k] : r.len;
+            for (let b = 0; b < 2; b++) { const tid = P.sideTrail[(P.pieceBase[ri] + k) * 2 + b]; kerb += hi - lo; if (tid === -1) untraced += hi - lo; else if (tid >= 0) walk += hi - lo; }
+          }
+        }
+      }
+      o.near = { kerb: Math.round(kerb), walkable: Math.round(walk), untraced: Math.round(untraced), share: kerb ? +(walk / kerb).toFixed(3) : 0 };
+    }
+    return o;
+  }
+  function peoplePin(t) { PEOPLE.t = t == null ? null : +t; return PEOPLE.t; }   // __dbg.peopleAt(t): t pinned, in seconds; nothing lets it go
+  // __dbg.peopleProbe(x, y, z, R, cap): one fill at that eye (the camera's by default) into a buffer of its own, for a
+  // look at the numbers before anything draws them: how many, the fill's own milliseconds, and the walkers as rows
+  let _plProbe = null;
+  function peopleProbe(x, y, z, R, cap) {
+    if (!PEOPLE_ON) return { on: false };
+    if (!_plProbe) _plProbe = new Float32Array(600 * PEOPLE.stride);
+    const c = camera.position, n = peopleFill(_plProbe, x == null ? c.x : x, y == null ? c.y : y, z == null ? c.z : z, R, cap), rows = [];
+    for (let i = 0; i < n; i++) rows.push(Array.from(_plProbe.subarray(i * PEOPLE.stride, (i + 1) * PEOPLE.stride)));
+    return { n, ms: +PEOPLE.stat.ms.toFixed(3), pending: PEOPLE.stat.pending, rows };
+  }
+  // ---- people on the sidewalks: the section ends (tests/test_people.py cuts it out between this line and its banner)
   function trafficPrepareGraph(runs) {
     // OSM ways often meet the MIDDLE of another way. Split at those endpoints
     // before linking; endpoint-only links made ordinary intersections dead ends.
@@ -44604,6 +45253,11 @@ float pinOccGate() {
     if (hdr[0] !== 0x53485454) return;
     const body = new Int16Array(bin.buffer, 16);
     let k = 0;
+    // Round 227: under ?people=1 every run is tagged with its way's index and its start's distance along the way (wi, ws),
+    // which is how people_walk.b64 is keyed: a bake cannot reproduce the runs, cut as they are by the built terrain.
+    // typeof: this body also runs under Node in tests that know nothing of the people
+    const pplTag = typeof PEOPLE_ON !== 'undefined' && PEOPLE_ON;
+    if (pplTag) PEOPLE.ways = hdr[1];
     // Round 220 (the measurement round): the height sampling's share of the way loop (PERF.traffic.sample, a timer pair a
     // way, 29,749 ways), the loop itself, then the linker and the fleet. The decode body runs under Node in
     // tests/test_traffic_link.py, so nothing here names PERF before trafficPrepareGraph
@@ -44614,6 +45268,8 @@ float pinOccGate() {
       const cls = flags & 7, oneway = !!(flags & 8);
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * unit, body[k++] * unit];
+      let wArc = null;   // Round 227: the distance along the way to each vertex, as the bake measures it (before the bridge's lane fit, which moves no vertex along)
+      if (pplTag) { const dp = densify(pts, 20); wArc = new Float64Array(dp.length); for (let j = 1; j < dp.length; j++) wArc[j] = wArc[j - 1] + Math.hypot(dp[j][0] - dp[j - 1][0], dp[j][1] - dp[j - 1][1]); }
       pts = brLaneFit(densify(pts, 20));   // Round 195: the Ben Franklin's carriageways onto its painted lanes
       // per-vertex height with the full terrain story — trench, bridge decks,
       // viaducts, sunken carriageways — split into sub-runs at dead water
@@ -44654,7 +45310,7 @@ float pinOccGate() {
           if (sy !== null && sy < y - 0.5) { y = sy; lift = 0.35; }
         }
         if (dead) { if (cur && cur.xs.length > 1) runs.push(cur); cur = null; continue; }
-        if (!cur) cur = { xs: [], zs: [], ys: [] };
+        if (!cur) { cur = { xs: [], zs: [], ys: [] }; if (pplTag) cur.j0 = j; }
         cur.xs.push(x); cur.zs.push(z); cur.ys.push(y + lift);
       }
       if (cur && cur.xs.length > 1) runs.push(cur);
@@ -44684,6 +45340,7 @@ float pinOccGate() {
             trafficRuns.push({ xs: Float32Array.from(r.xs.slice(j0, j1 + 1)), zs: Float32Array.from(r.zs.slice(j0, j1 + 1)),
               ys: Float32Array.from(r.ys.slice(j0, j1 + 1)), cum: c2, len, cls, oneway, aadt,
               mx: r.xs[j0 + mid], mz: r.zs[j0 + mid], want: 0, cars: [], busy: false });   // busy: on trafficLeaders' walk (Round 168)
+            if (pplTag) { const tr = trafficRuns[trafficRuns.length - 1]; tr.wi = wI; tr.ws = wArc[r.j0 + j0]; }
           }
           j0 = j1;
         }
@@ -45105,6 +45762,300 @@ float pinOccGate() {
     trafficAdvance(now,Math.min(dt,.1));trafficDraw(clamp((lampUniform.value-.25)/.6,0,1));
     if(CARMAP.on)carMapUpdate();
   }
+
+  // ---- people on the sidewalks: the drawing (Round 227. The walkers above, drawn: only under ?people=1, a look change
+  // behind its flag until Mike has seen it). One InstancedMesh of unit quads, a card a walker, each turned about its own
+  // vertical to the eye and never tilted, its feet on the drawn ground the fill hands it. The picture is a cell of
+  // PEOPLE_ART's one atlas (bake_people_art.py): a front, a back and a side view, each as a stride and as the passing
+  // pose between two strides.
+  //   THE VIEW comes from the walker's heading against the line to the eye: the front inside 45 degrees of walking at
+  // the eye, the back inside 45 of walking away, the side between, mirrored when the walker's way is toward the viewer's
+  // left. No view snaps: across PPL.hand degrees either side of a line the two pictures hand over through a per-pixel
+  // dither (both cells ride every instance). The plan asked for about 12 degrees in all; at 12 a passer 7 m to the side
+  // stood half one picture and half the other for 0.8 s (the captures), so it is 6: a quick dissolve, not a ghost.
+  //   THE STEP: the fill's phase is one gait cycle of two steps, so stride, pass, stride, pass. The second stride is the
+  // other leg's: the front and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on
+  // one side (p01's tote must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet
+  // by PPL.bob metres at the passing pose (a walker is lowest with both feet down), the feet never leaving the ground.
+  //   THE LIGHT is the tree cards': a MeshStandardMaterial with a soft normal round the body's axis, so a figure has a
+  // sun side; the sun's shadow received on a computer (a walker in a building's shade is in shade); the lamps' pools at
+  // night through lampLightPatch (called, never edited: its crown share is the card's own uniform here); the clouds'
+  // shadows, the fog and the air as every standard material has them. The atlas goes up premultiplied and the shader
+  // divides the coverage back out (handoff's gotcha 16), cut at half coverage, firmer as the card shrinks.
+  //   THE GROUND: a contact shade under every figure (the vehicles' own blob material and program, vehShadowMaterial),
+  // and by day the figure's own shadow: the card as the SUN sees it (its view chosen against the sun's bearing), laid
+  // flat along the sun's rays, cut by the atlas's alpha, reading the sun's map where it lands so a walker in a building's
+  // shade casts no second shadow, and sharing the vehicles' stencil so two shadows that cross never darken twice.
+  // Nothing here enters the depth pass (REAL's rule: nothing that moves casts into it), the mirror (reflK 0) or the pins'
+  // capture (occRender leaves every InstancedMesh out), and nothing answers a tap.
+  //   TWO NEW PROGRAMS, people-card and people-shade, exist only under the flag, and no other program's text is touched.
+  // Both are linked in the frames between Ready and the Enter tap, on a 1 by 1 texture and one collapsed instance, with
+  // peopleInit beside them, so the first descent to a street stalls on neither; the atlas is asked for the first time a
+  // fill returns anyone. ?people=sharp is a computer's twice-size atlas, for the side by side
+  const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\b/.test(location.search);
+  const PEOPLE_SYM = { p02: 1, p03: 1 };   // nothing carried on one side: the second stride may be the first one mirrored
+  const PPL = { made: false, card: null, shade: null, blob: null, out: null, iv: null, ivb: null, fade: null, figs: null, n: 0, atlas: null, loading: false, retryAt: 0, failed: 0,
+    hand: 3, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
+    uTex: { value: null }, uPK: { value: new THREE.Vector4(0.03, 900, 256, 0.0) }, uPL: { value: new THREE.Vector4(0.42, 0.9, 0, 0) }, uPS: { value: new THREE.Vector4(0, 0.035, 0, 0) } };
+  const PEOPLE_BAYER = 'float pBay(vec2 p) { vec2 cp = mod(floor(p), 4.0); float low = mod(mod(cp.x, 2.0) * 2.0 + mod(cp.y, 2.0) * 3.0, 4.0); float high = mod(floor(cp.x / 2.0) * 2.0 + floor(cp.y / 2.0) * 3.0, 4.0); return (low * 4.0 + high + 0.5) / 16.0; }';
+  // every figure's cells as the shader reads them: view (front, back, side) by frame (stride, pass), each u0, v0 (the
+  // feet's row), du, dv in a texture with its first row at the top of the image
+  function peopleCells() {
+    const A = PEOPLE_ART, W = A.atlas.w, H = A.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [];
+    for (const f of A.figures) {
+      const c = new Float32Array(24);
+      for (let v = 0; v < 3; v++) for (let fr = 0; fr < 2; fr++) { const r = f.cells[V[v]][fr], o = (v * 2 + fr) * 4; c[o] = r[0] / W; c[o + 1] = 1 - (r[1] + r[3]) / H; c[o + 2] = r[2] / W; c[o + 3] = r[3] / H; }
+      const r0 = f.cells[V[0]][0];
+      F.push({ c, tall: f.tall, wide: f.tall * r0[2] / r0[3], sym: !!PEOPLE_SYM[f.id] });
+    }
+    return F;
+  }
+  function peopleCardPatch(sh) {
+    Object.assign(sh.uniforms, { tPeople: PPL.uTex, uPK: PPL.uPK, uPL: PPL.uPL });
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\n' + [
+        'attribute float aCarFade; attribute vec4 aPB; attribute vec4 aRA; attribute vec4 aRB;',
+        'uniform vec4 uPK;   // the bob (m), the frame height (px), a cell height (texels), the lift (m)',
+        'varying vec4 pUv; varying vec3 pK;',
+        'void pCard(out vec3 lp, out vec3 nrm) {',
+        '  vec3 pTb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, toE = cameraPosition - pTb;',
+        '  vec2 fh = normalize(toE.xz + vec2(1e-5, 0.0));',
+        '  vec3 rt = vec3(fh.y, 0.0, -fh.x);',
+        '  float yy = position.y + 0.5;',
+        '  float H = aPB.y + uPK.x * (0.5 - 0.5 * cos(12.5664 * (aPB.w - 0.125)));',   // tallest in the middle of each passing pose
+        '  lp = rt * (position.x * aPB.x) + vec3(0.0, yy * H + uPK.w, 0.0);',   // in the instance's own frame: its matrix is the feet's place alone
+        '  vec2 cs = vec2(position.x + 0.5, yy);',
+        '  pUv = vec4(aRA.xy + aRA.zw * cs, aRB.xy + aRB.zw * cs);',
+        '  float px = aPB.y * projectionMatrix[1][1] * 0.5 * uPK.y / max(1.0, length(toE));',
+        '  pK = vec3(aPB.z, aCarFade, 1.0 + 0.35 * max(0.0, log2(uPK.z / max(px, 1.0))));',
+        '  nrm = normalize(vec3(fh.x, 0.0, fh.y) * 0.62 + rt * (position.x * 1.3) + vec3(0.0, 0.3, 0.0));',
+        '}',
+      ].join('\n'))
+      .replace('#include <beginnormal_vertex>', 'vec3 pLP, pNrm; pCard(pLP, pNrm);\n#include <beginnormal_vertex>')
+      .replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * pNrm;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = pLP;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nif (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);');   // nobody: every corner at one point, so no fragment whatever the depth mode makes of z
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tPeople; uniform vec4 uPL; varying vec4 pUv; varying vec3 pK;\n' + PEOPLE_BAYER)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n' + [
+        '{ if (pK.y <= pBay(gl_FragCoord.xy)) discard;',   // the fade, a screen door (never a blend)
+        '  vec4 pa = texture2D(tPeople, pUv.xy), pb = texture2D(tPeople, pUv.zw);',   // both read outside the pick, so each keeps its own mips
+        '  vec4 tx = pK.x > pBay(gl_FragCoord.xy + vec2(2.0, 1.0)) ? pb : pa;',
+        '  tx.rgb = min(tx.rgb / max(tx.a, 0.004), vec3(1.0));   // the atlas holds premultiplied colour: the coverage divided back out',
+        '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2)) * uPL.y;',
+        '  diffuseColor.a *= clamp(tx.a * pK.z, 0.0, 1.0); }',
+      ].join('\n'));
+    const wp = 'cameraPosition - vViewPosition * mat3(viewMatrix)';
+    lampLightPatch(sh, wp, 'crown');
+    // a tree's crown takes 0.12 of the pool it stands in; a walker stands IN the pool, so the share is the card's own
+    // (in this program's text alone: the patch itself is as it was)
+    const lk = sh.fragmentShader.indexOf('float lk = 0.12');
+    if (lk >= 0) sh.fragmentShader = sh.fragmentShader.slice(0, lk) + 'float lk = uPL.x' + sh.fragmentShader.slice(lk + 15);
+    cloudShadowPatch(sh, wp);
+  }
+  // the figure's own shadow: the card as the sun sees it, flat on the ground along the sun's rays (the vehicles' way,
+  // vehShadowMaterial, with the atlas's alpha for the hull)
+  function peopleShadeMaterial() {
+    const m = new THREE.ShadowMaterial({ color: 0x000000, depthWrite: false });
+    m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation; m.blendSrc = THREE.SrcAlphaFactor; m.blendDst = THREE.OneMinusSrcAlphaFactor;
+    m.blendEquationAlpha = THREE.AddEquation; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;   // the bloom's mask in the alpha is left as it was
+    m.stencilWrite = true; m.stencilRef = 1; m.stencilFunc = THREE.NotEqualStencilFunc; m.stencilZPass = THREE.ReplaceStencilOp;   // the vehicles' own mark: no shadow darkens another
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, { uSunW: vehShadowU.uSunW, uShadowA: vehShadowU.uShadowA, uShadeOut: vehShadowU.uShadeOut, uCoreBox: vehShadowU.uCoreBox, tPeople: PPL.uTex, uPS: PPL.uPS });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_vertex>').replace('#include <worldpos_vertex>', '#include <logdepthbuf_vertex>\n#include <worldpos_vertex>');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_fragment>').replace('void main() {', 'void main() {\n#include <logdepthbuf_fragment>');
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aCarFade; attribute vec4 aPB; attribute vec4 aRS; uniform vec3 uSunW; uniform vec4 uPS; varying vec2 vShXZ; varying vec4 pSUv; varying float pSF;')
+        .replace('#include <project_vertex>', [
+          'vec3 pTb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz, LS = normalize(uSunW);',
+          'vec2 pSh = normalize(LS.xz + vec2(1e-5, 0.0));',
+          'vec3 pRt = vec3(pSh.y, 0.0, -pSh.x);',
+          'float pYy = position.y + 0.5;',
+          'vec4 wpS = vec4(pTb + pRt * (position.x * aPB.x) - vec3(LS.x, 0.0, LS.z) * (pYy * aPB.y / max(LS.y, 0.3)) + vec3(0.0, uPS.y, 0.0), 1.0);',
+          'vec4 mvPosition = viewMatrix * wpS;',
+          'gl_Position = projectionMatrix * mvPosition;',
+          'pSUv = vec4(aRS.xy + aRS.zw * vec2(position.x + 0.5, pYy), position.x + 0.5, pYy); pSF = aCarFade; vShXZ = wpS.xz;',
+          'if (aCarFade <= 0.0) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);',   // nobody: every corner at one point
+        ].join('\n'))
+        // a log depth buffer ignores a polygon offset: the flat shade is drawn a hair toward the eye (the vehicles' line, both depth modes)
+        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif' + (ZREV.on ? '\ngl_Position.z /= 0.9993;' : ''))
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uShadowA, uShadeOut; uniform vec4 uCoreBox, uPS; uniform sampler2D tPeople; varying vec2 vShXZ; varying vec4 pSUv; varying float pSF;\n' + PEOPLE_BAYER)
+        .replace('gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );', [
+          'if (pSF <= pBay(gl_FragCoord.xy)) discard;',
+          // uPS.x 1 (__dbg.peopleTune({ shade: 1 })): a plain long soft shade in the hull's place, the A/B the review asked for
+          'float pHull = uPS.x > 0.5 ? 1.0 - smoothstep(0.55, 1.0, length(vec2((pSUv.z - 0.5) / 0.3, (pSUv.w - 0.5) / 0.5))) : texture2D(tPeople, pSUv.xy, -1.5).a;',   // a finer mip than the grazing view asks for: the cut edge stays the figure's, not a coarse mip's blocks
+          'if (pHull < 0.5) discard;',
+          'float shIn = step(uCoreBox.x, vShXZ.x) * step(vShXZ.x, uCoreBox.y) * step(uCoreBox.z, vShXZ.y) * step(vShXZ.y, uCoreBox.w);',
+          'float bk = mix(1.0, getShadowMask(), max(shIn, uShadeOut));',
+          'gl_FragColor = vec4(color, 1.0);',
+        ].join('\n'))
+        .replace('#include <fog_fragment>', '#include <fog_fragment>' + VEH_SHADE_FOG + 'gl_FragColor = vec4(0.0, 0.0, 0.0, uShadowA * bk * (1.0 - shFog));');
+    };
+    m.customProgramCacheKey = () => 'people-shade';
+    return m;
+  }
+  // the meshes, made once, in a frame behind the veil after Ready: one collapsed instance each, so this frame's draw links
+  // the programs against the scene as it stands (its lights, its fog, the post target)
+  function peopleDrawMake() {
+    const D = PPL, t0 = performance.now(), cap = PEOPLE.cap;
+    D.figs = peopleCells();
+    D.out = new Float32Array(cap * PEOPLE.stride);
+    D.iv = new Float32Array(cap * 16);    // a walker: the card's width, its height, the hand-over, the step's phase; then three cells (view A, view B, the sun's view)
+    D.fade = new Float32Array(cap);
+    const one = new THREE.DataTexture(new Uint8Array(4), 1, 1); one.needsUpdate = true;
+    D.uTex.value = one;
+    D.ivb = new THREE.InstancedInterleavedBuffer(D.iv, 16); D.ivb.setUsage(THREE.DynamicDrawUsage);
+    const fade = new THREE.InstancedBufferAttribute(D.fade, 1); fade.setUsage(THREE.DynamicDrawUsage);
+    const at = (o) => new THREE.InterleavedBufferAttribute(D.ivb, 4, o);
+    const quad = () => { const g = new THREE.PlaneGeometry(1, 1); g.deleteAttribute('uv'); g.setAttribute('aCarFade', fade); g.setAttribute('aPB', at(0)); return g; };
+    const cg = quad(); cg.setAttribute('aRA', at(4)); cg.setAttribute('aRB', at(8));
+    const mat = new THREE.MeshStandardMaterial({ alphaTest: 0.5, side: THREE.FrontSide, roughness: 1, metalness: 0, envMapIntensity: 0.2 });
+    mat.onBeforeCompile = peopleCardPatch;
+    mat.customProgramCacheKey = () => 'people-card';
+    const card = D.card = new THREE.InstancedMesh(cg, mat, cap);
+    card.name = 'People';
+    card.instanceMatrix.setUsage(THREE.DynamicDrawUsage);   // identity but for each walker's place (the feet), written every frame
+    { const e = card.instanceMatrix.array; for (let i = 0; i < cap * 16; i += 16) e[i] = e[i + 5] = e[i + 10] = e[i + 15] = 1; }
+    card.frustumCulled = false; card.castShadow = false; card.count = 1;
+    const meshes = [card];
+    if (REAL) {   // the shades are the realistic look's, as the vehicles' are (their uniforms are vehShadowUpdate's)
+      const sg = quad(); sg.setAttribute('aRS', at(12));
+      const shade = D.shade = new THREE.InstancedMesh(sg, peopleShadeMaterial(), 1);
+      shade.name = 'People shadows'; shade.renderOrder = 2;
+      const bg = vehBlobGeom(1.05, 0.85); bg.setAttribute('aCarFade', fade);   // a soft patch about 0.6 m across under the feet (the blob's own falloff takes the outer half)
+      const blob = D.blob = new THREE.InstancedMesh(bg, vehShadowMaterial(true, true, false), 1);
+      blob.name = 'People contact'; blob.renderOrder = 1;
+      meshes.push(shade, blob);
+    }
+    for (const m of meshes) {
+      if (m !== card) { m.instanceMatrix = card.instanceMatrix; m.count = 1; m.frustumCulled = false; m.castShadow = false; }
+      m.userData.reflK = 0;        // never in the river's mirror (reflSweep keeps a set flag)
+      m.userData.people = true;
+      // who reads the sun's map: the card on a computer, the figure's shadow anywhere (r149 hands the map to a mesh that
+      // receives); a mesh made while the receivers are off joins the list they come back from (moonShadowsOff)
+      const recv = m === D.shade || (m === card && !isTouch);
+      m.receiveShadow = recv && !moonNoRecv;
+      if (recv && moonNoRecv) moonNoRecv.push(m);
+      const key = m === card ? 'cardMs' : m === D.shade ? 'shadeMs' : 'blobMs';
+      let tb = 0;
+      m.onBeforeRender = () => { tb = performance.now(); };
+      m.onAfterRender = () => { D.warm[key] = +(performance.now() - tb).toFixed(1); m.onBeforeRender = m.onAfterRender = THREE.Object3D.prototype.onBeforeRender; };
+      groupCity.add(m);
+    }
+    D.fade[0] = 0;   // the one instance of the warm frame is nobody: clipped in the vertex shader, and both programs are linked by its draw
+    D.warm.p0 = renderer.info.programs ? renderer.info.programs.length : 0;
+    if (!PEOPLE.ready && trafficReady && trafficRuns.length) { const t1 = performance.now(); peopleInit(); D.warm.initMs = +(performance.now() - t1).toFixed(1); }
+    D.made = true;
+    D.warm.makeMs = +(performance.now() - t0).toFixed(1);
+  }
+  function peopleAtlasLoad(now) {
+    const D = PPL, A = PEOPLE_ART.atlas;
+    D.loading = true;
+    // each a record's field with the record's own half beside it, so a phone can only ever be handed the half
+    (PEOPLE_SHARP ? artImage(artSrc(A.imgSharp, A.imgHalf)) : artImage(artSrc(A.img, A.imgHalf))).then((im) => {
+      D.loading = false;
+      if (!im) { D.failed++; D.retryAt = performance.now() + 30000; return; }
+      const t = new THREE.Texture(im), mips = renderer.capabilities.isWebGL2 === true;   // its size is no power of two: WebGL 2 mips it as it is
+      t.premultiplyAlpha = true;   // gotcha 16: unpremultiplied, the clear texels' colour mixes into every edge's mips
+      t.generateMipmaps = mips; t.minFilter = mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+      t.anisotropy = anisoOf(4); t.needsUpdate = true;   // left linear: the card's shader decodes it, as the trees' does
+      const old = D.uTex.value;
+      D.uTex.value = freeTexOnUpload(t);
+      if (old) old.dispose();
+      D.uPK.value.z = Math.round(im.height * PEOPLE_ART.figures[0].cells[0][0][3] / A.h);
+      D.atlas = { w: im.width, h: im.height, bytes: Math.round(im.width * im.height * 4 * (mips ? 4 / 3 : 1)), sharp: PEOPLE_SHARP, half: im.width < A.w };
+    });
+  }
+  // The fill's height is the drawn GROUND at the walker's line; what the walker stands on is whatever is laid over it: an
+  // outer district's sidewalk (SIDEWALK_UP over the ground at its ring's points, and by the cut of its triangles 0.07 to
+  // 0.32 over it between them: measured through pickAt under 30 walkers, the median 0.195), the core's own sidewalks
+  // (0.14 to 0.26 over siteY, 35 walkers), or nothing (the far ring, a phone at tier 1: within 0.05 either way). No call
+  // answers the drawn sidewalk's own height, so the lift is the high side of each range: a figure a few centimetres
+  // over the paving stands on its contact shade and reads as standing, where one a few centimetres under it loses its
+  // soles and its shade both. Three points along the walker's way, so a ring's edge is a step of a third at a time
+  const peopleOn = (x, z) => (inCore(x, z) || sidewalkAt(x, z) ? 1 : 0);
+  function peopleUp(x, z, hx, hz) {
+    return PPL.up0 + (PPL.up1 - PPL.up0) * (peopleOn(x, z) + peopleOn(x + hx * 0.4, z + hz * 0.4) + peopleOn(x - hx * 0.4, z - hz * 0.4)) / 3;
+  }
+  // every frame, after the traffic: the walkers near the eye into the instance buffers
+  function peopleStep(now) {
+    const D = PPL;
+    if (!D.made) { if (PERF.ready !== undefined && typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.figures && PEOPLE_ART.figures.length) peopleDrawMake(); return; }
+    if (D.warm.frames < 2) { if (++D.warm.frames === 2) D.warm.p1 = renderer.info.programs ? renderer.info.programs.length : 0; else return; }   // the warm frame has been drawn
+    const t0 = performance.now(), c = camera.position, out = D.out;
+    const n = peopleFill(out, c.x, c.y, c.z);
+    if (n && !D.atlas && !D.loading && now >= D.retryAt) peopleAtlasLoad(now);
+    const show = D.atlas ? n : 0;
+    D.n = show;
+    D.card.count = show; D.card.visible = show > 0;
+    if (D.blob) { D.blob.count = show; D.blob.visible = show > 0 && vehShadowU.uBlobA.value > 0.005; }
+    if (D.shade) { D.shade.count = show; D.shade.visible = show > 0 && vehShadowU.uShadowA.value > 0.005; }
+    if (!show) { D.stepMs = performance.now() - t0; return; }
+    D.uPK.value.x = D.bob; D.uPK.value.y = renderer.domElement.height || 900;
+    const figs = D.figs, nf = figs.length, iv = D.iv, fd = D.fade, me = D.card.instanceMatrix.array, ex = c.x, ez = c.z, HW = D.hand, xf = D.xfade;
+    let sx = sunDir.x, sz = sunDir.z; const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl;
+    for (let i = 0; i < show; i++) {
+      const o = i * 8, x = out[o], z = out[o + 2], hx = out[o + 3], hz = out[o + 4], F = figs[out[o + 5] % nf], ph = out[o + 6], C = F.c, q = i * 16;
+      me[q + 12] = x; me[q + 13] = out[o + 1] + peopleUp(x, z, hx, hz); me[q + 14] = z;
+      fd[i] = out[o + 7];
+      // the step: stride, pass, stride, pass; the second stride mirrored where the figure allows
+      const p4 = ph * 4, fi = Math.floor(p4) & 3, fr = fi & 1, flip = F.sym && fi === 2;
+      // the view against the eye: 0 the front, 1 the back, 2 the side
+      let dx = ex - x, dz = ez - z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
+      const cs = hx * dx + hz * dz, a = Math.acos(cs > 1 ? 1 : cs < -1 ? -1 : cs) * 57.29578, right = hx * dz - hz * dx >= 0;
+      let vA, vB, k = 0;
+      if (a < 45 - HW) vA = vB = 0;
+      else if (a < 45 + HW) { vA = 0; vB = 2; k = (a - 45 + HW) / (2 * HW); }
+      else if (a < 135 - HW) vA = vB = 2;
+      else if (a < 135 + HW) { vA = 2; vB = 1; k = (a - 135 + HW) / (2 * HW); }
+      else vA = vB = 1;
+      let frB = fr, flipB = flip;
+      if (xf > 0 && vA === vB) {   // PPL.xfade (0 by default): the tail of each pose dissolves into the next through the same dither
+        const u = p4 - Math.floor(p4);
+        if (u > 1 - xf) { const nx = (fi + 1) & 3; frB = nx & 1; flipB = F.sym && nx === 2; k = (u - 1 + xf) / xf; }
+      }
+      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = ph;
+      for (let s = 0; s < 3; s++) {
+        let v, f = fr, mir;
+        if (s === 0) { v = vA; mir = v === 2 ? !right : flip; }
+        else if (s === 1) { v = vB; f = frB; mir = v === 2 ? !right : flipB; }
+        else {   // the sun's view of the walker, for the shadow: the nearest view, no hand-over. From the side it is the
+          // passing pose whatever the step: a stride's feet stand 0.4 m either side of the card's own (which may be a front
+          // or a back, feet together), and a shadow that does not start at the feet reads as somebody else's
+          const cz = hx * sx + hz * sz;
+          v = cz > 0.7071 ? 0 : cz < -0.7071 ? 1 : 2; mir = v === 2 ? hx * sz - hz * sx < 0 : flip;
+          if (v === 2) f = 1;
+        }
+        const ci = (v * 2 + f) * 4, w = q + 4 + s * 4;
+        iv[w] = mir ? C[ci] + C[ci + 2] : C[ci]; iv[w + 1] = C[ci + 1]; iv[w + 2] = mir ? -C[ci + 2] : C[ci + 2]; iv[w + 3] = C[ci + 3];
+      }
+    }
+    const im = D.card.instanceMatrix, fa = D.card.geometry.attributes.aCarFade;
+    im.updateRange.offset = 0; im.updateRange.count = show * 16; im.needsUpdate = true;
+    D.ivb.updateRange.offset = 0; D.ivb.updateRange.count = show * 16; D.ivb.needsUpdate = true;
+    fa.updateRange.offset = 0; fa.updateRange.count = show; fa.needsUpdate = true;
+    D.stepMs = performance.now() - t0;
+  }
+  // __dbg.people().draw: what is drawn, the atlas in use and its bytes on the GPU, the two programs' presence, the warm-up
+  function peopleDrawDbg() {
+    const D = PPL, P = (renderer.info.programs || []).map((p) => String(p.cacheKey || '')), has = (k) => P.some((s) => s.indexOf(k) >= 0);
+    return { made: D.made, drawn: D.n, sharp: PEOPLE_SHARP, atlas: D.atlas ? { ...D.atlas } : null, loading: D.loading, failed: D.failed, figures: D.figs ? D.figs.length : 0,
+      programs: { card: has('people-card'), shade: has('people-shade'), total: P.length }, shades: { sun: !!(D.shade && D.shade.visible), contact: !!(D.blob && D.blob.visible) },
+      receive: D.card ? { card: D.card.receiveShadow, shade: !!(D.shade && D.shade.receiveShadow) } : null,
+      warm: { ...D.warm, programs: D.warm.p1 - D.warm.p0 }, stepMs: +D.stepMs.toFixed(3), tune: { bob: D.bob, hand: D.hand, xfade: D.xfade, lamp: D.uPL.value.x, tone: D.uPL.value.y, lift: D.uPK.value.w, shade: D.uPS.value.x, up: [D.up0, D.up1] } };
+  }
+  // __dbg.peopleTune({ bob, hand, xfade, lamp, tone, lift, shade }): the look's numbers at run time, for the review
+  function peopleTune(o) {
+    const D = PPL;
+    if (o) {
+      if (o.bob != null) D.bob = +o.bob; if (o.hand != null) D.hand = clamp(+o.hand, 0.5, 40); if (o.xfade != null) D.xfade = clamp(+o.xfade, 0, 0.9);
+      if (o.lamp != null) D.uPL.value.x = +o.lamp; if (o.tone != null) D.uPL.value.y = +o.tone; if (o.lift != null) D.uPK.value.w = +o.lift; if (o.shade != null) D.uPS.value.x = +o.shade; if (o.up) { D.up0 = +o.up[0]; D.up1 = +o.up[1]; }
+    }
+    return peopleDrawDbg().tune;
+  }
+  // ---- people on the sidewalks: the drawing ends
 
   // ---------------------------------------------------------------- streetlights
   // Every city-maintained lamp: the Streets Department's Street_Poles inventory
@@ -47566,6 +48517,7 @@ float pinOccGate() {
     const now = performance.now();
     for (const r of trafficRuns) if (r.closed) for (const c of r.cars) if (!c.die || !c.closedOut) { if (!c.die) { carDeath(c, now, 'dieClosed', r); gone++; } c.closedOut = true; }
     CLOSURES.runsClosed = n; CLOSURES.carsCleared = (CLOSURES.carsCleared || 0) + gone;
+    if (PEOPLE_ON) peopleClosed();   // Round 227: a closed block is walked by nobody
   }
   function closuresReconcile() {
     const inv = closureInv, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = NEAR_R;
@@ -52473,6 +53425,7 @@ float pinOccGate() {
     updatePatco(now, dt);
     updateFerry(now);   // Round 151
     updateTraffic(now, dt);
+    if (PEOPLE_ON) peopleStep(now);   // Round 227: the walkers, after the traffic (the fill reads its runs and its view); nothing without ?people=1
     updateLights(now);
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
@@ -52633,6 +53586,7 @@ float pinOccGate() {
       // the build moved or dropped; with ?streetpush=0 the surveyed points as they were. A phone of tier 2 keeps no poles
       // the cars standing inside a drawn bus now (their footprints overlapping, 0.2 m of slack), and the cars on a closed run
       mirLights: () => ({ n: MIRL.n, ships: MIRL.shipN || 0, late: Object.fromEntries(MIR_LATE.map((L) => [L.k, L.n || 0])), built: MIRL.built, on: !!MIRL.mesh && MIRL.mesh.visible, opacity: MIRL.mesh ? +MIRL.mesh.material.uniforms.uOpacity.value.toFixed(2) : 0, refl: REFL.on }),   // Round 208
+      people: peopleDbg, peopleAt: peoplePin, peopleProbe, peopleTune,   // Round 227: the walkers' counts and switch, t pinned, and one fill's rows (inert without ?people=1)
       busClips: () => { let clips = 0, near = 0; const kinds = {}; for (const v of BUS_OB.drawn) { const hx = Math.cos(v.yaw), hz = -Math.sin(v.yaw), sp = SEPTA_KIND[v.kind]; for (const r of trafficRuns) for (const c of r.cars) { if (c.die) continue; const dx = c.x - v.dx, dz = c.z - v.dz; if (dx * dx + dz * dz > 400) continue; near++; const M = CAR_MODELS[c.kind], a = Math.abs(dx * hx + dz * hz), l = Math.abs(-dx * hz + dz * hx); if (a < sp.l / 2 + M.l / 2 - 0.2 && l < sp.w / 2 + M.w / 2 - 0.2) { clips++; const cs = Math.cos(c.yaw - v.yaw); kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] = (kinds[(cs > 0.7 ? 'same' : cs < -0.7 ? 'oncoming' : 'crossing') + ((dx * hx + dz * hz) > 0 ? 'Ahead' : 'Behind')] || 0) + 1; } } } return { yield: BUS_YIELD, buses: BUS_OB.drawn.length, near, clips, kinds }; },
       closedCars: () => { let runs = 0, cars = 0; for (const r of trafficRuns) if (r.closed) { runs++; for (const c of r.cars) if (!c.die) cars++; } return { runs, cars, runsClosed: CLOSURES.runsClosed, cleared: CLOSURES.carsCleared || 0, dieClosed: CARC.dieClosed, recs: CLOSURES.recs.filter((q) => q.o >= 3).length, near: CLOSURES.recs.filter((q) => q.o >= 3).slice(0, 6).map((q) => { let bd = 1e9, bc = -1, bcl = false; for (const r of trafficRuns) { if (Math.hypot(r.mx - q.mx, r.mz - q.mz) > r.len + 60) continue; for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - q.mx, r.zs[j] - q.mz); if (d < bd) { bd = d; bc = r.cls; bcl = r.closed; } } } return { addr: q.addr, x: Math.round(q.mx), z: Math.round(q.mz), hw: q.hw, d: Math.round(bd), cls: bc, closed: bcl }; }) }; },
       busObst: () => ({ buses: BUS_OB.n, cells: BUS_OB.cells.size, held: BUS_OB.held, lanes: [...septaVeh.values()].filter((v) => v.snx != null && !v.off).slice(0, 8).map((v) => ({ id: v.id, lane: +(v.lane || 0).toFixed(2), d: +Math.hypot(v.dx - v.snx, v.dz - v.snz).toFixed(2) })) }),   // Round 207

@@ -50,11 +50,13 @@ def is_art(v):
 
 
 def records(o, out):
-    """Every art path a manifest names, as artSrc is handed it: the path, and the same record's <key>Half beside it (or None)."""
+    """Every art path a manifest names, as artSrc is handed it: the path, and the same record's <key>Half beside it (or None).
+    Round 227: a record's sharp copy, <key>Sharp, is handed with the record's own <key>Half (people_art.json's imgSharp
+    with its imgHalf), so a phone takes the half in its place."""
     if isinstance(o, dict):
         for k, v in o.items():
             if is_art(v):
-                h = o.get(k + 'Half')
+                h = o.get((k[:-5] if k.endswith('Sharp') else k) + 'Half')
                 out.append((v, h if is_art(h) else None))
             else:
                 records(v, out)
@@ -237,8 +239,9 @@ def args(text):
 
 
 def own_half(a, b):
-    """artSrc(a, b) hands a record's field and the same record's <field>Half: A.img, A.imgHalf or A[k], A[k + 'Half']."""
-    return b == a + 'Half' or (a.endswith(']') and b == a[:-1] + " + 'Half']")
+    """artSrc(a, b) hands a record's field and the same record's <field>Half: A.img, A.imgHalf or A[k], A[k + 'Half'];
+    or (Round 227) a record's sharp copy and that record's half: A.imgSharp, A.imgHalf."""
+    return b == a + 'Half' or (a.endswith(']') and b == a[:-1] + " + 'Half']") or (a.endswith('Sharp') and b == a[:-5] + 'Half')
 
 
 def region(src, start, end='\n  }\n'):
