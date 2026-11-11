@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 10, 2026, after Round 229 (which shipped after Round 230). Camden's heights are held on a branch.
+Last updated: Nov 11, 2026, after Round 231.
 
 ## The ask
 
@@ -52,7 +52,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **One vertex layout.** The roofs' new bits (Stage 2) and the walls' records (Stage 4) are laid out together.
 - **Every look change** ships behind a flag and goes to Mike as a private side by side (the entry orbit included, see
   the capture skill's `references/poses.md`). Nothing is on by default until he says.
-- **How a round is built** (this worked for Rounds 225 to 230): a git worktree outside Dropbox per item, an implementer,
+- **How a round is built** (this worked for Rounds 225 to 231): a git worktree outside Dropbox per item, an implementer,
   an adversarial reviewer, a fix, a second reviewer; then the lead merges, builds, runs the whole suite, compares
   captures against main himself (`render.mjs --png` and a pixel compare, traffic off; twice on Nov 10 this caught what
   both reviewers missed: a tree renumbering and the dark glass), writes the devlog, commits the built
@@ -64,7 +64,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 | Stage | What | Status |
 |---|---|---|
-| 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batches one and two shipped (Rounds 225, 229), except Camden's heights, held on branch `s1b/camden` for Mike's look. Remainder below. |
+| 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batches one and two shipped (Rounds 225, 229, and Camden's heights as 231). Remainder below. |
 | 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Not started. Needs the two side-by-side pages first. |
 | 3 | Link ahead (the cold load's main fix) | Not started. Built only for an engine where Round 229's probe shows batched linking under half of serial. |
 | 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Not started. |
@@ -91,14 +91,11 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   measurement round two in the beacons; `?cold=<n>` and the link probe. The merge found and fixed a Round 192 bug the
   batch exposed (the city probe's second cube wiped a pending request: dark glass towers in any capture after dark).
 
+- **Round 231** (Stage 1, the batch's fourth package): Camden at its measured heights, shipped at Mike's word after
+  the before and after.
+
 ## In flight (finish these first)
 
-0. **Camden at its measured heights** (Stage 1, data only) is built and reviewed on branch `s1b/camden` and NOT shipped:
-   it has no flag, so it waits for Mike's look at the before and after from Penn's Landing (capture paths in
-   `.audit/2026-11-10-performance-and-realism/round229/open_items.md`; they are in a session scratchpad and may be gone:
-   retake them from the branch). To ship it: merge the branch, rename nothing, run its recipe's checks
-   (`tests/test_wide_repack.py`), and add the two `wide.b64` rules from `round229/claude_md.txt` to CLAUDE.md. Three port
-   structures there were never checked against imagery.
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
@@ -199,8 +196,8 @@ walkers on bare ground where no sidewalk is drawn; an About line saying the peop
 6. May the model stage dated scenes (a game crowd, the holiday tree, fireworks)?
 7. Other people's weak GPUs: does "never resolution" bind strangers' machines? It holds one measured 4K Windows laptop
    at 20 fps.
-8. Camden: the before and after from Penn's Landing (it is held until he has seen it), and three port structures nobody
-   has checked against imagery.
+8. Camden (shipped, Round 231): three port structures nobody has checked against imagery, Camden City Hall's shape
+   (still a 13 m box), and whether to stream the LiDAR tiles east of the river for the 420 buildings still at 10.5 m.
 9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks

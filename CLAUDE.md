@@ -448,9 +448,19 @@ What Round 229 added (Stage 1's second batch):
 - The capture tool carries the first pose's clock in the link (`#t=`), so a capture no longer depends on the hour it is
   run; `--first-live` restores the old behaviour and `--prime <n>` draws n frames before the first pose (use 1 on a
   build before Round 229 when comparing across it). The first frame also seeds the skyline theme and the water's phase.
-- Camden's measured heights (the batch's fourth package) are NOT in Round 229: branch `s1b/camden` holds them until Mike
-  has seen the before and after. Its rules for repacking `wide.b64` are in
-  `.audit/2026-11-10-performance-and-realism/round229/claude_md.txt` and go in here when it ships.
+- Camden's measured heights (the batch's fourth package) shipped apart, as Round 231 (Nov 11, at Mike's "Ship Camden"
+  after the before and after from Penn's Landing). Their rules:
+- `wide.b64` is repacked only through `pack_wide.py --against <a copy of the one it replaces>`, which writes nothing
+  unless height words alone differ (`tests/test_wide_repack.py`). The whole recipe: copy the committed blob aside,
+  `lidar_join.py --skip-city`, `pack_wide.py --against <the copy>`, `bake_storefronts.py --host-heights`, `build.py`;
+  commit `wide_repack.json`, `lidar_east_heights.json` and `storefront_info.json` and move the test's pins.
+  `storefronts.b64` is still never repacked: the sidecar's host heights are the one part a heights-only repack must
+  refresh. The land mask and `people_walk.b64` read no height word and need no re-bake for it.
+- After such a repack `__dbg.colStats().wideColK` must read as before (111,992): a record lifted over 45 m of type 6 or
+  under goes in `WIDE_COLK_KEEP` as a scene point inside its footprint, or the far ring's colours shift. A record lifted
+  over 30 m takes the tower styles and is looked at in a capture before it joins the test's list. A way that is not a
+  building (OSM's `bridge:support`, or one held by name) goes in `lidar_join.py`'s `ROOF_HELD`; never cure a raised bridge
+  structure with a `BRIDGE_SKIP` entry alone, whose `continue` sits before the sampler and would move `wideColK`.
 
 ## The Vine Street Expressway's cut (Round 228)
 

@@ -13955,3 +13955,26 @@ the scene; one load with `?people=1`, whose two programs are made between Ready 
 of frame. The notes are owed too: handoff.md's file table has no row for `lidar_east_heights.json`, `wide_repack.json`,
 `tests/prelink_gpu.html` or the six new test files, and its gotchas 12 and 15 still describe the weather's re-hook after
 the build.
+
+## Round 231 — Camden at its measured heights (Nov 11)
+
+Mike, Nov 11, after the before and after from Penn's Landing and over the river (by day and at night): "Ship Camden".
+This is the fourth package of Stage 1's second batch, held out of Round 229 because it has no flag. Everything about it
+(the join, the heights-only repack and its guard, the bridge anchorage the first review caught, the storefront host
+heights, the three port structures, what was not done) is in Round 229's entry under "Camden at its measured heights";
+the branch's comments, written as Round 229, now say Round 231.
+
+**Shipped as reviewed, merged onto Round 229's page with no conflict.** `wide.b64`: 549 height words changed and
+nothing else; `wideColK` 111,992 as before (read on this build); the page 1,118 bytes larger (the
+nine lines of `WIDE_COLK_KEEP`). `people_walk.b64` and the land mask read no height word and were not re-baked (the
+walk bake reproduces its blob byte for byte on this tree).
+
+**Verified on the merged build.** Parity against Round 229's live page at the ten poses with the weather pinned clear:
+six poses at 0.0005% or under; `orbit-n` 0.0124% (127 pixels across the Delaware: the raised buildings) and
+`night-cityhall` 0.0095% (lit points), both Camden's own and both the figures Round 229's review measured for this branch;
+`r-walnut-topdown` 1.04% (the late-landing grove, its usual top block) and `x-30th-st` 0.17%, each at its own floor. Phone path at tier 1 with the people on and at tier 2: no console error, no failed step. 1,492 tests pass; `docs_check` ok; `PERF.prog.lost` empty and `PERF.wxHook.over` 0.
+
+**Still open, his:** the three port structures nobody has checked against imagery (the office slab at (1794, 3585) kept
+at 33.2 m, and two sheds held at their defaults by name); Camden City Hall at its 13 m default; 420 buildings in the
+central box still at 10.5 m until the tiles east of the river are streamed.
+
