@@ -83,7 +83,7 @@ STAGES = [
       needs=['fetch_footprints', 'fetch_city', 'process_core', 'process_wide', 'process_south', 'fetch_lidar_roofs', 'fetch_boundary'],
       note='shapely; patches scene_wide/scene_south heights in place; --skip-city reuses the committed LUT; east of the Delaware '
            'the roof pass gives the heights, but for the ways in ROOF_HELD (bridge supports, unchecked port structures) '
-           '(Round 229, lidar_east_heights.json)'),
+           '(Round 231, lidar_east_heights.json)'),
     S('lidar_core', 'lidar_core.py',
       inputs=['scene.json', 'lidar_cache/core_join.json?', 'lidar_cache/laz/*.copc.laz?'],
       outputs=['lidar_cache/core_grids.npz', 'lidar_report.json', 'scene.json'], needs=['lidar_join'], fetch=True,
@@ -109,7 +109,7 @@ STAGES = [
       inputs=['scene_wide.json', 'scene_south.json?', 'parts_wide.json?', 'wide_landmarks_research.json?', 'lidar_cache/roof_shapes.json?', 'lidar_city_roofs.json?', 'wall_palette.json?', 'wall_colors.json?'],
       outputs=['wide.b64', 'wide_walls.b64'], needs=['process_wide', 'process_south', 'lidar_join', 'patch_scenes_facade', 'roof_tags', 'fetch_lidar_roofs', 'bake_wall_colors'],
       note='parts_wide.json (building:part pieces) is hand-maintained; a heights-only repack runs by hand with --against '
-           '<a copy of the wide.b64 it replaces> and writes wide_repack.json (Round 229)'),
+           '<a copy of the wide.b64 it replaces> and writes wide_repack.json (Round 231)'),
     S('pack_city', 'pack_city.py',
       inputs=['osm_city_raw.json', 'lidar_city_heights.json?', 'lidar_cache/opa_city.json?', 'lidar_cache/roof_city.json?', 'lidar_cache/roof_shapes.json?', 'lidar_city_roofs.json?'],
       outputs=['city.b64'], needs=['fetch_city', 'lidar_join', 'opa_join', 'roof_colors', 'roof_tags', 'fetch_lidar_roofs'],
@@ -146,7 +146,7 @@ STAGES = [
       note='OSM businesses over the wide and south boxes'),
     S('bake_storefronts', 'bake_storefronts.py',
       inputs=['lidar_cache/shops_raw.json', 'lidar_cache/shop_tiles/*.json', 'scene.json', 'scene_wide.json', 'scene_south.json', 'wide.b64'], outputs=['storefronts.b64', 'storefront_info.json'],
-      needs=['fetch_shops', 'process_core', 'process_wide', 'process_south', 'pack_wide'], note='shapely; one storefront per business on its street-facing wall, and its name, trade, hours and place on the wall in the sidecar, measured on the walls the page draws (Round 189: never rewrites storefronts.b64 unless --rebake); after a heights-only repack of wide.b64, --host-heights by hand gives the sidecar the new heights of the hosts lidar_east_heights.json moved, and bakes nothing (Round 229)'),
+      needs=['fetch_shops', 'process_core', 'process_wide', 'process_south', 'pack_wide'], note='shapely; one storefront per business on its street-facing wall, and its name, trade, hours and place on the wall in the sidecar, measured on the walls the page draws (Round 189: never rewrites storefronts.b64 unless --rebake); after a heights-only repack of wide.b64, --host-heights by hand gives the sidecar the new heights of the hosts lidar_east_heights.json moved, and bakes nothing (Round 231)'),
     S('bake_schuylkill', 'bake_schuylkill.py', inputs=['delaware.json'], outputs=['schuylkill.json'], fetch=True, needs=['bake_delaware'],
       note='the Schuylkill\'s real course from OSM waterway ways: the carve follows it and the park reach gets its water sheet; the hole the Delaware\'s quad leaves over its banks stays clear of delaware.json'),
     S('bake_rail', 'bake_rail.py', inputs=[], outputs=['rail_amtrak.json'], fetch=True,

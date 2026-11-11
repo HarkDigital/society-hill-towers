@@ -7,7 +7,7 @@ and pack_outskirts.py too, so no tier draws two walls on one plane facing the sa
 Records are tuples (cx, cz, area, h, minH, fields) with fields[1] the ring, a list of
 (x, z); nudge_coplanar insets rings in place. Stdlib only.
 
-repack_diff (Round 229) is the guard for a repack that is meant to move heights and nothing
+repack_diff (Round 231) is the guard for a repack that is meant to move heights and nothing
 else: it walks two packed tiers record by record and names every difference that is not a
 height word (or the storey pitch the attribute word derives from it)."""
 import math
@@ -102,7 +102,7 @@ def nudge_coplanar(items, d=0.4):
         items[idx][5][1] = inset_ring(items[idx][5][1], d)
     return len(insets)
 
-# A repack that is meant to change heights only (Round 160's 43 confirmed spikes, Round 229's measured Camden) must
+# A repack that is meant to change heights only (Round 160's 43 confirmed spikes, Round 231's measured Camden) must
 # change NOTHING else: the page seeds every record's wall colour, style, roof lottery and reservoir draw from its
 # record number, and wide_walls.b64 rides the same order, so one record more, fewer or out of place re-deals the look of
 # every building after it. This walks an old and a new blob together and sorts every difference into `changes` (a

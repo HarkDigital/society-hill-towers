@@ -38,7 +38,7 @@ Rules:
     max(tag, measured) since it still sees real OSM tags
   - skip: t in (ship, stadium, arena), entries with minH (3D parts), custom towers
   - clamp 2.5..550 m
-  - east of the Delaware (Round 229): the City's footprints stop at the city line, so a scene
+  - east of the Delaware (Round 231): the City's footprints stop at the city line, so a scene
     building the join above leaves unmeasured, standing outside the city line (city_limit.json)
     and east of EAST_X, takes the citywide roof pass's own height where that pass measured
     its OSM way (lidar_city_roofs.json: P90 above ground for a flat roof, the ridge for a
@@ -69,7 +69,7 @@ SPIKE_AGREE = 0.25         # ... while approx_hgt agrees with that roof within 2
 SPIKE_COVER = 0.5          # the flat-roofed way covers at least half the footprint
 WORSHIP_T = 'worship'
 
-# Round 229: Camden at its measured heights. The City's footprint heights end at the city line, so every building east
+# Round 231: Camden at its measured heights. The City's footprint heights end at the city line, so every building east
 # of the Delaware stood at process_osm's default for its kind: of the 1,195 buildings of scene_wide.json between
 # x 1,250 and 2,400 and z -1,400 and 3,600, 614 at exactly 10.5 m, 180 at 13 and 163 at 11, one flat shelf of boxes
 # behind the Battleship New Jersey. The 2022 flight's tiles reach about 750 m into New Jersey (scene x 2,010 on the
@@ -83,7 +83,7 @@ EAST_X = 1000.0            # a belt under the city line test: nothing west of th
                            # 996, the American Water building at 1,192; 38 of the wide scene's New Jersey buildings
                            # stand west of 1,250, the water's edge the river walk looks straight at)
 ROOF_COVER = 0.5           # the building and its way cover at least half of each other: one building, one way
-# Round 229, the review: what the pass measured is not always a roof, and a reading nothing can vouch for is not a
+# Round 231, the review: what the pass measured is not always a roof, and a reading nothing can vouch for is not a
 # height. A way named in ROOF_HELD (roof_ways adds the bridge supports to it) gives no height: its building keeps the
 # default it had, its blob word does not move, and lidar_east_heights.json lists it under "held" with what the pass
 # read and why.
@@ -303,8 +303,8 @@ def measure(poly_pts, holes_pts=None, use_max=False):
 report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'confirmed_spikes': len(spiked), 'sets': {}}
 spike_log = []   # (set, name, cx, cz, what the join gave before Round 160, what it gives now)
 deltas = []  # (|dh|, set, name, cx, cz, old, new)
-east_rows = []   # Round 229: [set, building index, way id, form, old h, new h, cx, cz, name], every height the roof pass gave
-east_held = []   # Round 229, the review: [way id, form, what the pass read, cx, cz, why] for every ROOF_HELD way a building matched
+east_rows = []   # Round 231: [set, building index, way id, form, old h, new h, cx, cz, name], every height the roof pass gave
+east_held = []   # Round 231, the review: [way id, form, what the pass read, cx, cz, why] for every ROOF_HELD way a building matched
 
 def snapshot_path(path):
     """lidar_cache/<scene>.pre_lidar.json: the scene's heights as they were before any LiDAR pass."""
@@ -338,7 +338,7 @@ def patch_scene(path, tag):
         worship = b.get('t') == WORSHIP_T
         h, cov, touched = measure(poly, b.get('holes'), use_max=worship)
         if h is None:
-            # Round 229: east of the Delaware the roof pass's own measurement, where it has one for this building's way
+            # Round 231: east of the Delaware the roof pass's own measurement, where it has one for this building's way
             cx = sum(p[0] for p in poly) / len(poly)
             cz = sum(p[1] for p in poly) / len(poly)
             rp = None
@@ -398,7 +398,7 @@ def patch_scene(path, tag):
 # --- wide + south scenes (patched in place; pack_wide.py reads them) ---
 patch_scene('scene_wide.json', 'wide')
 patch_scene('scene_south.json', 'south')
-# Round 229: the roof pass's heights east of the river, row by row (tests/test_wide_repack.py holds wide.b64 to them)
+# Round 231: the roof pass's heights east of the river, row by row (tests/test_wide_repack.py holds wide.b64 to them)
 with open('lidar_east_heights.json', 'w') as f:
     f.write('{"rule":"outside the city line and east of x %g, unmeasured by the City footprints, the roof pass way covering '
             'at least %g of the building and the building of it; a way listed under held gives no height and its building keeps its default",'
