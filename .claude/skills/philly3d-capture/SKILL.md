@@ -98,6 +98,36 @@ its own, so the page's fallback draws that first frame from a timer about 1.5 s 
 the button; `__dbg.frameOnce()` lights it at once. `__dbg.PERF.enterBy` reads `'timer'`
 when the fallback did it, and `__dbg.PERF.lit - __dbg.PERF.ready` is the wait in ms.
 
+That first frame is drawn at the REAL hour and date, before any tool can set a clock
+or a pose, and whatever a first frame seeds then shows in a capture taken at another
+hour than its pose's. Round 229 measured three such things in one parity run after dark:
+
+- the city's probe kept Center City's cube from the night frame under a day clock, and
+  the glass towers drew grey-black by day, 6.34% of the entry orbit's pixels. That one
+  was a bug in the page, on the build before as well once a frame was forced first, and
+  a visitor could reach it; it is fixed (`cityEnvTick`, `tests/test_cityenv_request.py`);
+- the skyline theme is seeded by the first frame and eases 20 s from there, so a night
+  pose a few seconds of model time later wore the real night's colours half eased to the
+  pose's date (3.9% at City Hall, with two runs of either build identical to the pixel);
+- a build from Round 229 on has drawn one frame more than an older build at every pose,
+  so the water's phase and anything else that moves by the frame's dt is one frame on
+  (5.8% over the Schuylkill at 30th Street, 0.11% at the waterfront).
+
+So `render.mjs` now carries its first pose's clock in the link (`#t=YYYYMMDD,minutes`,
+which the page reads before it builds) and the first frame is drawn under it: a capture
+no longer depends on the hour it is taken at. `--first-live` leaves the first frame to
+the real clock, which is how to look for a first-frame latch on purpose (a visitor whose
+first frame is not what they later look at, a tab loaded in the background or the time
+panel, can reach whatever it finds). `--prime 1` draws one frame after Enter and before
+the first pose: use it on a build from BEFORE Round 229 when it is compared with a newer
+one, so both have drawn the same frames. With both, Round 229 against the build before
+it was at each pose's own floor, bar the round's one data change (Camden's heights: 127
+pixels across the Delaware at `orbit-n`, 97 lit points at `night-cityhall`). A difference
+that is the same to the pixel on every run is never noise: find what the first frame
+seeded. Two poses do have noise of their own, in some runs of one build against itself:
+`r-walnut-topdown` (one grove, 1.04%) and `schuylkill-air` (0.06 to 0.27%); `x-30th-st`
+sits at 0.12 to 0.14% always.
+
 ### 5. Get past the chrome
 
 ```js

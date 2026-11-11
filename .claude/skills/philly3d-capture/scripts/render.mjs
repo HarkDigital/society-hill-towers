@@ -13,6 +13,14 @@
 //   --eval <file.js> runs that file's expression in the page after the last pose and prints its value (a probe).
 //   --png saves lossless PNGs (for flicker_diff.py) in place of the JPEGs.
 //   --touch emulates a phone (touch points, mobile metrics, pixel ratio 1.25): the page's isTouch path; use --w 740 --h 360.
+//   The first pose's clock rides the link (#t=YYYYMMDD,minutes) so the page's FIRST frame is drawn under it. Since Round 229
+//     the page draws that frame itself, from a timer, before this tool can set a clock (Enter lights only after it), and
+//     without the pin it is drawn at the real hour and date: whatever a first frame seeds then shows in the capture (the
+//     skyline theme eases 20 s from the real night's colours; the city's probe kept a night cube under a day clock until
+//     Round 229's fix). --first-live leaves the first frame to the real clock, to look for exactly that.
+//   --prime <n> draws n frames after Enter and before the first pose. A build from before Round 229 draws no frame of its
+//     own, so it is one frame behind a newer build at every pose (the water's phase, anything eased by the frame's dt):
+//     capture it with --prime 1 when the two are compared.
 //   Prints a JSON summary (files written, PERF.failed, the page's first 40 console warnings and errors, ms per pose).
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, statSync, createReadStream, existsSync } from 'node:fs';
@@ -55,6 +63,10 @@ const releaseSlot = () => { try { rmSync(slot, { recursive: true, force: true })
 process.on('exit', releaseSlot);
 const port = +opt('port', 0) || await freePort();
 const poses = JSON.parse(readFileSync(posesPath, 'utf8'));
+if (!args.includes('--first-live') && !/(^|&)t=/.test(url.split('#')[1] || '')) {   // the first frame under the first pose's clock (see the header)
+  const c = (poses[0] && poses[0].clock) || [2026, 10, 12, 780];
+  url += (url.includes('#') ? '&' : '#') + 't=' + (c[0] * 10000 + c[1] * 100 + c[2]) + ',' + c[3];
+}
 mkdirSync(outdir, { recursive: true });
 const udd = mkdtempSync(path.join(os.tmpdir(), 'p3d-render-'));
 const flags = ['--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + udd, '--no-first-run', '--no-default-browser-check',
@@ -99,6 +111,7 @@ if (!ready) { console.error('page never became ready'); chrome.kill(); if (serve
 const buildSecs = Math.round((Date.now() - t0) / 1000);
 await ev("for (const id of ['btnGuideClose', 'btnEnter']) { const el = document.getElementById(id); if (el) el.click(); } for (const id of ['btnTransit', 'btnIndego']) { const el = document.getElementById(id); if (el && el.classList.contains('on')) el.click(); } 1");
 const out = [];
+for (let i = 0; i < +opt('prime', 0); i++) { await ev('__dbg.frameOnce(); 1'); await sleep(100); }
 for (const p of poses) {
   const t1 = Date.now();
   const clock = p.clock || [2026, 10, 12, 780];
