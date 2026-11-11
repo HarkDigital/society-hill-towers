@@ -14080,3 +14080,31 @@ chose; `?parkboth=0.6&parkfill=1` is the lighter column. The harness at the new 
 kerbs, residential sides 62 to 100% full (mean 0.85; a short side can fill whole under the cap), two-way tertiaries
 0.74, the clearance sweep still 0 of 736 under 0.3 m and no kerb lost. Car size stays 0.88 (he did not ask for 0.82 or
 0.92).
+
+## Round 234 — Mike's picks from the first side-by-side page: the sky's fill at 1.2, the city behind the veil (Nov 11)
+
+Mike, Nov 11: "I saved my picks, read them. I [want] the 1.2 to go into place". The page's database held one saved pick,
+`picks/loading` = `veilon` (the city behind the title); the fill's 1.2 came in the chat. The roofs' sheen and the
+far-map switch had no pick, so both stay as they were (the page's suggestion for each was to keep today).
+
+**What changed (two lines of JavaScript, no shader text).**
+- `KEYWX.fill` 1.8 to 1.2: the clear sky's extra fill in the shade (Round 188's, `keyWeather`). The exposure still gives
+  back what the fill adds to a sunlit street, so the change is in the shade: at 1.2 it comes up less. Night and a closed
+  deck are untouched (the fill scales with `dayF` and the key), and `?real=0` never reads it.
+- `VEIL_CITY` on by default on a computer (`!isTouch`), `?veilcity=0` off; a touch device keeps the plain veil unless
+  `?veilcity=1` (he saw it on a computer only). It shows the city behind the title about 5 s into a load.
+
+**Measured** (headless, this Mac, `?wx=clear`, traffic off, against Round 232's page): the ten parity poses by day move
+1.2 to 4.3 levels of 255 on average (largest single pixel 13 to 68) with no block of change; `night-cityhall` is
+identical. The veil drew 14 times in a load for 6.4 ms of the page's time in all; Ready 26.3 s against 27.3 s
+(noise on a loaded machine). The phone path at tier 1: the fill 1.2, the veil off, no error. Rebased onto Round 233
+(another session's parked cars), 1,494 tests pass; two tests' pins moved (the fill and the veil's default).
+
+**The glass, which the fill moves.** `glass_calibrate.py` re-run on this build and on main's (fill 1.8) the same hour:
+main itself now fails the calibration test's own bounds (the W's median colour error 12.9 against the 11.5 its
+recorded gap allows; 34 of 118 measures past tolerance; pose `twopenn-50` no longer records Two Penn), so the committed
+`tests/glass_calibration.json` is older than the page and the test passes on it. The fill moves the towers both ways:
+the W 12.9 to 13.3, 1818 Market 20.9 to 24.2, 1706 Rittenhouse 2.5 to 4.4; Jefferson's Honickman Center 16.3 to 13.7,
+CHOP Roberts 11.5 to 9.7, The Alexander 13.1 to 11.3; 39 measures past tolerance against 34. The committed file was
+left as it was: re-baselining it, and finding what moved it since, is its own task (PLAN.md, Stage 1).
+

@@ -1,4 +1,5 @@
-"""Round 229 (Stage 1 of the Nov 10 plan): ?veilcity=1, a computer's veil showing the city rising. Off by default.
+"""Round 229 (Stage 1 of the Nov 10 plan): ?veilcity=1, a computer's veil showing the city rising. On by default on a
+computer since Round 234 (Mike's pick); a touch device keeps the plain veil unless ?veilcity=1.
 
 Under the desktop post pipeline a flush behind the veil draws into the float target and never presents, so a computer
 shows an empty veil for the whole build. With the flag each flush ends with one composite of its own picture onto the
@@ -30,7 +31,7 @@ def cut(a, b, text=SRC):
     return text[i:text.index(b, i + len(a))]
 
 
-VEIL = cut('  const VEIL_CITY = /[?&]veilcity=1\\b/.test(location.search);', '\n\n  const scene = new THREE.Scene();')
+VEIL = cut('  const VEIL_CITY = ', '\n\n  const scene = new THREE.Scene();')
 
 
 def node(script):
@@ -41,7 +42,7 @@ def node(script):
 
 
 HARNESS = r'''
-const location = { search: SEARCH };
+const location = { search: SEARCH }, isTouch = TOUCH;
 const PERF = {}, calls = [];
 const POST = { on: POST_ON }, ZREV = { sub: ZSUB };
 const postRT = { texture: 'scene-tex' }, postA = { texture: 'bloom-tex' };
@@ -57,19 +58,25 @@ const out = { flag: VEIL_CITY };
 '''
 
 
-def run(body, search='?veilcity=1', post=True, sub=False, bloomw=True):
-    h = HARNESS.replace('SEARCH', json.dumps(search)).replace('POST_ON', 'true' if post else 'false').replace('ZSUB', 'true' if sub else 'false')
+def run(body, search='?veilcity=1', post=True, sub=False, bloomw=True, touch=False):
+    h = HARNESS.replace('SEARCH', json.dumps(search)).replace('TOUCH', 'true' if touch else 'false').replace('POST_ON', 'true' if post else 'false').replace('ZSUB', 'true' if sub else 'false')
     h = h.replace('BLOOMW', ", tBloomW: { value: null }, uBloomW: { value: 1 }" if bloomw else '').replace('\nVEIL\n', '\n' + VEIL + '\n')
     return node(h + body + '\nconsole.log(JSON.stringify(out));')
 
 
 @unittest.skipUnless(shutil.which('node'), 'Node.js unavailable')
 class Show(unittest.TestCase):
-    def test_off_by_default(self):
-        for q in ('', '?dev=1', '?veilcity=0', '?veilcity=10', '?veilcity', '?xveilcity=1'):
-            self.assertFalse(run('', search=q)['flag'], q)
-        for q in ('?veilcity=1', '?dev=1&veilcity=1', '?veilcity=1&dpr=1'):
+    def test_on_by_default_on_a_computer(self):
+        # Round 234 (Mike's pick on the first side-by-side page): a computer shows the city behind the title unless
+        # ?veilcity=0; a touch device keeps the plain veil unless ?veilcity=1
+        for q in ('', '?dev=1', '?veilcity=10', '?veilcity', '?xveilcity=1', '?veilcity=1'):
             self.assertTrue(run('', search=q)['flag'], q)
+        for q in ('?veilcity=0', '?dev=1&veilcity=0'):
+            self.assertFalse(run('', search=q)['flag'], q)
+        for q in ('', '?dev=1', '?veilcity=0', '?xveilcity=1'):
+            self.assertFalse(run('', search=q, touch=True)['flag'], q)
+        for q in ('?veilcity=1', '?dev=1&veilcity=1'):
+            self.assertTrue(run('', search=q, touch=True)['flag'], q)
         self.assertIn('    if (VEIL_CITY) veilCityShow();', SRC)
         self.assertEqual(SRC.count('veilCityShow()'), 2)      # its definition and the flush's one call, behind the flag
 

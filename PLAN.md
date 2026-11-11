@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 233 (parked cars and car size, shipped).
+Last updated: Nov 11, 2026, after Round 234 (the side-by-side page's picks).
 
 ## The ask
 
@@ -105,16 +105,12 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 ## In flight (finish these first)
 
-1. **Mike's first side-by-side page is published** (Nov 11, private to him):
-   https://claude.ai/artifact/RKJaq5QkvXZt11PkuWnMdX . Four looks rendered from main at Round 231 with only one
-   run-time setting changed per pair: the clear sky's fill (`__dbg.keyLight` 1.8, 1.2, 1.0), the buildings' roughness
-   (0.92 against 0.65), the far-map switch (`__dbg.farWideAt` 250 against 360) and the `?veilcity=1` loading screen.
-   He picks on the page; the picks are kept in its database (`picks/<look id>`: `choice`, `note`, `at`) and read back with
-   the ArtifactData tool. Claude's suggestions on the page: hold the shade (the fill alone barely deepens it and lightens
-   the W's glass; the tone-curve half needs the shader release, so render it on a test build next), keep the matte roofs
-   (the sheen washes out South Philadelphia's roofs toward the sun), leave the far-map switch (no visible gain), and the
-   veil is his call (it shows the city in about 5 s, then sits dim and still, and jumps at Ready). Also seen: a
-   yellow-green haze toward a low sun at 16:10 in today's page, with every setting; not yet looked into.
+1. **The first side-by-side page has his picks** (https://claude.ai/artifact/RKJaq5QkvXZt11PkuWnMdX, private): the clear
+   sky's fill at 1.2 (said in chat) and the city behind the loading screen (saved on the page) shipped as Round 234. He
+   made no pick on the roofs' sheen or the far-map switch, so both stay as they were. Still to do from it: the light's
+   other half (the straighter day toe, shader text, Stage 2), shown on a test build first; the yellow-green haze toward a
+   low sun at 16:10, seen in every variant, not yet looked into; and the glass calibration, which has drifted on main
+   (below, Stage 1's remainder).
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
@@ -125,11 +121,15 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 ## Stage 1: what is left
 
 - The entry orbit captures (eight azimuths, day and 21:30) and a retake of the day set, which predates Rounds 222 to 228.
-- **Mike's first side-by-side page** (published Nov 11, see In flight 1; waiting on his picks), on a staged copy, never the live site: the light at fill 1.0, 1.2 and 1.8
+- **Mike's first side-by-side page** (published Nov 11, picked; Round 234 shipped his picks), on a staged copy, never the live site: the light at fill 1.0, 1.2 and 1.8
   (`__dbg.keyLight`), roofs at roughness 0.65 toward the sun, the entry orbit's shadows with the far-map switch at
   360 m; and the `?veilcity=1` veil. This page decides what Stage 2 turns on.
 - The service worker and the reload: Round 229's navigation fields must first confirm that a reload under the worker
   downloads the whole page again; only then let Chromium navigations bypass the relay in `sw.js`.
+- **The glass calibration has drifted on main** (re-measured Nov 11 with `glass_calibrate.py`, fill 1.8): the W's median
+  colour error is 12.9 against the 11.5 its recorded gap allows, 34 of 118 measures fail, and pose `twopenn-50` no
+  longer records Two Penn at all. `tests/glass_calibration.json` is the old measure, so the test passes on it. Re-baseline
+  it (and find what moved, Rounds 222 to 233) before the Stage 2 train changes any glass.
 - The deploy's two verify lines for the server config (the art's cache header; gzip through a `Via` header).
 - Round 229's open findings (its devlog entry lists them under "Known, open"): a computer's second and third frames still link programs
   under a lit button; tier 2 still links about ten weather programs in its first frame; `beacons.py`'s engine line
@@ -145,8 +145,9 @@ its measured roof forms; crisp shadows in the entry orbit.
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence
 Hall and Founder's Hall; generated fronts and skins answering the clock and the weather; door lamps and light out of
 open shops; snow that lies as long as the real snow.
-The light, riding at zero strength until his pick: the afternoon shade (a straighter day toe, the clear-sky fill handed
-back toward Round 54's ratio; the W's glass calibration must not move), and materials that answer the sun.
+The light: the clear-sky fill is already 1.2 (Round 234, his pick); what is left is the straighter day toe, shown on a
+test build first. Materials that answer the sun: he made no pick on the first page, where the sheen washed out South
+Philadelphia's roofs toward the sun; not on the train unless he asks again.
 
 ## Stages 3 to 6, in one line each
 
@@ -209,8 +210,8 @@ walkers on bare ground where no sidewalk is drawn; an About line saying the peop
 1. The people: his first look, then the list of decisions above.
 2. Three minutes of flying the site on his Mac, then once with `?dpr=1` (Stage 6 cannot be planned without it).
 3. May the beacon name the graphics chip on website computers (one sentence in the privacy policy)?
-4. The veil: may a computer's veil show the city rising (`?veilcity=1`), may it name the compile wait, may the bar
-   stand for time?
+4. The veil: a computer's veil shows the city rising since Round 234 (his pick). Still his: may it name the compile wait,
+   may the bar stand for time, and should it be drawn from the first view's camera so the view does not jump at Ready?
 5. The side-by-side pages when they exist: roofs and the light by day; the night; the museum's wash.
 6. May the model stage dated scenes (a game crowd, the holiday tree, fireworks)?
 7. Other people's weak GPUs: does "never resolution" bind strangers' machines? It holds one measured 4K Windows laptop

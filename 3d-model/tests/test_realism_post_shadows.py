@@ -215,9 +215,11 @@ console.log(JSON.stringify(out));''' % (ms, sw, kw)
     def test_the_clear_skys_fill(self):
         # the review: the shade read blue-black; the sky's share rises and the sunlit street keeps its level exactly
         c = self.r['clear']
-        self.assertAlmostEqual(c['fill'], 1.8)
+        # Round 234 (Mike's pick, Nov 11): the fill is 1.2, not Round 188's 1.8, so the shade comes up less
+        self.assertAlmostEqual(c['fill'], 1.2)
         self.assertAlmostEqual(c['sunlit'], 1.0, places=3)
-        self.assertGreater(c['shade'], 1.25)          # the shade a quarter brighter or more
+        self.assertGreater(c['shade'], 1.05)          # the shade still brighter than with no fill at all
+        self.assertLess(c['shade'], 1.25)             # and no longer a quarter brighter
         o = self.r['overcast']
         self.assertLess(o['fill'], 1.4)                # a closing deck takes the clear sky's fill with the key
         self.assertAlmostEqual(o['sunlit'], 1.0, places=3)

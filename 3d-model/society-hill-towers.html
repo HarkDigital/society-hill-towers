@@ -9697,7 +9697,9 @@ RB.add({
   // Where the canvas is drawn through reversed depth's own framebuffer and no post pipeline (ZREV.sub: an iPhone, a
   // computer under ?bloom=0) a flush is not presented either, and the flag presents it with the frames' own blit.
   // PERF.veilCity counts the presents and their ms (the calls' CPU: the pass itself is the GPU's)
-  const VEIL_CITY = /[?&]veilcity=1\b/.test(location.search);
+  // Round 234 (Mike, Nov 11, his pick on the first side-by-side page: the city behind the title): on by default on a
+  // computer, where he saw it; a touch device keeps the plain veil unless ?veilcity=1, and ?veilcity=0 turns it off
+  const VEIL_CITY = /[?&]veilcity=1\b/.test(location.search) || (!isTouch && !/[?&]veilcity=0\b/.test(location.search));
   PERF.veilCity = { on: VEIL_CITY, n: 0, ms: 0 };
   function veilCityShow() {
     const t0 = performance.now();
@@ -12918,7 +12920,10 @@ RB.add({
   // overcast haze at two thirds of the sky over it, the review's (113, 118, 116) under (178, 189, 196)). Called by
   // applyLighting at its exposure line with the share of the sun's key the deck left it (sunDeckK: the fog's share is
   // taken here, once); returns the exposure's factor. ?real=0: 1, nothing changed
-  const KEYWX = { k: 1, ec: 1, closed: 0, off: false, fill: 1.8, comp: 1 };
+  // Round 234 (Mike, Nov 11, from the first side-by-side page: "I want the 1.2 to go into place"): the clear sky's fill is
+  // 1.2, not Round 188's 1.8, so sun and shade part a little more on a clear afternoon. It moves the W's blue glass 7 to 12
+  // levels paler at 15:30 (measured on that page), which he saw before he picked it
+  const KEYWX = { k: 1, ec: 1, closed: 0, off: false, fill: 1.2, comp: 1 };
   function keyWeather(dayF, deckK) {
     if (!REAL) return 1;
     const closed = smooth(0.85, 0.98, WX.cover);
