@@ -7,7 +7,8 @@ awaited faster than the same programs linked one at a time? Nothing drawn change
   main runs one branch that is never taken and that no compiler can remove, so the browser's and the system's shader caches
   miss. Without the flag no wrap is installed and no source differs; the flag is read once, kept nowhere, never rides a
   copied link, and a salted load says so on every beacon (cs).
-- The link probe runs as build() ends on a cold load alone (the link timers' own verdict), once a device and build: copies
+- The link probe runs as build() ends on a cold load alone (the link timers' own verdict, and the median as it stands at the
+  call), once a device and build, or once a week where the page cannot tell its build (the app: the review): copies
   of one of the page's own programs, each salted, one linked and waited on, then three issued together and waited on, then
   one more, each followed by a first draw with its mesh's vertex layout into a small target of the frame's kind. It leaves
   nothing behind (every object deleted, every binding put back, no GL error), is in none of the link timers' counts, and
@@ -161,10 +162,11 @@ console.log(JSON.stringify({ n: COLD.n, ret, v: v.src === VS, f: f.src === coldS
         self.assertLess(SRC.index('const COLD = PERF.salt = '), SRC.index('\n  let renderer;\n'), 'before the first context exists (the reversed-Z probe\'s throwaway one)')
         # a copied link never carries it (the site's Copy Link carries the rest of the query)
         q = cut(SRC, '  const shareQuery = () => {', '\n  };\n')
-        self.assertIn(".replace(/[?&](?:cold|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?')", q)
-        strip = lambda x: re.sub(r'^&', '?', re.sub(r'[?&]gfx=[^&#]*', '', re.sub(r'[?&](?:cold|probe)=[^&#]*', '', x)))
-        self.assertEqual([strip(x) for x in ('?cold=7', '?cold=7&dev=1', '?dev=1&cold=7&probe=1', '?wx=snow&probe=0&gfx=auto&dev=1', '?coldms=0', '?dev=1')],
-                         ['', '?dev=1', '?dev=1', '?wx=snow&dev=1', '?coldms=0', '?dev=1'])
+        # the review: nor ?coldms, which would have the other device read cold, probe, and beacon both as a visitor's
+        self.assertIn(".replace(/[?&](?:cold|coldms|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?')", q)
+        strip = lambda x: re.sub(r'^&', '?', re.sub(r'[?&]gfx=[^&#]*', '', re.sub(r'[?&](?:cold|coldms|probe)=[^&#]*', '', x)))
+        self.assertEqual([strip(x) for x in ('?cold=7', '?cold=7&dev=1', '?dev=1&cold=7&probe=1', '?wx=snow&probe=0&gfx=auto&dev=1', '?coldms=0', '?dev=1&coldms=80&wx=fog', '?dev=1', '?uncold=5&scold=1')],
+                         ['', '?dev=1', '?dev=1', '?wx=snow&dev=1', '', '?dev=1&wx=fog', '?dev=1', '?uncold=5&scold=1'])
         for fn in ('  function writePrefs() {', '  function viewState('):
             self.assertNotIn('COLD', cut(SRC, fn, '\n  }\n'))
 
@@ -263,7 +265,8 @@ renderer.capabilities.isWebGL2 = true;
 renderer.properties = { get: (m) => m.props || (m.props = {}) };
 LINK.off(); linkInstall(g2);   // the link timers' instance wraps on this context, as on the page's
 const POST = { on: true }, ZREV = { on: true };
-let glDead = false;
+let glDead = false, IN_APP = false;
+let WALL = Date.parse('11/12/2026 09:30:00'); Date.now = () => WALL;   // the wall clock, moved by hand (the document's date below is two days before it: a date the page can believe)
 const store = new Map(), localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => { store.set(k, String(v)); } };
 document.lastModified = '11/10/2026 20:00:00';
 const K = (c) => ['standard', 'highp', 3001, 0, '', 0, true, false, false, 0, 0, 2, 0, 0, 0, 1, 0, 1, 0, 0, 0, 1, 4, 0, 0, 3201, 1, 2, 3001, c].join();
@@ -451,6 +454,72 @@ console.log(JSON.stringify(out));
         self.assertEqual([o['dead'], o['gl1'], o['markerEnd']], [[False, False], [False, False], False])
         self.assertEqual(o['private'], [True, True], 'where nothing can be kept the probe still runs')
 
+    def test_a_load_that_began_slow_and_turned_out_warm_does_not_probe(self):
+        # the review: LINK.cold latches the first time the running median of ten or more programs passes the line and is
+        # never taken back, so the median as it stands at the call (the ready beacon's own number) must be over it too
+        o = probe_node(self, r'''
+wear('slow-a', 300); wear('slow-b', 320);
+for (let k = 0; k < 12; k++) wear('quick-' + k, 20);
+const out = { med: linkMedian() }, n = g2.log.length;
+LINK.cold = 1; linkProbeAtReady();
+out.warm = [MEAS.pp, g2.log.length - n, store.has('philly3d.pp')];
+for (let k = 0; k < 14; k++) wear('heavy-' + k, 180);
+out.med2 = linkMedian(); LINK.cold = 1; linkProbeAtReady();
+out.cold = [MEAS.pp.split('.')[0], store.has('philly3d.pp')];
+console.log(JSON.stringify(out));
+''')
+        self.assertEqual(o['med'], 20)
+        self.assertEqual(o['warm'], ['', 0, False], 'no GL call, and the device keeps its turn for a load that is cold')
+        self.assertEqual((o['med2'], o['cold']), (180, ['1', True]))
+        self.assertIn("        if (LINK.cold !== 1 || !(linkMedian() > COLD_MS)) return;", PROBE)
+
+    def test_a_page_that_cannot_tell_its_build_probes_once_a_week(self):
+        # the review: Capacitor's asset handler sends no Last-Modified, so in the app document.lastModified is the moment it
+        # is read and a marker that held it never matched: every launch that read cold probed again. Each launch below has
+        # its own date, as the app's does
+        o = probe_node(self, r'''
+wear('tower-own|real|glass', 389);
+const out = {};
+const go = () => { const n = g2.log.length; MEAS.pp = ''; LINK.cold = 1; linkProbeAtReady(); return MEAS.pp !== '' && g2.log.length > n; };
+const two = (v) => String(v).padStart(2, '0');
+const stamp = (t) => { const d = new Date(t); return two(d.getMonth() + 1) + '/' + two(d.getDate()) + '/' + d.getFullYear() + ' ' + two(d.getHours()) + ':' + two(d.getMinutes()) + ':' + two(d.getSeconds()); };
+const launch = (ms) => { WALL += ms; document.lastModified = stamp(WALL); return go(); };   // the clock moves on, and the document's date is the read's own second
+const DAY = 864e5;
+IN_APP = true; WALL += 417;
+out.first = launch(0); out.marker = store.get('philly3d.pp') === '@' + WALL;
+out.relaunch = [launch(40000), launch(3600e3), launch(DAY), launch(5 * DAY)];   // a build that died early and was opened again; the next days' launches
+out.early = lpBuild();
+out.week = launch(DAY);                                                        // seven days and an hour on: once more
+out.marker2 = store.get('philly3d.pp') === '@' + WALL;
+out.after = launch(60000);
+// the app does not believe a date it is given, either (a web view that did send one would send the bundle's, not the build's)
+store.clear(); document.lastModified = '11/10/2026 20:00:00';
+out.dated = [go(), go(), store.get('philly3d.pp')[0]];
+// not the app, but a host that sends no Last-Modified: the same rule, told by a date that reads as the clock's
+IN_APP = false; store.clear();
+out.host = [launch(1000), launch(90000), launch(8 * DAY), launch(1000)];
+// a marker that is not a time, a clock set back a month, and a build marker left by a dated page: each probes and writes the time
+store.set('philly3d.pp', '@soon'); out.broken = launch(1000);
+WALL -= 30 * DAY; out.back = launch(0);
+store.set('philly3d.pp', '11/10/2026 20:00:00'); out.other = [launch(1000), store.get('philly3d.pp')[0]];
+// and a page with a date still goes by its build, whatever the clock says
+document.lastModified = '11/10/2026 20:00:00'; store.clear();
+out.site = [lpBuild(), go(), go(), (WALL += 30 * DAY, go()), store.get('philly3d.pp')];
+console.log(JSON.stringify(out));
+''')
+        self.assertTrue(o['first'] and o['marker'], "the first cold launch probes, and the marker is the time, not a date")
+        self.assertEqual(o['relaunch'], [False, False, False, False], 'no relaunch within the week probes again, though every one has a new document date')
+        self.assertEqual(o['early'], '')
+        self.assertTrue(o['week'] and o['marker2'])
+        self.assertFalse(o['after'])
+        self.assertEqual(o['dated'], [True, False, '@'])
+        self.assertEqual(o['host'], [True, False, True, False])
+        self.assertEqual([o['broken'], o['back'], o['other']], [True, True, [True, '@']])
+        self.assertEqual(o['site'], ['11/10/2026 20:00:00', True, False, False, '11/10/2026 20:00:00'], 'once a build where the page can tell it, for as long as the build stands')
+        self.assertIn("  const LP_AGAIN_MS = 7 * 864e5, LP_NOW_MS = 5000;", PROBE)
+        self.assertIn("    return IN_APP || !(Math.abs(Date.now() - Date.parse(b)) > LP_NOW_MS) ? '' : b;", PROBE)
+        self.assertIn("if (b ? m === b : !!m && m[0] === '@' && Math.abs(now - +m.slice(1)) < LP_AGAIN_MS) return;", PROBE)
+
     def test_the_flags(self):
         never = probe_node(self, r'''
 wear('tower-own|real|glass', 389); LINK.cold = 1; const n = g2.log.length; linkProbeAtReady();
@@ -565,6 +634,9 @@ out.clean = state().live === live0 && state().bound && LINK.recs.length === 4;
         self.assertIn('P.linkProbe(Object.assign({ pick, groups: [N] }, o))', PAGE)
         self.assertIn("'facade,ground,clouds,glass-sys'", PAGE)
         self.assertIn("ratio < 0.5 ? 'UNDER HALF' : 'NOT UNDER HALF'", PAGE)
+        # the review: the verdict is for issue-then-wait, and the polled wait's own ratio stands beside it
+        self.assertIn("' for links issued and then waited for, as a page may behind the veil' + (pe ? '; polled to completion with the extension on, as a page that must not block would wait: ' + (pe.link / ser).toFixed(2) + ' of serial'", PAGE)
+        self.assertIn("polled: pe ? pe.link / ser : null", PAGE)
         self.assertIn('D.PERF.lit', PAGE, 'the runs wait for the lit button: the build, its flushes and its first frame are over')
         self.assertIn("pick: ['facade', 'ground', 'clouds', 'glass-sys']", PROBE)
         for bad in BAD:
@@ -616,13 +688,14 @@ class BeaconsPy(unittest.TestCase):
         self.assertEqual({k: p[k] for k in ('state', 'khr_offered', 'serial_ms', 'serial_draw_ms', 'batch_issue_ms', 'batch_call_ms', 'batch_wait_ms', 'batch_draw_ms', 'serial2_ms', 'serial2_draw_ms', 'redraw_ms', 'build_ms', 'frag_kchars', 'probe_ms')},
                          {'state': 'whole', 'khr_offered': 1, 'serial_ms': 292, 'serial_draw_ms': 136, 'batch_issue_ms': 4, 'batch_call_ms': 0, 'batch_wait_ms': 437, 'batch_draw_ms': 378, 'serial2_ms': 319, 'serial2_draw_ms': 135,
                           'redraw_ms': 8, 'build_ms': 389, 'frag_kchars': 79, 'probe_ms': 1717})
-        self.assertEqual((p['batched_over_serial'], p['under_half'], p['where_it_waits'], p['first_draw_share']), (0.48, True, 'wait', 0.31))
+        self.assertEqual((p['batched_over_serial'], p['where_it_waits'], p['first_draw_share']), (0.48, 'wait', 0.31))
+        self.assertNotIn('under_half', p, 'the review: no load is given a verdict (the field sits on the line where the scratch page is clearly under it)')
         # MEASURED, a WKWebView under ?cold: the stream stalls behind the links and three cost three
         w = d('pp', '1.1.246.165.0.765.0.523.255.160.1.301.82.2126')
-        self.assertEqual((w['batched_over_serial'], w['under_half'], w['where_it_waits'], w['first_draw_share']), (1.02, False, 'call', 0.39))
+        self.assertEqual((w['batched_over_serial'], w['where_it_waits'], w['first_draw_share']), (1.02, 'call', 0.39))
         # stopped before the second single: the first is the baseline; stopped after the first: no ratio
         s = d('pp', '2.1.644.228.4.0.1226.511.0.0.7.331.82.2631')
-        self.assertEqual((s['state'], s['batched_over_serial'], s['under_half']), ('stopped-early', 0.64, False))
+        self.assertEqual((s['state'], s['batched_over_serial']), ('stopped-early', 0.64))
         self.assertNotIn('batched_over_serial', d('pp', '2.1.1200.100.0.0.0.0.0.0.1.389.0.1301'))
         self.assertEqual([d('pp', x)['state'] for x in ('3', '4', '6')], ['nothing-to-probe-with', 'a-copy-did-not-link', 'threw'])
         self.assertEqual(d('pp', ''), '')
@@ -630,19 +703,44 @@ class BeaconsPy(unittest.TestCase):
             self.assertIn(k, self.m.READY2)
         self.assertEqual(len(self.m.FIELDS['pp']), 14)
 
+    def test_the_engine_a_ratio_belongs_to(self):
+        e = lambda ua, tch='0': self.m.engine({'ua': ua, 'ev': [('ready', 0, {'tch': tch})]})
+        self.assertEqual(e('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'), 'Chromium Win')
+        self.assertEqual(e('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36 Edg/142.0.0.0'), 'Chromium Win')
+        self.assertEqual(e('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/142.0.0.0 Safari/537.36'), 'Chromium Mac')
+        self.assertEqual(e('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'), 'WebKit Mac')
+        self.assertEqual(e('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15', '1'), 'WebKit iOS', 'an iPad that says it is a Mac')
+        self.assertEqual(e('Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Philly3DApp', '1'), 'WebKit iOS')
+        self.assertEqual(e('Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/142.0.0.0 Mobile/15E148 Safari/604.1', '1'), 'WebKit iOS', 'Chrome on an iPhone is WebKit')
+        self.assertEqual(e('Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:144.0) Gecko/20100101 Firefox/144.0'), 'Gecko Win')
+        self.assertEqual(e('Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Mobile Safari/537.36', '1'), 'Chromium Android')
+
     def test_a_log(self):
-        ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        def line(ip, **q):
+        WIN = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36'
+        MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15'
+        def line(ip, ua=WIN, **q):
             return '%s - - [10/Nov/2026:16:00:00 +0000] "POST /b?%s HTTP/2.0" 404 0 "-" "%s"\n' % (ip, urllib.parse.urlencode(q), ua)
+        step = dict(st='step:Raising the outer districts', t=20000, tch=0, tier=0, ms=15000)
         log = ''.join([
-            # a visitor's cold load that ran the probe
-            line('1.1.1.1', st='step:Raising the outer districts', t=20000, tch=0, tier=0, ms=15000),
+            # a visitor's cold load that ran the probe: 59,000 ms to Ready, 1,717 of them the probe's
+            line('1.1.1.1', **step),
             line('1.1.1.1', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='1.1.292.136.4.0.437.378.319.135.8.389.79.1717', ppk='Std-tower-own-real-glass'),
-            # a dev's cold run on demand: salted
-            line('2.2.2.2', st='step:Raising the outer districts', t=20000, tch=0, tier=0, ms=15000, cs=31),
-            line('2.2.2.2', st='ready', t=70000, tch=0, tier=0, ms=69000, cold=1, cs=31, lk='183.0.1.25280.518.9377.71', pp='1.1.246.165.0.765.0.523.255.160.1.301.82.2126', ppk='Std-wx-h1qfwvhc'),
+            # the same machine class, a cold load with no probe (the device had probed this build): the same 57,283 ms without it
+            line('4.4.4.4', **step),
+            line('4.4.4.4', st='ready', t=58283, tch=0, tier=0, ms=57283, cold=1, lk='144.0.1.48000.52.496.330'),
+            # two more visitors' probes on the engine, either side of the line (the numbers MEASURED in Chrome on this Mac, 0.73 and 0.39, worn here by a Windows visitor)
+            line('5.5.5.5', **step),
+            line('5.5.5.5', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='1.1.247.68.5.0.539.172.252.61.9.400.64.1360', ppk='Std-tower-own-real-glass'),
+            line('6.6.6.6', **step),
+            line('6.6.6.6', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='1.1.284.50.1.1.417.162.433.53.9.395.63.1416', ppk='Std-tower-own-real-glass'),
+            # a probe stopped after its first single (a first draw as dear as the link): no ratio, and still out of gaps
+            line('7.7.7.7', **step),
+            line('7.7.7.7', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='2.1.450.420.0.0.0.0.0.0.2.390.80.900', ppk='Std-tower-own-real-glass'),
+            # a dev's cold run on demand in Safari: salted
+            line('2.2.2.2', MAC, **dict(step, cs=31)),
+            line('2.2.2.2', MAC, st='ready', t=70000, tch=0, tier=0, ms=69000, cold=1, cs=31, lk='183.0.1.25280.518.9377.71', pp='1.1.246.165.0.765.0.523.255.160.1.301.82.2126', ppk='Std-wx-h1qfwvhc'),
             # a warm load: no probe
-            line('3.3.3.3', st='step:Raising the outer districts', t=9000, tch=0, tier=0, ms=6000),
+            line('3.3.3.3', **dict(step, t=9000, ms=6000)),
             line('3.3.3.3', st='ready', t=26000, tch=0, tier=0, ms=25500, cold=0, lk='144.0.0.3231.51.0.9'),
         ])
         with tempfile.NamedTemporaryFile('w', suffix='.txt', delete=False) as f:
@@ -656,16 +754,32 @@ class BeaconsPy(unittest.TestCase):
             sys.argv = argv
             Path(f.name).unlink()
         out = buf.getvalue()
-        self.assertIn("('desk', 'Win', '0', 'cold') n= 1", out)
-        self.assertIn("('desk', 'Win', '0', 'salted cold') n= 1", out, "a salted load is never one of the visitors' cold loads")
+        self.assertIn("('desk', 'Win', '0', 'cold') n= 5", out)
+        self.assertIn("('desk', 'Mac', '0', 'salted cold') n= 1", out, "a salted load is never one of the visitors' cold loads")
         self.assertIn("('desk', 'Win', '0', 'warm') n= 1", out)
         self.assertIn("'cs': '31'", out)
         self.assertIn("'ppk': 'Std-tower-own-real-glass'", out)
-        self.assertIn("'batched_over_serial': 0.48, 'under_half': True, 'where_it_waits': 'wait', 'first_draw_share': 0.31", out)
+        self.assertIn("'batched_over_serial': 0.48, 'where_it_waits': 'wait', 'first_draw_share': 0.31", out)
+        # the review: the probe's own ms come out of gaps and Ready, so a probed load reads as the unprobed one beside it
+        self.assertIn('cold: t0=1000 boot=4000 build=15000 gaps=38283 ready=57283 enter_gap=None probe=1717\n', out)
+        self.assertIn('cold: t0=1000 boot=4000 build=15000 gaps=38283 ready=57283 enter_gap=None\n', out)
+        self.assertIn('gaps=39100 ready=58100 enter_gap=None probe=900\n', out)
+        self.assertIn('salted cold: t0=1000 boot=4000 build=15000 gaps=47874 ready=66874 enter_gap=None probe=2126\n', out)
+        self.assertIn('warm: t0=500 boot=2500 build=6000 gaps=17000 ready=25500 enter_gap=None\n', out)
+        self.assertIn("('desk', 'Win', '0', 'cold') n= 5 [1000, 4000, 15000, 38584, 57584, None]", out, 'the medians too: of 57,283 twice, 57,584, 57,640 and 58,100, never of 59,000')
+        self.assertEqual(self.m.probe_ms({'pp': '6'}), 0)
+        self.assertEqual(self.m.probe_ms({}), 0)
+        # a load a line, with no verdict; then the engine's median, its count and its range
         self.assertIn('LINK PROBES', out)
-        self.assertIn('desk Win cold: Std-tower-own-real-glass batched/serial=0.48 (UNDER HALF) serial=292,319 batch=4+0+437 waits_in=wait first_draw_share=0.31 khr=1 probe_ms=1717 state=whole', out)
-        self.assertIn('desk Win salted cold: Std-wx-h1qfwvhc batched/serial=1.02 (not under half) serial=246,255 batch=0+765+0 waits_in=call first_draw_share=0.39 khr=1 probe_ms=2126 state=whole', out)
-        self.assertEqual(out.count('batched/serial='), 2)
+        self.assertIn('desk Win cold [Chromium Win]: Std-tower-own-real-glass batched/serial=0.48 serial=292,319 batch=4+0+437 waits_in=wait first_draw_share=0.31 khr=1 probe_ms=1717 state=whole', out)
+        self.assertIn('desk Mac salted cold [WebKit Mac]: Std-wx-h1qfwvhc batched/serial=1.02 serial=246,255 batch=0+765+0 waits_in=call first_draw_share=0.39 khr=1 probe_ms=2126 state=whole', out)
+        self.assertIn('desk Win cold [Chromium Win]: Std-tower-own-real-glass state=stopped-early serial=450 first_draw=420 probe_ms=900', out)
+        self.assertEqual(out.count('batched/serial='), 4)
+        for word in ('UNDER HALF', 'under half', 'under_half'):
+            self.assertNotIn(word, out)
+        self.assertIn('ENGINE MEDIANS of batched/serial (one, three, one: a three-program batch cannot read under 0.33;', out)
+        self.assertIn('Chromium Win: median 0.48 of n=3 (0 salted), 0.39 to 0.73, first draw share 0.21, waits in wait 3', out)
+        self.assertIn('WebKit Mac: median 1.02 of n=1 (1 salted), 1.02 to 1.02, first draw share 0.39, waits in call 1', out)
 
 
 if __name__ == '__main__':

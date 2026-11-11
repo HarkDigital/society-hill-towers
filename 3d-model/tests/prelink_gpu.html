@@ -69,8 +69,9 @@
     // against one at a time WITHOUT the extension: asking for it can change the serial case itself (MEASURED in a WKWebView, where a program linked and waited for alone took 1.7 to 4.8 times as long once the extension was on), so its own serial run is no baseline
     if (se && be) say('with the extension asked for, each over one at a time without it: one at a time ' + (se.link / ser).toFixed(2) + ', all issued then awaited ' + (be.link / ser).toFixed(2) + (pe ? ', polled to completion ' + (pe.link / ser).toFixed(2) + ' (' + pe.turns + ' tasks ran while it waited)' : ''));
     say('');
-    say((ratio < 0.5 ? 'UNDER HALF' : 'NOT UNDER HALF') + ': Stage 3 (linking ahead) is built for an engine only where batched is under half of serial. Every number is wall time: run it on a quiet machine, and twice.');
-    window.__prelink = { n: N, pick, ratio, rows, res, ua: navigator.userAgent };
+    // the verdict is for links issued and then WAITED FOR, which a page may do behind the veil; a page that must not block waits by the extension's poll, and that row can read near serial where the verdict says under half (the review: 0.94 in one headless Chrome run), so its ratio is printed beside it
+    say((ratio < 0.5 ? 'UNDER HALF' : 'NOT UNDER HALF') + ' for links issued and then waited for, as a page may behind the veil' + (pe ? '; polled to completion with the extension on, as a page that must not block would wait: ' + (pe.link / ser).toFixed(2) + ' of serial' : '; the polled wait was not run (add ?ext=1)') + '. Stage 3 (linking ahead) is built for an engine only where batched is under half of serial. Every number is wall time: run it on a quiet machine, and twice.');
+    window.__prelink = { n: N, pick, ratio, polled: pe ? pe.link / ser : null, rows, res, ua: navigator.userAgent };
     say('DONE');
   } catch (e) { say('FAIL ' + e.message + '\n' + (e.stack || '')); }
 })();

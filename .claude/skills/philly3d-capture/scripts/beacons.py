@@ -6,7 +6,9 @@ usage: ssh lionspool-vps "zcat -f /var/log/nginx/access.log /var/log/nginx/acces
 A load is a run of lines from one ip and user agent whose t (performance.now() at the send) climbs. Each step beacon's ms is
 that step's own duration; a computer beacons eight steps (BEACON_STEPS), a phone every one. Phases per load: t0 (navigation
 start to app.js's first line) = ready.t - ready.ms; boot = the first step's start - t0; build = the step ms summed; gaps =
-everything else before ready; enter_gap = ready to the Enter tap. Since Round 220 the beacons also carry the navigation
+everything else before ready; enter_gap = ready to the Enter tap. Where a load ran the link probe (Round 226, pp) the probe's
+own ms, which sit between the last step and Ready, are taken out of gaps and ready and printed apart (probe=), so a probed
+cold load reads as an unprobed one of the same device would and the medians are not moved by the instrument. Since Round 220 the beacons also carry the navigation
 timing (tx, enc, dec, net, di, fcp), a boot checkpoint, every step's ms on ready (sp), the GPU bytes (gb, gbp, gbw) and each
 phased step's parts (fd fl fg ff fr fa, wd wl wf, sm sp sf sc, ld lb lt lf, ts tl tf, cw cl cf): --all prints them.
 
@@ -31,16 +33,21 @@ joined by dots and its entries by underscores, which a query never escapes):
   part two, the cold run on demand and the link probe:
     every beacon of a load salted by ?cold=<n>: cs (the n). Such a load is a dev's cold run, never a visitor's: it is
       printed 'salted' and reduced apart, so the cold medians are the public's own.
-    ready, on a cold load that ran the probe (once a device and build): pp, whole numbers joined by dots: the state (1 whole,
+    ready, on a cold load that ran the probe (once a device and build; once a week in the app, which cannot tell its build):
+      pp, whole numbers joined by dots: the state (1 whole,
       2 stopped early for time, 5 a GL error on the way; and alone, 3 nothing to probe with, 4 a copy did not link, 6 it
       threw), whether KHR_parallel_shader_compile is offered, the first single program's ms (issue to linked) and its first
       draw's, the three's issue, the one synchronous call behind them and the wait, their first draws, the last single's ms
       and draw, the five second draws (what the wait alone costs), the build's own ms for the program copied, its fragment
       source in thousands of characters, and the whole probe's ms (already inside Ready); ppk, the copied program's tag.
-      decode adds batched_over_serial, the three's issue + call + wait over three times the singles' mean (Stage 3, linking
-      ahead, is built for an engine only where it is under 0.5), where_it_waits (issue: the link call itself blocks; call:
-      the command stream stalls behind a link; wait: neither, the status query waits) and first_draw_share, the first draw's
-      part of a program linked alone and drawn. Every probe is listed again after the medians.
+      decode adds batched_over_serial, the three's issue + call + wait over three times the singles' mean, where_it_waits
+      (issue: the link call itself blocks; call: the command stream stalls behind a link; wait: neither, the status query
+      waits) and first_draw_share, the first draw's part of a program linked alone and drawn. Every probe is listed again
+      after the medians, and then THE MEDIAN OF batched_over_serial BY ENGINE, with its count: Stage 3 (linking ahead) is
+      built for an engine only where that median, over many loads, is under 0.5. ONE pp DECIDES NOTHING (the review): a
+      three-program batch cannot read under 0.33, an engine that links about 2.8 programs at once (Chrome on this Mac) has
+      little room under the line, and seven cold loads here read 0.39 to 0.73 with a median of 0.51 while the scratch
+      page's eight programs read 0.35 to 0.38 on the same builds. So no load is given a verdict.
   pc, the last session's crumb, reads q.. for the 20 s after Ready: q seconds since Ready, e since Enter, f frames, m the
     last frame gap and w the worst (ms), gb b x r the GPU MB (all, buffers, textures, renderbuffers), p programs, l lit.
 The medians are printed for cold and warm loads apart. The page calls a load cold when its median program (lk's seventh
@@ -130,8 +137,7 @@ def probe(d):
         batch = d['batch_issue_ms'] + d['batch_call_ms'] + d['batch_wait_ms']
         if singles and batch > 0:
             one = sum(singles) / len(singles)
-            d['batched_over_serial'] = round(batch / (3 * one), 2)
-            d['under_half'] = d['batched_over_serial'] < 0.5
+            d['batched_over_serial'] = round(batch / (3 * one), 2)   # no verdict a load: see ENGINE MEDIANS in main()
             d['where_it_waits'] = max(('issue', d['batch_issue_ms']), ('call', d['batch_call_ms']), ('wait', d['batch_wait_ms']), key=lambda e: e[1])[0]
             if ints('serial_draw_ms'):
                 draws = [d[k] for k, s in (('serial_draw_ms', 'serial_ms'), ('serial2_draw_ms', 'serial2_ms')) if isinstance(d.get(k), int) and isinstance(d.get(s), int) and d[s] > 0]
@@ -170,6 +176,25 @@ def device(load):
     ua = load['ua']
     name = 'iPhone' if 'iPhone' in ua else 'iPad' if 'iPad' in ua else 'Android' if 'Android' in ua else 'Mac' if 'Macintosh' in ua else 'Win' if 'Windows' in ua else 'other'
     return kind, name + (' app' if 'Philly3DApp' in ua else '')
+
+
+def engine(load):
+    """The engine and platform a probe's ratio belongs to, from the user agent: every browser on an iPhone or iPad is
+    WebKit (and so is the app), an iPad that says Macintosh is told by its touch flag, Chrome, Edge and headless Chrome are
+    Chromium (ANGLE on Direct3D on Windows, on Metal on a Mac), Firefox is Gecko."""
+    ua = load['ua']
+    ios = 'iPhone' in ua or 'iPad' in ua
+    plat = 'iOS' if ios else 'Android' if 'Android' in ua else 'Mac' if 'Macintosh' in ua else 'Win' if 'Windows' in ua else 'Linux' if 'Linux' in ua else 'other'
+    eng = 'WebKit' if ios else 'Gecko' if 'Firefox/' in ua else 'Chromium' if ('Chrome/' in ua or 'Chromium/' in ua or 'Edg/' in ua) else 'WebKit' if 'AppleWebKit' in ua else 'other'
+    if eng == 'WebKit' and plat == 'Mac' and load['ev'][0][2].get('tch') == '1':
+        plat = 'iOS'
+    return eng + ' ' + plat
+
+
+def probe_ms(q):
+    """The link probe's own ms on a ready beacon (pp's last number), 0 where no probe ran or it ended with no numbers."""
+    p = (q.get('pp') or '').split('.')
+    return int(p[13]) if len(p) >= 14 and p[13].isdigit() else 0
 
 
 def cold_of(q, line=None):
@@ -211,9 +236,13 @@ def main():
         if ready[0][2].get('cs'):   # part two: a load salted by ?cold=<n> is a dev's cold run on demand, reduced apart from the visitors'
             cold = ('salted ' + cold).strip()
         if ready[0][2].get('pp'):
-            probes.append((L['start'], kind, name, cold, ready[0][2].get('ppk', ''), decode('pp', ready[0][2]['pp'])))
-        agg[(kind, name, q0.get('tier'), cold)].append((t0, boot, bsum, rms - boot - bsum, rms, eg))
-        print(f"{L['start']} {kind} {name} tier={q0.get('tier')} cores={q0.get('cores')} tx={q0.get('tx', '')} net={q0.get('net', '')} fcp={q0.get('fcp', '')} gb={ready[0][2].get('gb', '')} {cold}: t0={t0} boot={boot} build={bsum} gaps={rms - boot - bsum} ready={rms} enter_gap={eg}")
+            probes.append((L['start'], kind, name, cold, ready[0][2].get('ppk', ''), decode('pp', ready[0][2]['pp']), engine(L), bool(ready[0][2].get('cs'))))
+        # part two (the review): the probe runs before Ready is stamped, so its ms are inside the beacon's ms and would sit in
+        # gaps: a probed cold load read 1.3 to 2.3 s longer than an unprobed one of the same device. Taken out of both here
+        pms = probe_ms(ready[0][2])
+        net = rms - pms
+        agg[(kind, name, q0.get('tier'), cold)].append((t0, boot, bsum, net - boot - bsum, net, eg))
+        print(f"{L['start']} {kind} {name} tier={q0.get('tier')} cores={q0.get('cores')} tx={q0.get('tx', '')} net={q0.get('net', '')} fcp={q0.get('fcp', '')} gb={ready[0][2].get('gb', '')} {cold}: t0={t0} boot={boot} build={bsum} gaps={net - boot - bsum} ready={net} enter_gap={eg}" + (f" probe={pms}" if ready[0][2].get('pp') else ''))
         durs = sorted(((int(q.get('ms', 0)), st[5:]) for st, t, q in steps), reverse=True)
         print('    top steps: ' + ', '.join(f'{n[:28]} {d}' for d, n in durs[:8]))
         if show_all:
@@ -230,18 +259,30 @@ def main():
             for st, t, q in perf:
                 print('    ', st, {k: q.get(k) for k in ('p50', 'p95', 'calls', 'tris', 'dpr', 'fg', 'jp', 'jr', 'dc1', 'dcn', 'poc', 'pos', 'gt', 'gtn', 'pr', 'rf', 'cm', 'sdn', 'sfd', 'gb')})
                 print('    ', st + ', round two:', decoded(q, RUN2))
-    print('\nMEDIANS by (device, tier, cold or warm): t0, boot, build, gaps, ready, enter_gap')
+    print('\nMEDIANS by (device, tier, cold or warm): t0, boot, build, gaps, ready, enter_gap (gaps and ready less the link probe\'s own ms where one ran)')
     for k, v in agg.items():
         med = lambda i: statistics.median([x[i] for x in v if x[i] is not None]) if any(x[i] is not None for x in v) else None
         print(k, 'n=', len(v), [med(i) for i in range(6)])
     if probes:
-        print('\nLINK PROBES (part two): batched over serial under 0.5 is an engine that links side by side')
-        for start, kind, name, cold, tag, d in probes:
+        print('\nLINK PROBES (part two), a load a line. No load is a verdict: read the engine medians under them')
+        by = collections.defaultdict(list)
+        for start, kind, name, cold, tag, d, eng, salted in probes:
             if isinstance(d, dict) and 'batched_over_serial' in d:
-                print(f"{start} {kind} {name} {cold}: {tag} batched/serial={d['batched_over_serial']} ({'UNDER HALF' if d['under_half'] else 'not under half'}) serial={d['serial_ms']},{d.get('serial2_ms', '')} "
+                by[eng].append((d, salted))
+                print(f"{start} {kind} {name} {cold} [{eng}]: {tag} batched/serial={d['batched_over_serial']} serial={d['serial_ms']},{d.get('serial2_ms', '')} "
                       f"batch={d['batch_issue_ms']}+{d['batch_call_ms']}+{d['batch_wait_ms']} waits_in={d['where_it_waits']} first_draw_share={d.get('first_draw_share', '')} khr={d.get('khr_offered', '')} probe_ms={d.get('probe_ms', '')} state={d['state']}")
             else:
-                print(f"{start} {kind} {name} {cold}: {tag} state={d.get('state') if isinstance(d, dict) else d}")
+                print(f"{start} {kind} {name} {cold} [{eng}]: {tag} state={d.get('state') if isinstance(d, dict) else d}" + (f" serial={d.get('serial_ms')} first_draw={d.get('serial_draw_ms')} probe_ms={d.get('probe_ms')}" if isinstance(d, dict) and isinstance(d.get('serial_ms'), int) else ''))
+        # the review: the page's own field sits on the decision line where the scratch page is clearly under it (Chrome on
+        # this Mac: seven cold loads 0.39 to 0.73, median 0.51; eight programs through tests/prelink_gpu.html 0.35 to
+        # 0.38), so a load's own ratio is close to a coin flip there. What decides is an engine's median over many loads
+        print('\nENGINE MEDIANS of batched/serial (one, three, one: a three-program batch cannot read under 0.33; Stage 3, linking ahead, is built for an engine only where the median of many loads is under 0.5)')
+        for eng in sorted(by):
+            v = by[eng]; r = [d['batched_over_serial'] for d, salted in v]
+            fd = [d['first_draw_share'] for d, salted in v if isinstance(d.get('first_draw_share'), float)]
+            where = collections.Counter(d['where_it_waits'] for d, salted in v)
+            print(f"{eng}: median {statistics.median(r):.2f} of n={len(r)} ({sum(1 for d, salted in v if salted)} salted), {min(r):.2f} to {max(r):.2f}, first draw share {f'{statistics.median(fd):.2f}' if fd else 'unknown'}, "
+                  f"waits in {', '.join(f'{k} {n}' for k, n in where.most_common())}")
 
 
 if __name__ == '__main__':

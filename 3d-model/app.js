@@ -1237,11 +1237,20 @@
   // wait alone costs. The triangle is degenerate (every uniform is zero), so nothing is shaded: the draw-time compiles
   // happen on the CPU side of the draw whatever it covers, and anything a driver defers past that no page can reach.
   // WHERE AND WHEN. linkProbeAtReady, as build() ends, before Ready is stamped, and ONLY ON A COLD LOAD (LINK.cold, the
-  // link timers' own verdict: the median of ten or more programs over COLD_MS): a warm load, which is every load of a
-  // device that has seen this build, never runs it, and neither does a page built hidden, a lost context or WebGL 1. Once
-  // a device and build (localStorage philly3d.pp holds the build's date; a load salted by ?cold ignores and leaves it),
-  // because a slow machine whose every load reads cold would otherwise pay it every time. ?probe=1 runs it on any load
-  // and ?probe=0 never (neither is kept, nor rides a copied link).
+  // link timers' own verdict: the median of ten or more programs over COLD_MS; and, the review, the median as it stands
+  // at the call, the number the ready beacon carries, because the verdict latches the first time the running median
+  // crosses the line and a load that began slow and turned out warm would still have probed): a warm load, which is every
+  // load of a device that has seen this build, never runs it, and neither does a page built hidden, a lost context or
+  // WebGL 1. Once a device and build (localStorage philly3d.pp holds the build's date; a load salted by ?cold ignores and
+  // leaves it), because a slow machine whose every load reads cold would otherwise pay it every time. THE APP CANNOT TELL
+  // ITS BUILD THAT WAY (the review): Capacitor's WebViewAssetHandler sends Content-Type and Cache-Control and no
+  // Last-Modified, so document.lastModified there is the moment it is read and the marker never matched; every launch that
+  // read cold would have probed again (each relaunch of a cold build that died early, each warm launch misread). So where
+  // the page cannot tell its build (lpBuild: the app, and any host whose date reads as now) the marker holds the time
+  // instead and the probe runs at most once in LP_AGAIN_MS (7 days) a device. ?probe=1 runs it on any load and ?probe=0
+  // never (neither is kept, nor rides a copied link, and nor does ?coldms, which would have another device read cold and
+  // probe as a visitor). IT IS AN INSTRUMENT WITH ONE QUESTION and no end date of its own (the review): it is to come out,
+  // with pp and ppk, once Stage 3 is decided (about a week of the public's cold loads), because every first visit pays it.
   // WHAT IT COSTS A COLD LOAD: five programs and ten draws. The program copied is chosen by the build's own timing of it
   // (LINK.recs), the slowest that took no more than LP_EACH_MS (400 ms; the quickest of the others where every one took
   // longer), so the probe is about five times a typical cold program. MEASURED on this Mac under ?cold, with the machine
@@ -1250,7 +1259,7 @@
   // single took over LP_ONE_MS (800 ms, linked and drawn: twice what the pick allowed for, so the device is slower than
   // the build's timing said, or the load was warm and misread, where the build's ms are a cache's and the copies' are
   // not: MEASURED under ?coldms=0, 2.5 s before this line and 1.1 s with it). And no group starts once LP_STOP_MS
-  // (2.5 s) have gone. So about 3.3 s at the worst, on an engine that links one at a time, once a device and build. Its
+  // (2.5 s) have gone. So about 3.3 s at the worst, on an engine that links one at a time, once a device and build (or week). Its
   // own ms is the field's last number, so a summary can take it back out of Ready.
   // WHAT IT LEAVES: nothing. Its programs, shaders, vertex arrays, buffers, target and renderbuffers are deleted, every
   // binding it moved (program, vertex array, array buffer, both framebuffers, renderbuffer, viewport) is put back as it
@@ -1274,6 +1283,7 @@
   // ppk is the copied program's tag (progTag). Batched under half of serial is (issue + call + wait) under 1.5 times
   // the singles' mean. Nothing personal: milliseconds, and a program key that is the page's own source
   const LP_KEY = 'philly3d.pp', LP_EACH_MS = 400, LP_ONE_MS = 800, LP_STOP_MS = 2500;
+  const LP_AGAIN_MS = 7 * 864e5, LP_NOW_MS = 5000;   // the review: a page that cannot tell its build probes at most once in seven days; a document's date within 5 s of the clock is no date (a browser gives the time of the read where no Last-Modified came, in whole seconds)
   const LP_FLAG = (/[?&]probe=([01])\b/.exec(location.search) || [0, ''])[1];
   // an array's GL type and bytes an element (three's own table: r149 has no half-float attribute in this page)
   const LP_TYPES = new Map([[Float32Array, [5126, 4]], [Int8Array, [5120, 1]], [Uint8Array, [5121, 1]], [Uint8ClampedArray, [5121, 1]], [Int16Array, [5122, 2]], [Uint16Array, [5123, 2]], [Int32Array, [5124, 4]], [Uint32Array, [5125, 4]]]);
@@ -1459,15 +1469,25 @@
     const Z = { i: 0, s: 0, w: 0, d: 0, r: 0 }, A = R.groups[0], B = R.groups[1] || Z, E = R.groups[2] || Z, s = R.src[0];
     return [R.st, R.k, A.i + A.s + A.w, A.d, B.i, B.s, B.w, B.d, E.i + E.s + E.w, E.d, A.r + B.r + E.r, Math.max(0, s.ref), s.fs / 1000, R.ms].map(Math.round).join('.');
   }
+  // the build this page is, as the marker keeps it: the document's date, or '' where the page cannot tell (the app, whose
+  // pages come with no Last-Modified, and any other page whose date reads as the clock's)
+  function lpBuild() {
+    const b = String(document.lastModified);
+    return IN_APP || !(Math.abs(Date.now() - Date.parse(b)) > LP_NOW_MS) ? '' : b;
+  }
   // as build() ends, before Ready is stamped: see WHERE AND WHEN
   function linkProbeAtReady() {
     try {
       if (LP_FLAG === '0' || glDead || document.hidden || !renderer.capabilities.isWebGL2) return;
       if (LP_FLAG !== '1') {
-        if (LINK.cold !== 1) return;
+        if (LINK.cold !== 1 || !(linkMedian() > COLD_MS)) return;
         if (!COLD.n) {
-          const b = String(document.lastModified);
-          try { if (localStorage.getItem(LP_KEY) === b) return; localStorage.setItem(LP_KEY, b); } catch (e) { /* private mode: nothing is kept, and the probe runs a cold load at a time */ }
+          const b = lpBuild(), now = Date.now();
+          try {
+            const m = localStorage.getItem(LP_KEY);
+            if (b ? m === b : !!m && m[0] === '@' && Math.abs(now - +m.slice(1)) < LP_AGAIN_MS) return;   // this build has probed here; or, with no build to go by, this device has within the week
+            localStorage.setItem(LP_KEY, b || '@' + now);
+          } catch (e) { /* private mode: nothing is kept, and the probe runs a cold load at a time */ }
         }
       }
       bootMark('link probe');   // a load that dies here says so to the next (pv); bootMark('ready') follows at once
@@ -38353,7 +38373,7 @@ if (uOlLamp > 0.001) {
   let shareNoteT = 0;
   const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;   // Round 154: the app shares the site's links, never its own origin
   const shareQuery = () => {   // the app's query holds only what the page itself put there (the skyline theme, the crown bands)
-    if (!IN_APP) return location.search.replace(/[?&](?:cold|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's; Round 226: nor do ?cold= and ?probe= (a copied link must never salt another device's shaders)
+    if (!IN_APP) return location.search.replace(/[?&](?:cold|coldms|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's; Round 226: nor do ?cold= and ?probe= (a copied link must never salt another device's shaders), nor ?coldms= (the review: it would have the other device read cold and probe, and beacon both as a visitor's)
     const u = new URLSearchParams(location.search), o = new URLSearchParams();
     for (const k of ['lights', 'bands']) if (u.has(k)) o.set(k, u.get(k));
     const t = o.toString(); return t ? '?' + t : '';
@@ -52345,7 +52365,7 @@ float pinOccGate() {
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
     wxHookAll(true);   // Round 226: and hooked for the weather before it (the last call: it also counts any hook laid over the weather's)
-    linkProbeAtReady();   // Round 226: a cold load's link probe (serial against batched links, each with a first draw), once a device and build; a warm load returns at its first test
+    linkProbeAtReady();   // Round 226: a cold load's link probe (serial against batched links, each with a first draw), once a device and build (once a week in the app, which cannot tell its build); a warm load returns at its first test
     PERF.ready = Math.round(performance.now() - PERF.t0);
     bootMark('ready');
     measReady();   // Round 226: the timers' sums at Ready for the ready beacon, and the crumb every second until the running crumb takes over
