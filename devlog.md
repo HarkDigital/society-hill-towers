@@ -13978,3 +13978,48 @@ six poses at 0.0005% or under; `orbit-n` 0.0124% (127 pixels across the Delaware
 at 33.2 m, and two sheds held at their defaults by name); Camden City Hall at its 13 m default; 420 buildings in the
 central box still at 10.5 m until the tiles east of the river are streamed.
 
+## Round 232 — the green blob off the towers' north lawn (Nov 11)
+
+Mike, Nov 11, from philly3d.com/#p=50.8,3.8,-111.3,-2.211,-0.116: "the big green blob at the north side of the society
+hill towers needs to be removed". It was the one lawn berm of Round 4's seven that passes the placement filters on the
+remodel's path (`shtLandscape`): a flattened sphere 32 by 13 m and 1.5 m high, bounding box (-0.2, -96.4) to
+(32.1, -83.4), in `COLORS.park`, sitting on the lawn between the paths by Dock Street.
+
+**Changed.** `shtLandscape` no longer builds the `sht-berms` mesh. Its spots still go into `bermSpots`, which the tree
+planter and the procedural trees read: dropping them would plant trees on that ground and renumber every later tree in
+the city (the Round 228 rule), so the trees stand exactly where they stood. `?sht=0` and `?real=0` build Round 194's
+plaza, berms included, as their escape hatch always has.
+
+**Verified.** Headless captures (`render.mjs`) of Mike's link pose, an oblique from the north-west and a top-down, before
+and after at 1 pm: the blob gone, the lawn, the paths and every tree under and round it unchanged; a probe of the scene
+finds one `sht-berms` mesh on the old build and none on the new; no failed step, no console error. The page is 138 bytes
+smaller.
+
+## Nov 11 — the first side-by-side page
+
+Mike: "Build it" (the plan's Stage 1 side-by-side page, which decides what Stage 2's shader release turns on). Published
+private to him as an artifact: https://claude.ai/artifact/RKJaq5QkvXZt11PkuWnMdX . No code changed: every pair was
+rendered from main at Round 231 (fe3726c), staged outside Dropbox, under `?dev=1&dpr=1&wx=clear` at 1600 by 1000, the
+variants of a pose back to back in one page session with one run-time setting moved. 63 pictures, 12.8 MB at web size.
+
+MEASURED, with the machine heavily loaded (load average 22 to 28 on 12 cores):
+- **The clear sky's fill** (`__dbg.keyLight`, `KEYWX.fill` 1.8 today, 1.2, 1.0): small. The page raises its exposure to
+  hold the sunlit streets, so at 1.0 the lit surfaces and the sky brighten a little and the shade deepens only slightly
+  (3 to 5 levels of 255 on a computer, about 6 on the phone path); a street wholly in shade (Broad Street at 15:30) does
+  not darken at all; the W's blue glass goes 8 to 18 levels lighter and paler, off its calibration. The proposal's other
+  half, the straighter day toe, is shader text and could not be shown.
+- **The buildings' roughness** (cityMat and coreMat 0.92 against 0.65): no program recompiled, nothing went plastic or
+  blue; looking away from the sun nothing changes (0.1% of pixels) and a full moon shows nothing; toward the sun South
+  Philadelphia's rowhouse roofs go a chalky beige and the tar roofs lose their black (5.5% of pixels). The setting
+  touches the buildings only, not the streets.
+- **The far-map switch** (`__dbg.farWideAt` 250 against 360): no difference at normal size (0.1 to 0.7% of pixels, all
+  shadow edges); the near map's draw goes from a median 0.79 to 0.96 ms, its draw calls from 46 to 52 to 71 to 77, and it
+  redraws about once every 6.5 frames, so about 0.03 ms a frame.
+- **`?veilcity=1`**: the city shows behind the title about 5 s into a load, the text stays readable, then it reads as a
+  dim, mostly still city, and the view jumps at Ready from the build's high camera to the first view.
+- Also seen, not caused by any of these: a yellow-green haze toward a low sun at 16:10 in today's page.
+
+Claude's suggestions, written on the page beside each pick: hold the shade until the tone curve can be shown on a test
+build; keep the matte roofs; leave the far-map switch; the veil is his call (if yes, draw it from the first view's
+camera). His picks land in the page's database, `picks/<look id>`, and are read back with the ArtifactData tool.
+

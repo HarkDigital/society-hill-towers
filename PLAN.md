@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 231.
+Last updated: Nov 11, 2026, after Round 232 and the first side-by-side page.
 
 ## The ask
 
@@ -94,8 +94,21 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 231** (Stage 1, the batch's fourth package): Camden at its measured heights, shipped at Mike's word after
   the before and after.
 
+- **Round 232** (Mike's ask, outside the stages): the green berm on the Society Hill Towers' north lawn by Dock Street is
+  no longer drawn; its spot still keeps the trees off, so no tree moved.
+
 ## In flight (finish these first)
 
+1. **Mike's first side-by-side page is published** (Nov 11, private to him):
+   https://claude.ai/artifact/RKJaq5QkvXZt11PkuWnMdX . Four looks rendered from main at Round 231 with only one
+   run-time setting changed per pair: the clear sky's fill (`__dbg.keyLight` 1.8, 1.2, 1.0), the buildings' roughness
+   (0.92 against 0.65), the far-map switch (`__dbg.farWideAt` 250 against 360) and the `?veilcity=1` loading screen.
+   He picks on the page; the picks are kept in its database (`picks/<look id>`: `choice`, `note`, `at`) and read back with
+   the ArtifactData tool. Claude's suggestions on the page: hold the shade (the fill alone barely deepens it and lightens
+   the W's glass; the tone-curve half needs the shader release, so render it on a test build next), keep the matte roofs
+   (the sheen washes out South Philadelphia's roofs toward the sun), leave the far-map switch (no visible gain), and the
+   veil is his call (it shows the city in about 5 s, then sits dim and still, and jumps at Ready). Also seen: a
+   yellow-green haze toward a low sun at 16:10 in today's page, with every setting; not yet looked into.
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
@@ -106,7 +119,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 ## Stage 1: what is left
 
 - The entry orbit captures (eight azimuths, day and 21:30) and a retake of the day set, which predates Rounds 222 to 228.
-- **Mike's first side-by-side page**, on a staged copy, never the live site: the light at fill 1.0, 1.2 and 1.8
+- **Mike's first side-by-side page** (published Nov 11, see In flight 1; waiting on his picks), on a staged copy, never the live site: the light at fill 1.0, 1.2 and 1.8
   (`__dbg.keyLight`), roofs at roughness 0.65 toward the sun, the entry orbit's shadows with the far-map switch at
   360 m; and the `?veilcity=1` veil. This page decides what Stage 2 turns on.
 - The service worker and the reload: Round 229's navigation fields must first confirm that a reload under the worker
