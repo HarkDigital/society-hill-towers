@@ -8006,7 +8006,20 @@
   // (the packed road formats carry none of them). el = elevated chains with a
   // solved height profile, sk = sunken expressway carriageways, cor = the open-cut
   // corridor runs of the Vine Street Expressway [[x, z, floorY, halfW], ...].
+  // Round 226 (Mike, over the expressway at Logan Circle: "this view has the road running right into the grass. Fix
+  // that."): the bake had dropped both carriageways from 18th Street to the tunnel under the Parkway (OSM's short
+  // tunnel pieces under the 18th and 19th Street bridges cut the stretch into runs too short to be written), so they
+  // were drawn flat on the lawn and ended where the tunnel begins, and the tunnel's west mouth came up to street level
+  // by 21st Street with nothing built at it. The cut now runs to the tunnel at both ends: ce gives each corridor run's
+  // two ends (0 the old end face, 1 a portal, 2 the cut runs out onto the ground), por the tunnel mouths
+  // [x, z, roadY, dx, dz, halfW] with (dx, dz) pointing in, and a sunken run with ap: 1 is an approach, the road past
+  // a mouth held at the mouth's depth until the ground has come down to it (rp: 1 a ramp leaving one).
   const OVP = (typeof OVERPASSES !== 'undefined' && OVERPASSES) ? OVERPASSES : { el: [], sk: [], cor: [] };
+  if (!OVP.ce) OVP.ce = []; if (!OVP.por) OVP.por = [];
+  // a covered run with a portal at each end is a tunnel the page can show a car into and out of (ovpSunkY): the traffic
+  // rides it. The other covered runs (the I-76 pair under 30th Street Station and their two links) have no mouths built
+  // and keep the traffic as it was; a short underpass at grade (g) is not a tunnel to the page at all (ovpIndex)
+  for (const c of OVP.sk) c.pt = c.cov === 1 && c.p.length > 1 && [c.p[0], c.p[c.p.length - 1]].every((q) => OVP.por.some((m) => Math.hypot(m[0] - q[0], m[1] - q[1]) < 40));
   const ovpGrid = new Map();
   const OVP_CELL = 28;
   const ovpSegs = [];   // ax, az, bx, bz, ya, yb, hw, cls, chainId (stride 9; cls -1 open cut, -2 covered)
@@ -8030,7 +8043,9 @@
     OVP.el.forEach((c, ci) => { for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2, c.c, ci); });
     // sunken runs: -1 = open cut (digs holes, grows walls), -2 = covered tunnel
     // (suppresses the packed road but leaves the ground alone)
-    OVP.sk.forEach((c, ci) => { for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1, 1000 + ci); });
+    // (Round 226: not a run flagged g, a short underpass that touches down at both its ends: it owns nothing, so the
+    // packed road is drawn through it at grade instead of ending on the lawn at each end)
+    OVP.sk.forEach((c, ci) => { if (c.g) return; for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1, 1000 + ci); });
   }
   ovpIndex();
   // a packed road segment lying along a baked chain is the same OSM way: the
@@ -8124,6 +8139,31 @@
       }
     }
     return best < 0 || !wideRoadInfo[best / 2] ? null : [wideRoadInfo[best / 2], wideRoadInfo[best / 2 + 1]];
+  }
+  // Round 226: the drawn outer street whose bench holds (x, z): the nearest packed segment no baked chain owns, as
+  // [the point on its centreline, x and z, its half width, the distance], or null beyond maxD (40 m at most: the grid's
+  // reach). For the lawn put back over opened ground (lawnY in 'Raising the overpasses'), which must meet a street laid
+  // flat across a slope at the street's own height
+  function wideRoadSnap(x, z, maxD) {
+    if (!wideRoadSegs.length) return null;
+    const gx = Math.floor(x / WR_CELL), gz = Math.floor(z / WR_CELL);
+    let best = null, bk = Infinity;
+    for (let cx = gx - 1; cx <= gx + 1; cx++) for (let cz = gz - 1; cz <= gz + 1; cz++) {
+      const arr = wideRoadGrid.get(cx + ':' + cz);
+      if (arr) for (const s of arr) {
+        const ax = wideRoadSegs[s], az = wideRoadSegs[s + 1], bx = wideRoadSegs[s + 2], bz = wideRoadSegs[s + 3], dx = bx - ax, dz = bz - az, hw = wideRoadInfo[s / 2] || 0;
+        if (hw < 2) continue;   // not a footway
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1e-9), 0, 1);
+        const px = ax + dx * t, pz = az + dz * t, d = Math.hypot(px - x, pz - z);
+        if (d > maxD || d - hw >= bk) continue;
+        // owned where the point is, as the road loop asks it of each 15 m piece (a whole packed segment 250 m long had
+        // both its ends on chains and was taken for owned though most of it is drawn)
+        const L = Math.hypot(dx, dz) || 1, t0 = clamp(t - 7 / L, 0, 1), t1 = clamp(t + 7 / L, 0, 1);
+        if (ovpOwned(ax + dx * t0, az + dz * t0, ax + dx * t1, az + dz * t1)) continue;
+        bk = d - hw; best = [px, pz, hw, d];
+      }
+    }
+    return best;
   }
   // does a building footprint straddle a motorway deck or an open cut? (an OSM
   // artifact: nothing real stands across I-95 — Mike's building through the
@@ -8245,7 +8285,9 @@
     vineBox.x0 = Math.min(vineBox.x0, p[0] - p[3] - 4); vineBox.x1 = Math.max(vineBox.x1, p[0] + p[3] + 4);
     vineBox.z0 = Math.min(vineBox.z0, p[1] - p[3] - 4); vineBox.z1 = Math.max(vineBox.z1, p[1] + p[3] + 4);
   }
-  function vineCut(x, z, pad) {
+  // square (Round 226): the corridor stops at its end stations' own lines instead of rounding on past them by its half
+  // width, for an approach's first point beyond the corridor (its own walls, collars and asphalt start there)
+  function vineCut(x, z, pad, square) {
     if (x < vineBox.x0 || x > vineBox.x1 || z < vineBox.z0 || z > vineBox.z1) return null;
     pad = pad || 0;
     for (const run of OVP.cor) {
@@ -8254,6 +8296,7 @@
         const dx = b[0] - a[0], dz = b[1] - a[1];
         const L2 = dx * dx + dz * dz || 1e-9;
         let t = ((x - a[0]) * dx + (z - a[1]) * dz) / L2;
+        if (square && (t < 0 || t > 1)) continue;   // every segment square: the one before the last rounded 8 m on past the end too
         t = clamp(t, 0, 1);
         const px = a[0] + dx * t - x, pz = a[1] + dz * t - z;
         const hw = a[3] + (b[3] - a[3]) * t + pad;
@@ -8302,8 +8345,63 @@
     }
     return null;
   }
+  // Round 226: within an approach's own width of it, and pad more. An approach ends where the ground has come down to its roadway,
+  // so its last stretch lies less than sunkCutNear's 1.2 m under the DEM: without a hole of its own there the ground
+  // mesh would lie over the road, which is the road running into the grass all over again. The ground is opened over
+  // the whole run and the collars and the end sheet in 'Raising the overpasses' put it back around the roadway
+  const apBox = { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 };   // every tree, pole and tuft asks: the approaches' box first
+  for (const c of OVP.sk) if (c.ap) for (const p of c.p) { apBox.x0 = Math.min(apBox.x0, p[0] - c.w / 2 - 8); apBox.x1 = Math.max(apBox.x1, p[0] + c.w / 2 + 8); apBox.z0 = Math.min(apBox.z0, p[1] - c.w / 2 - 8); apBox.z1 = Math.max(apBox.z1, p[1] + c.w / 2 + 8); }
+  function apCutNear(x, z, pad) {
+    if (x < apBox.x0 || x > apBox.x1 || z < apBox.z0 || z > apBox.z1) return false;
+    const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+    if (!arr) return false;
+    for (const s of arr) {
+      if (ovpSegs[s + 7] !== -1) continue;
+      const c = OVP.sk[ovpSegs[s + 8] - 1000];
+      if (!c || !c.ap) continue;
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], dx = ovpSegs[s + 2] - sax, dz = ovpSegs[s + 3] - saz;
+      const t = clamp(((x - sax) * dx + (z - saz) * dz) / (dx * dx + dz * dz || 1e-9), 0, 1);
+      const px = sax + dx * t - x, pz = saz + dz * t - z, r = ovpSegs[s + 6] + (pad || 0);
+      if (px * px + pz * pz < r * r) return true;
+    }
+    return false;
+  }
+  // Round 226: the sunken carriageway a motorway's car rides, open cut or tunnel: the chain the road IS (ovpDeckY's
+  // rule, Round 88: the nearest aligned run within OVP_OWN_R), as [y, covered]. A covered run counts only where it has
+  // portals (c.pt). Before this a car took an open run's height only where the run lay 1.2 m under the DEM
+  // (sunkCutNear), which the DEM's own record of the cut undid in places, and crossed a tunnel on the grass over it
+  // r: a wider reach than OVP_OWN_R, for a bus, which keeps a lane off its street's centreline (Round 207)
+  const _sunk = [0, 0];
+  function ovpSunkY(x, z, ux, uz, r) {
+    const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+    if (!arr) return null;
+    let bestD = (r || OVP_OWN_R) * (r || OVP_OWN_R), hit = false;
+    for (const s of arr) {
+      const cls = ovpSegs[s + 7];
+      if (cls >= 0) continue;
+      if (cls === -2 && !OVP.sk[ovpSegs[s + 8] - 1000].pt) continue;
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], dx = ovpSegs[s + 2] - sax, dz = ovpSegs[s + 3] - saz;
+      const sl = Math.hypot(dx, dz) || 1;
+      if (ux !== undefined && Math.abs((dx * ux + dz * uz) / sl) < 0.72) continue;
+      const t = clamp(((x - sax) * dx + (z - saz) * dz) / (sl * sl), 0, 1);
+      const px = sax + dx * t - x, pz = saz + dz * t - z, d2 = px * px + pz * pz;
+      if (d2 >= bestD) continue;
+      bestD = d2; hit = true;
+      _sunk[0] = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t; _sunk[1] = cls === -2 ? 1 : 0;
+    }
+    return hit ? _sunk : null;
+  }
   function cutHole(x, z) {
-    return vineCut(x, z, -1) !== null || sunkCutNear(x, z, 1) !== null || railCut(x, z, 1) !== null;
+    return vineCut(x, z, -1) !== null || sunkCutNear(x, z, 1) !== null || apCutNear(x, z, 1) || railCut(x, z, 1) !== null;
+  }
+  // __dbg.ovp(): the sunken runs, their portals and the corridor's ends; __dbg.ovp(x, z) what stands at a point (the cut's
+  // floor, a hole in the ground, the sunken run a car there rides and whether it is a tunnel); __dbg.ovp(ax, az, bx, bz)
+  // whether a packed road segment there is a baked chain's (Round 226); __dbg.ovpCars(x0, x1, z0, z1) the traffic's cars in a box as
+  // [x, y, z, alpha, in a tunnel, direction, class]
+  function ovpProbe(ax, az, bx, bz) {
+    if (bx !== undefined) return ovpOwned(ax, az, bx, bz);
+    if (ax !== undefined) { const su = ovpSunkY(ax, az); return { floor: vineCut(ax, az, 0), hole: cutHole(ax, az), approach: apCutNear(ax, az, 0), sunk: su && +su[0].toFixed(2), tunnel: !!(su && su[1]), dem: +demY(ax, az).toFixed(2), mesh: groundMeshY(ax, az), street: wideRoadSnap(ax, az, 24) }; }
+    return { sk: OVP.sk.map((c) => ({ cov: c.cov, ap: c.ap || 0, rp: c.rp || 0, pt: c.pt, e: c.e, from: c.p[0], to: c.p[c.p.length - 1] })), por: OVP.por, ce: OVP.ce, cor: OVP.cor.map((r) => [r[0], r[r.length - 1]]), portals: PERF.portals };
   }
 
   // ---------------------------------------------------------------- living water
@@ -34562,12 +34660,14 @@ if (uOlLamp > 0.001) {
       }
       return false;
     };
+    const atPortal = (q) => OVP.por.some((m) => Math.hypot(m[0] - q[0], m[1] - q[1]) < 40);
     const shapePts = (c) => {
       const pts = dens3(c.p, 13);
       const e = c.e || [0, 0];
       for (const side of [0, 1]) {
         if ((side ? e[1] : e[0]) !== 1) continue;
         const a = side ? pts[pts.length - 1] : pts[0];
+        if (c.cov !== undefined && atPortal(a)) continue;   // Round 226: a sunken run that ends at a tunnel's mouth ends there (its nose under the ground cut a hole in the lawn put back over the tunnel)
         const b = side ? pts[pts.length - 2] : pts[1];
         let dx = a[0] - b[0], dz = a[1] - b[1];
         const L = Math.hypot(dx, dz) || 1;
@@ -34581,10 +34681,23 @@ if (uOlLamp > 0.001) {
       const c = OVP.el[ci];
       const e = c.e || [0, 0];
       const hw = Math.max(1.6, c.w / 2);
-      const dep = c.c <= 1 ? 1.7 : (c.c === 6 ? 0.5 : 1.15);
+      let dep = c.c <= 1 ? 1.7 : (c.c === 6 ? 0.5 : 1.15);
       const pts = shapePts(c);
       const jit = 0.92 + hash01(ci * 2.13) * 0.16;
-      const bots = pts.map((p) => {
+      // Round 226: a street's deck over the expressway's cut. The DEM remembers the cut as a soft valley, a street that
+      // crosses it rides down into that valley, and the near-grade skirt below then hung the deck's side to the valley's
+      // floor, a wall across the lanes that now run under it. Over the cut a deck has no skirt, and where its soffit
+      // would stand under 3.3 m over the sunken roadway (21st Street's north end, 4 m down the valley) the slab is thinned,
+      // to 0.45 m at the least
+      const overCut = pts.map((p) => vineCut(p[0], p[1], 1) !== null || apCutNear(p[0], p[1], 1));
+      if (overCut.some(Boolean)) {
+        const nr = norms(pts), hwc = Math.max(1.6, c.w / 2);
+        let need = dep;
+        for (let i = 0; i < pts.length; i++) for (const sg of [-1, 0, 1]) { const su = ovpSunkY(pts[i][0] + nr[i][0] * hwc * sg, pts[i][1] + nr[i][1] * hwc * sg); if (su && !su[1]) need = Math.min(need, pts[i][2] - su[0] - 3.3); }
+        dep = clamp(need, Math.min(dep, 0.45), dep);
+      }
+      const bots = pts.map((p, i) => {
+        if (overCut[i]) return p[2] - dep;
         const gy = siteY(p[0], p[1], 'ground'), gm = groundMeshY(p[0], p[1]) ?? gy;   // near-grade by the DEM, the skirt down to the drawn mesh (the carved bank, Round 85)
         return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gm - 0.4) : p[2] - dep;
       });
@@ -34646,12 +34759,37 @@ if (uOlLamp > 0.001) {
     // ---------------- the Vine Street cut: walls, floor, portals ----------------
     const collarParts = [];
     const wallQuad = (q, arr) => arr.push(...q);
+    // Round 226, the lawn put back over opened ground (the sheets behind a tunnel's mouth and round an approach, below): the ground mesh's own height (the DEM less 5 cm), so it lies flush with the
+    // cells round it and clear under a street laid on the ground. A street whose cell is opened is laid flat across its
+    // width at its centreline's height, and on the slope of the old cut's valley its uphill edge then lay under this
+    // lawn and its downhill edge over it (a slit along the edge with the water under the world in it): within a street's
+    // width and 5.7 m (a sheet triangle's reach) the lawn takes the height under the street's centreline, a bench, and
+    // eases back to the ground over the next 4 m. And back to the ground within 6 m of a cell that is still drawn, so
+    // the lawn meets the mesh's edge flush (a bench carried to that edge stood a step off it, open underneath)
+    const LAWN_RING = [[1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+    const lawnY = (x, z) => {
+      const g = siteY(x, z, 'ground') - 0.05, r = wideRoadSnap(x, z, 24);
+      if (!r) return g;
+      let k = clamp((r[3] - (r[2] + 5.7)) / 4, 0, 1);
+      if (k >= 1) return g;
+      for (const rad of [2, 4, 6]) if (LAWN_RING.some((o) => groundMeshY(x + o[0] * rad, z + o[1] * rad) !== null)) { k = Math.max(k, 1 - (rad - 2) / 4); break; }
+      return k >= 1 ? g : lerp(siteY(r[0], r[1], 'road') - 0.05, g, k);
+    };
+    const rimY = (x, z) => groundMeshY(x, z) ?? lawnY(x, z);   // the ground a wall's top meets: the drawn mesh, or the lawn where its cell is opened
+    let corI = -1;
     for (const run of OVP.cor) {
+      const ce = OVP.ce[++corI] || [0, 0];   // Round 226: each end's kind: 0 the old face, 1 a portal, 2 the cut runs out onto the ground
       const nrm = norms(run);
       const wl = run.map((p, i) => [p[0] + nrm[i][0] * p[3], p[1] + nrm[i][1] * p[3], p[2]]);
       const wr = run.map((p, i) => [p[0] - nrm[i][0] * p[3], p[1] - nrm[i][1] * p[3], p[2]]);
       const gl = wl.map((p) => siteY(p[0], p[1], 'ground'));
       const gr = wr.map((p) => siteY(p[0], p[1], 'ground'));
+      // the wall's top: the ground beside it and a parapet. Round 226: where an approach's cut has all but run out (the
+      // ground within 1.5 m of the roadway) the wall stops flush with the ground and carries no coping, so the ramp that
+      // leaves the approach there crosses it on the ground instead of meeting a parapet
+      const flush = (g, p) => (ce[0] === 2 || ce[1] === 2) && g - (p[2] + 0.45) < 1.5;
+      const tl = wl.map((p, i) => flush(gl[i], p) ? gl[i] + 0.02 : gl[i] + 0.55);
+      const tr = wr.map((p, i) => flush(gr[i], p) ? gr[i] + 0.02 : gr[i] + 0.55);
       const quads = [], copes = [];
       const segGap = (w0, w1, i) => {
         // break the wall where a sunken ramp passes through it (its portal)
@@ -34676,19 +34814,14 @@ if (uOlLamp > 0.001) {
         return false;
       };
       for (let i = 0; i + 1 < run.length; i++) {
-        if (!segGap(wl, wl, i)) {
-          wallQuad([wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], wl[i + 1][2] - 0.6, wl[i + 1][1],
-                    wl[i + 1][0], gl[i + 1] + 0.55, wl[i + 1][1],
-                    wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], gl[i + 1] + 0.55, wl[i + 1][1],
-                    wl[i][0], gl[i] + 0.55, wl[i][1]], quads);
-          copes.push([wl[i], wl[i + 1], gl[i], gl[i + 1]]);
-        }
-        if (!segGap(wr, wr, i)) {
-          wallQuad([wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], wr[i + 1][2] - 0.6, wr[i + 1][1],
-                    wr[i + 1][0], gr[i + 1] + 0.55, wr[i + 1][1],
-                    wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], gr[i + 1] + 0.55, wr[i + 1][1],
-                    wr[i][0], gr[i] + 0.55, wr[i][1]], quads);
-          copes.push([wr[i], wr[i + 1], gr[i], gr[i + 1]]);
+        for (const [w0, g0, t0] of [[wl, gl, tl], [wr, gr, tr]]) {
+          if (segGap(w0, w0, i)) continue;
+          if (Math.max(t0[i] - w0[i][2], t0[i + 1] - w0[i + 1][2]) < -0.3) continue;   // Round 226: the ground has fallen under the floor here: no wall to build
+          wallQuad([w0[i][0], w0[i][2] - 0.6, w0[i][1], w0[i + 1][0], w0[i + 1][2] - 0.6, w0[i + 1][1],
+                    w0[i + 1][0], t0[i + 1], w0[i + 1][1],
+                    w0[i][0], w0[i][2] - 0.6, w0[i][1], w0[i + 1][0], t0[i + 1], w0[i + 1][1],
+                    w0[i][0], t0[i], w0[i][1]], quads);
+          if (t0[i] - g0[i] > 0.3 && t0[i + 1] - g0[i + 1] > 0.3) copes.push([w0[i], w0[i + 1], g0[i], g0[i + 1]]);
         }
       }
       const wg = new THREE.BufferGeometry();
@@ -34724,8 +34857,33 @@ if (uOlLamp > 0.001) {
         g2.computeVertexNormals();
         parts.push({ geom: g2, color: new THREE.Color(col), style: 3 });
       }
+      // Round 226: where the cut runs out onto the ground (end kind 2) each carriageway goes on in its own narrower cut
+      // (an approach's tail, walled 0.7 m off its roadway below). The corridor's wall steps in to that wall across the
+      // end's own line, so no gap is left open under the lawn at the step
+      for (const e2 of [0, run.length - 1]) {
+        if (ce[e2 ? 1 : 0] !== 2) continue;
+        const C = run[e2], rq2 = [];
+        for (const [w0, sg] of [[wl, 1], [wr, -1]]) {
+          const nx = nrm[e2][0] * sg, nz = nrm[e2][1] * sg;
+          let inner = -Infinity;   // the outermost approach roadway's wall on this side, as an offset from the centre
+          for (const c of OVP.sk) {
+            if (!c.ap || c.rp) continue;
+            let bd = 1e9, off = 0;
+            for (let i = 0; i + 1 < c.p.length; i++) { const a = c.p[i], b = c.p[i + 1], dx = b[0] - a[0], dz = b[1] - a[1]; const t = clamp(((C[0] - a[0]) * dx + (C[1] - a[1]) * dz) / (dx * dx + dz * dz || 1e-9), 0, 1), px = a[0] + dx * t - C[0], pz = a[1] + dz * t - C[1], d2 = px * px + pz * pz; if (d2 < bd) { bd = d2; off = px * nx + pz * nz; } }
+            if (bd < 40 * 40 && off > 0) inner = Math.max(inner, off + c.w / 2 + 0.7);
+          }
+          if (!(inner > 0) || inner > C[3] - 0.3) continue;
+          const a = w0[e2], b = [C[0] + nx * inner, C[1] + nz * inner];
+          const ga = siteY(a[0], a[1], 'ground'), gb = rimY(b[0], b[1]) + 0.05;
+          const ta = ga - (C[2] + 0.45) < 1.5 ? ga + 0.02 : ga + 0.55, tb = gb - (C[2] + 0.45) < 1.5 ? gb + 0.02 : gb + 0.55;
+          if (Math.max(ta, tb) < C[2] - 0.3) continue;
+          rq2.push(a[0], C[2] - 0.6, a[1], b[0], C[2] - 0.6, b[1], b[0], tb, b[1], a[0], C[2] - 0.6, a[1], b[0], tb, b[1], a[0], ta, a[1]);
+        }
+        if (rq2.length) { const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rq2), 3)); g2.computeVertexNormals(); parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 }); }
+      }
       // portal faces + header beams where the cut meets a covered section
       for (const e2 of [0, run.length - 1]) {
+        if (ce[e2 ? 1 : 0] !== 0) continue;   // Round 226: a built portal (below) closes this end, or the cut runs out onto the ground
         const gm = (gl[e2] + gr[e2]) / 2;
         const pg = [wl[e2][0], run[e2][2] - 0.6, wl[e2][1], wr[e2][0], run[e2][2] - 0.6, wr[e2][1],
                     wr[e2][0], gm + 0.55, wr[e2][1],
@@ -34754,8 +34912,73 @@ if (uOlLamp > 0.001) {
       }
       if (med.length > 2) boxRibbon(med, 0.26, 0.85, -0.1, tint(cCope, 1), tint(cCope, 0.94));
     }
+    // ---------------- Round 226: the tunnel mouths ----------------
+    // (Mike: "this view has the road running right into the grass.") Where the cut runs into a tunnel the bake gives the
+    // mouth: its place on the cut's centreline, the road's height, the way in and the cut's half width there. Across it
+    // goes a headwall from the mouth's head (PORTAL_H over the roadway) up past the ground, with the cut's coping along
+    // its top and a pier between the two carriageways; behind it a box PORTAL_D deep in near-black (floor, sides, soffit
+    // and a back wall, so nothing is seen through and the lamps' pools find nothing to light), a concrete shell and roof
+    // slab round that box for wherever the ground lies lower than the slab, and the ground put back over the tunnel:
+    // cutHole drops a whole 25 m cell when any corner is in the cut, so a sheet on the ground's own heights covers the
+    // 46 m behind the headwall, as the rail cuts' does. The roadway runs in under the headwall and the cars with it
+    // (ovpSunkY); they fade out in the dark (trafficRunUnder). No shader is new: every face is a part of the overpasses'
+    // own mesh, and the sheets ride the cut's collars. And no hitNote: the flight's floor is 2.5 m over the DEM's ground
+    // (applyFly), so it never comes down into the cut, and the headwall stands 1.2 m over the lawn, as the cut's own
+    // parapets do
+    const PORTAL_H = 4.6, PORTAL_D = 28;
+    const groundSheet = (at, u0, u1, v0, v1) => {
+      const tris = [], st = 4, nu = Math.max(1, Math.ceil((u1 - u0) / st)), nv = Math.max(1, Math.ceil((v1 - v0) / st));
+      const P = (iu, iv) => { const q = at(u0 + (u1 - u0) * iu / nu, v0 + (v1 - v0) * iv / nv); return [q[0], lawnY(q[0], q[1]), q[1]]; };
+      const open = (p) => groundMeshY(p[0], p[2]) === null;
+      for (let iu = 0; iu < nu; iu++) for (let iv = 0; iv < nv; iv++) {
+        const a = P(iu, iv), b = P(iu + 1, iv), c2 = P(iu + 1, iv + 1), d = P(iu, iv + 1);
+        if (!(open(a) || open(b) || open(c2) || open(d))) continue;   // only where the ground's cell is opened (and one sheet cell on, under the mesh's edge)
+        tris.push(a[0], a[1], a[2], c2[0], c2[1], c2[2], b[0], b[1], b[2], a[0], a[1], a[2], d[0], d[1], d[2], c2[0], c2[1], c2[2]);
+      }
+      if (!tris.length) return;
+      const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3)); g2.computeVertexNormals();
+      const nr = g2.attributes.normal.array; let up = 0; for (let i = 1; i < nr.length; i += 3) up += nr[i];
+      if (up < 0) { const pos = g2.attributes.position.array; for (let i = 0; i < pos.length; i += 9) for (let k = 0; k < 3; k++) { const t = pos[i + 3 + k]; pos[i + 3 + k] = pos[i + 6 + k]; pos[i + 6 + k] = t; } g2.computeVertexNormals(); }
+      collarParts.push({ geom: g2, color: new THREE.Color(COLORS.ground), style: 3 });
+    };
+    const portalStat = [];
+    for (const m of OVP.por) {
+      const mx = m[0], mz = m[1], my = m[2], dx = m[3], dz = m[4], hw = m[5], nx = -dz, nz = dx;
+      const at = (u, v) => [mx + dx * u + nx * v, mz + dz * u + nz * v];   // u: into the tunnel, v: across the mouth
+      const floor = my - 0.45, head = my + PORTAL_H;
+      let gTop = -Infinity, gLow = Infinity;
+      for (let v = -hw; v <= hw + 0.01; v += hw / 5) { const q = at(1.5, v), g = siteY(q[0], q[1], 'ground'); if (g > gTop) gTop = g; if (g < gLow) gLow = g; }
+      const top = Math.max(gTop + 0.55, head + 1.0);
+      const hc = at(0.5, 0);
+      boxAt(hc[0], hc[1], nx, nz, 2 * hw + 1.4, 1.0, head, top, tint(cWall, 1));                       // the headwall over the mouth
+      boxAt(hc[0], hc[1], nx, nz, 2 * hw + 2.0, 1.25, top, top + 0.6, tint(cCope, 1));                 // its coping, the cut's own band
+      if (hw > 12) boxAt(hc[0], hc[1], nx, nz, 1.5, 1.3, floor - 0.6, head + 0.05, tint(cWall, 0.96));   // the pier between the carriageways
+      const dark = [], shell = [];
+      const quad = (arr, a, b, c2, d) => arr.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2], a[0], a[1], a[2], c2[0], c2[1], c2[2], d[0], d[1], d[2]);
+      const P3 = (u, v, y) => { const q = at(u, v); return [q[0], y, q[1]]; };
+      const u0 = 0, u1 = PORTAL_D, vi = hw - 0.05, vo = hw + 0.45, roof = head + 0.45;   // from the headwall's own face: a gap there showed the water under the world
+      quad(dark, P3(u0, -vi, my + 0.03), P3(u1, -vi, my + 0.03), P3(u1, vi, my + 0.03), P3(u0, vi, my + 0.03));   // the roadway in the dark
+      quad(dark, P3(0, -vi, head), P3(u1, -vi, head), P3(u1, vi, head), P3(0, vi, head));                         // the soffit
+      quad(dark, P3(u1, -vi, floor), P3(u1, vi, floor), P3(u1, vi, head), P3(u1, -vi, head));                     // the back
+      for (const sg of [-1, 1]) {
+        quad(dark, P3(u0, sg * vi, floor), P3(u1, sg * vi, floor), P3(u1, sg * vi, head), P3(u0, sg * vi, head));
+        quad(shell, P3(0, sg * vo, floor - 0.6), P3(u1 + 0.5, sg * vo, floor - 0.6), P3(u1 + 0.5, sg * vo, roof), P3(0, sg * vo, roof));
+      }
+      quad(shell, P3(u1 + 0.5, -vo, floor - 0.6), P3(u1 + 0.5, vo, floor - 0.6), P3(u1 + 0.5, vo, roof), P3(u1 + 0.5, -vo, roof));
+      quad(shell, P3(0.9, -vo, roof), P3(u1 + 0.5, -vo, roof), P3(u1 + 0.5, vo, roof), P3(0.9, vo, roof));
+      for (const [arr, col] of [[dark, new THREE.Color(0x0a0b0c)], [shell, new THREE.Color(cWall)]]) {
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+        g2.computeVertexNormals();
+        parts.push({ geom: g2, color: col, style: 3 });
+      }
+      groundSheet(at, 1.0, 46, -hw - 34, hw + 34);   // vineCut rounds the corridor's end, so a dropped cell can reach hw + 24 m behind the mouth
+      portalStat.push({ at: [Math.round(mx), Math.round(mz)], road: my, head: +head.toFixed(2), top: +top.toFixed(2), ground: [+gLow.toFixed(2), +gTop.toFixed(2)], hw });
+    }
+    PERF.portals = portalStat;   // __dbg.PERF.portals: each mouth's road, head, the headwall's top and the ground across it
     // ------- sunken carriageways and ramps: roadway, edge lines, ramp-cut walls ----
     for (const c of OVP.sk) {
+      if (c.g) continue;   // Round 226: an underpass at grade: the packed road is its roadway
       const pts = shapePts(c);
       const hw = Math.max(1.6, c.w / 2);
       if (c.cov === 1) {   // Round 85: a covered chain draws only where it stands clear of the drawn ground (the I-76 pair on the Schuylkill's west bank poked out of the carved bank), with a bulkhead face down to the bed under those stretches
@@ -34778,7 +35001,19 @@ if (uOlLamp > 0.001) {
         if (wq.length) { const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wq), 3)); g2.computeVertexNormals(); parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 }); }
         continue;
       }
-      boxRibbon(pts, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1), null, null, true);
+      // Round 226: an approach past the corridor's end lies beside the plain road and runs into it: there it is the
+      // motorway's own asphalt with its lane paint, not the cut's concrete (apTail: its first point outside the corridor)
+      let apTail = -1;
+      if (c.ap) for (let i = 0; i + 1 < pts.length && apTail < 0; i++) if (vineCut((pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2, 2, true) === null) apTail = i;
+      if (apTail >= 0) {
+        if (apTail > 0) boxRibbon(pts.slice(0, apTail + 1), hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1), null, null, true);
+        // its sides go down to the ground beside it: toward its far end the ground lies under the roadway (the DEM's
+        // valley is deeper than the level approach in places) and the half-metre box stood clear of it, open underneath
+        const nT = norms(pts), skirt = (k) => pts.slice(k).map((p, i) => Math.min(p[2] - 0.5, rimY(p[0] + nT[k + i][0] * (hw + 0.75), p[1] + nT[k + i][1] * (hw + 0.75)) - 0.4, rimY(p[0] - nT[k + i][0] * (hw + 0.75), p[1] - nT[k + i][1] * (hw + 0.75)) - 0.4));
+        boxRibbon(pts.slice(apTail), hw, 0, -0.5, tint(cTop[0], 1), tint(0x2b2926, 1), skirt(apTail), null, true, 1);
+        const k0 = Math.max(0, apTail - 2);
+        boxRibbon(pts.slice(k0), hw + 0.75, -0.04, -0.5, tint(cGutter, 1), tint(0x2b2926, 1), skirt(k0));   // a shoulder out to its walls: the 0.7 m between the roadway's edge and the wall was open to the water under the world
+      } else boxRibbon(pts, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1), null, null, true);
       // pale edge lines read as lane striping from altitude
       const nrm = norms(pts);
       for (const s of [1, -1]) {
@@ -34788,17 +35023,53 @@ if (uOlLamp > 0.001) {
       // outside the main corridor an OPEN sunken ramp runs in its own narrow
       // walled cut; covered tunnels stay under the untouched ground
       const rq = [];
+      // Round 226: an approach is walled wherever it lies under the ground at all, not only from a metre down: its ground
+      // is open over its whole length (apCutNear), so a shallow stretch without a wall would show the void under the
+      // collar's edge. Where the cut has all but run out (under 1.5 m) the wall stops flush with the ground
+      let tail = -1;   // an approach's first point outside the main corridor: its own collars and end sheet start there
+      let tailAt = null;   // where an approach crosses the corridor's end line: its own cut starts exactly there
       for (let i = 0; c.cov !== 1 && i + 1 < pts.length; i++) {
-        const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
-        const my = (pts[i][2] + pts[i + 1][2]) / 2;
-        if (vineCut(mx, mz, 2) !== null) continue;
-        if (demY(mx, mz) - my < 1.0) continue;
+        let p0 = pts[i], n0 = nrm[i];
+        const p1 = pts[i + 1], n1 = nrm[i + 1];
+        if (c.ap) {
+          if (vineCut(p1[0], p1[1], 2, true) !== null) continue;
+          if (vineCut(p0[0], p0[1], 2, true) !== null) {   // the segment that leaves the corridor: from the crossing on
+            let lo = 0, hi = 1;
+            for (let k = 0; k < 10; k++) { const m = (lo + hi) / 2; if (vineCut(lerp(p0[0], p1[0], m), lerp(p0[1], p1[1], m), 2, true) !== null) lo = m; else hi = m; }
+            p0 = [lerp(p0[0], p1[0], hi), lerp(p0[1], p1[1], hi), lerp(p0[2], p1[2], hi)]; n0 = n1;
+          }
+          if (tail < 0) { tail = i; tailAt = p0; }
+        }
+        const mx = (p0[0] + p1[0]) / 2, mz = (p0[1] + p1[1]) / 2;
+        const my = (p0[2] + p1[2]) / 2;
+        if (!c.ap && vineCut(mx, mz, 2) !== null) continue;
+        if (!c.ap && demY(mx, mz) - my < 1.0) continue;   // (an approach's wall is decided side by side, from the ground at the wall itself, below)
         for (const s of [1, -1]) {
-          const a = [pts[i][0] + nrm[i][0] * (hw + 0.7) * s, pts[i][1] + nrm[i][1] * (hw + 0.7) * s];
-          const b = [pts[i + 1][0] + nrm[i + 1][0] * (hw + 0.7) * s, pts[i + 1][1] + nrm[i + 1][1] * (hw + 0.7) * s];
-          const ga = siteY(a[0], a[1], 'ground'), gb = siteY(b[0], b[1], 'ground');
-          rq.push(a[0], pts[i][2] - 0.6, a[1], b[0], pts[i + 1][2] - 0.6, b[1], b[0], gb + 0.5, b[1],
-                  a[0], pts[i][2] - 0.6, a[1], b[0], gb + 0.5, b[1], a[0], ga + 0.5, a[1]);
+          const a = [p0[0] + n0[0] * (hw + 0.7) * s, p0[1] + n0[1] * (hw + 0.7) * s];
+          const b = [p1[0] + n1[0] * (hw + 0.7) * s, p1[1] + n1[1] * (hw + 0.7) * s];
+          const ga = c.ap ? rimY(a[0], a[1]) + 0.05 : siteY(a[0], a[1], 'ground'), gb = c.ap ? rimY(b[0], b[1]) + 0.05 : siteY(b[0], b[1], 'ground');
+          const ta = c.ap && ga - p0[2] < 1.5 ? ga + 0.02 : ga + 0.5, tb = c.ap && gb - p1[2] < 1.5 ? gb + 0.02 : gb + 0.5;
+          if (c.ap && Math.max(ta - p0[2], tb - p1[2]) < 0.1) continue;   // the ground is at the roadway on this side
+          rq.push(a[0], p0[2] - 0.6, a[1], b[0], p1[2] - 0.6, b[1], b[0], tb, b[1],
+                  a[0], p0[2] - 0.6, a[1], b[0], tb, b[1], a[0], ta, a[1]);
+        }
+      }
+      if (c.ap && tail >= 0) {
+        // the ground back round an approach past the corridor's end: a sheet each side of its own length, from the
+        // corridor's end line out, and one beyond its far end as far as the opened cells can reach. trimTerrainPatch cuts
+        // them where a roadway lies under them (the other carriageway's, the ramp's)
+        if (rq.length) { const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rq), 3)); g2.computeVertexNormals(); parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 }); rq.length = 0; }
+        const tp = [tailAt].concat(pts.slice(tail + 1));
+        if (tp.length > 1) {
+          for (let i = 0; i + 1 < tp.length; i++) {
+            const a = tp[i], b = tp[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (L < 0.05) continue;
+            const ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L, map = (u, v) => [a[0] + ux * u - uz * v, a[1] + uz * u + ux * v];
+            groundSheet(map, 0, L, hw + 0.7, hw + 36); groundSheet(map, 0, L, -hw - 36, -hw - 0.7);
+          }
+          const e = tp[tp.length - 1], f = tp[tp.length - 2];
+          let ex = e[0] - f[0], ez = e[1] - f[1]; const el = Math.hypot(ex, ez) || 1; ex /= el; ez /= el;
+          groundSheet((u, v) => [e[0] + ex * u - ez * v, e[1] + ez * u + ex * v], 0, 42, -hw - 36, hw + 36);
         }
       }
       if (rq.length) {
@@ -35589,7 +35860,7 @@ if (uOlLamp > 0.001) {
     // trees. At 9 m a 60-inch oak carries its crown 2.6 m clear of the ground.
     const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
     const keepTree = (x, z, dbh, ni, core, outer) => {
-      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut or PATCO's, nor on a rebuilt landmark's ground (Round 161)
+      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null || apCutNear(x, z, 2) || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut (nor its approaches', Round 226) or PATCO's, nor on a rebuilt landmark's ground (Round 161)
       let gy;   // the realism round two (R1): on the Schuylkill's bank a tree stands on the drawn slope, and none in the river (bankPlace)
       if (core) gy = siteY(x, z, 'ground');
       else { const q = bankPlace(x, z, false); if (!q) { BANK_STAT.trees++; return; } x = q[0]; z = q[1]; gy = q[2]; }
@@ -36344,7 +36615,7 @@ if (uOlLamp > 0.001) {
         if (pg ? !pointInPoly(x, z, pg) : !bareGroundAt(x, z)) continue;
         if (pg && CH.noTuft && CH.noTuft.some(([r, bb]) => x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, r))) continue;   // City Hall's paving over a park (Round 191)
         if (REBUILD_PAVED.length && rebuildPavedAt(x, z)) continue;
-        if (elPortalAt(x, z) || patcoCutAt(x, z)) continue;   // the excavated ground cannot carry floating grass
+        if (elPortalAt(x, z) || patcoCutAt(x, z) || vineCut(x, z, 0) !== null || apCutNear(x, z, 1)) continue;   // the excavated ground cannot carry floating grass (Round 226: nor the expressway's cut, whose floor grew tufts between the lanes)
         if (septaSnapRoad(x, z, 4)) continue;
         if (inWater(x, z) > -2) continue;
         // on the drawn ground where a grid is registered (the sheets conform to it), drapeY in the core
@@ -38821,15 +39092,20 @@ float pinOccGate() {
       if (BUS_YIELD) busObstAdd(v.dx, v.dz, v.yaw, SEPTA_KIND[v.kind].l * 0.5);   // Round 207: the typical traffic stops behind it
       BUS_OB.drawn.push(v);
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
-        v.gx = v.dx; v.gz = v.dz;
+        v.gx = v.dx; v.gz = v.dz; v.tun = false;
         v.gy = Math.max(siteY(v.dx, v.dz, 'road'), bankFloor(v.dx, v.dz));   // the bank floor with the roads (Round 85)
         // a vehicle on a bridge street rides the deck, not the ground beneath it
         // (aligned to its snapped street axis so passing under a viaduct never lifts)
         if (v.sdx || v.sdz) {
           const oy = ovpDeckY(v.dx, v.dz, v.sdx, v.sdz);
           if (oy !== null) v.gy = oy;
+          else {   // Round 226: and one on a sunken expressway rides down in its cut (the Vine Street Expressway's buses stood on the DEM, up to 6 m over the lanes), into its tunnel and out of sight there
+            const su = ovpSunkY(v.dx, v.dz, v.sdx, v.sdz, 7);
+            if (su !== null) { v.gy = su[0]; v.tun = !!su[1]; }
+          }
         }
       }
+      if (v.tun) return;   // in a road tunnel: not drawn, like the tunnel trolleys (it crossed the lawn over the tunnel before)
       const spec = SEPTA_KIND[v.kind];
       if (si < 1600) {
         _ss.set(spec.l, spec.h, spec.w);
@@ -44500,6 +44776,90 @@ float pinOccGate() {
     const moved = Math.hypot(camera.position.x - PARKED.lx, camera.position.y - PARKED.ly, camera.position.z - PARKED.lz);
     if (moved > PARKED.step || key !== PARKED.key) { PARKED.key = key; parkedLay(now); }
   }
+  // Round 226 (Mike: "this view has the road running right into the grass"; and what the cars did there): bake_traffic.py
+  // drops every way OSM tags as a tunnel, so the network stopped dead at each one: on the Vine Street Expressway at the
+  // Parkway tunnel's two mouths and, since OSM mapped the 18th and 19th Street bridges' shadows as tunnels, three times
+  // more between them, 38 m of road at a time, each a dead end where a car stood, turned round or faded out in the open.
+  // Each carriageway the page draws sunken (open cut, approach, or a tunnel with a mouth at each end: c.pt) is walked
+  // both ways: where a one-way motorway run of the network ends on it, heading along it, and the next begins further
+  // along with nothing of the network between, a run is laid along the chain from the one's last point to the other's
+  // first, at the chain's own height. The linker then joins it like any other, and a car drives in at one mouth and out
+  // of the other (trafficRunUnder hides it between). The tunnels without mouths (30th Street's) are left as they were
+  function trafficBridge(runs) {
+    let made = 0, len = 0;
+    // a carriageway is several runs end to end (an approach, the tunnel, the open cut): joined here into one line each,
+    // and each line walked both ways, since an approach is written from its mouth outward, against an eastbound car
+    const pool = OVP.sk.filter((c) => !c.rp && !c.g && !(c.cov === 1 && !c.pt) && c.p.length > 1).map((c) => c.p.slice()), lines = [];
+    const same = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]) < 1.5 && Math.abs(a[2] - b[2]) < 0.2;
+    while (pool.length) {
+      let L = pool.pop(), grew = true;
+      while (grew) {
+        grew = false;
+        for (let k = 0; k < pool.length; k++) {
+          const q = pool[k], a = L[0], b = L[L.length - 1];
+          if (same(b, q[0])) L = L.concat(q.slice(1));
+          else if (same(b, q[q.length - 1])) L = L.concat(q.slice(0, -1).reverse());
+          else if (same(a, q[q.length - 1])) L = q.slice(0, -1).concat(L);
+          else if (same(a, q[0])) L = q.slice(1).reverse().concat(L);
+          else continue;
+          pool.splice(k, 1); grew = true; break;
+        }
+      }
+      lines.push(L, L.slice().reverse());
+    }
+    // an underpass drawn through at grade (g) carries its traffic on the road's own ground, not on the tunnel's profile
+    const roadY = (x, z) => Math.max(groundMeshLandY(x, z) ?? siteY(x, z, 'road'), bankFloor(x, z)) + LAYER.road + 6 * 0.055 + 0.05;
+    for (const c of OVP.sk) if (c.g && c.p.length > 1) { const L = c.p.map((q) => [q[0], q[1], roadY(q[0], q[1]) - 0.1]); L.atGrade = true; const R = L.slice().reverse(); R.atGrade = true; lines.push(L, R); }
+    for (const P of lines) {
+      const cum = [0];
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let i = 0; i < P.length; i++) { if (i) cum.push(cum[i - 1] + Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1])); x0 = Math.min(x0, P[i][0]); x1 = Math.max(x1, P[i][0]); z0 = Math.min(z0, P[i][1]); z1 = Math.max(z1, P[i][1]); }
+      x0 -= 6; x1 += 6; z0 -= 6; z1 += 6;
+      const proj = (x, z) => {   // [distance squared, distance along, the chain's direction there]
+        let bd = Infinity, bs = 0, bx = 1, bz = 0;
+        for (let i = 0; i + 1 < P.length; i++) {
+          const dx = P[i + 1][0] - P[i][0], dz = P[i + 1][1] - P[i][1], L = Math.hypot(dx, dz) || 1e-9;
+          const t = clamp(((x - P[i][0]) * dx + (z - P[i][1]) * dz) / (L * L), 0, 1), px = P[i][0] + dx * t - x, pz = P[i][1] + dz * t - z, d2 = px * px + pz * pz;
+          if (d2 < bd) { bd = d2; bs = cum[i] + L * t; bx = dx / L; bz = dz / L; }
+        }
+        return [bd, bs, bx, bz];
+      };
+      const at = (sv) => { let i = 0; while (i + 2 < P.length && cum[i + 1] < sv) i++; const t = clamp((sv - cum[i]) / (cum[i + 1] - cum[i] || 1), 0, 1); return [lerp(P[i][0], P[i + 1][0], t), lerp(P[i][1], P[i + 1][1], t), lerp(P[i][2], P[i + 1][2], t)]; };
+      const on = [], tails = [], heads = [];
+      for (const r of runs) {
+        if (r.cls > 1 || r.mx < x0 - 450 || r.mx > x1 + 450 || r.mz < z0 - 450 || r.mz > z1 + 450) continue;
+        const n = r.xs.length;
+        for (let j = 0; j < n; j++) {
+          const x = r.xs[j], z = r.zs[j];
+          if (x < x0 || x > x1 || z < z0 || z > z1) continue;
+          const q = proj(x, z);
+          if (q[0] > 9) continue;
+          on.push(q[1]);
+          if (!r.oneway || (j > 0 && j < n - 1)) continue;
+          const k = j ? j - 1 : 1, sg = j ? 1 : -1, ux = (x - r.xs[k]) * sg, uz = (z - r.zs[k]) * sg;
+          if ((ux * q[2] + uz * q[3]) / (Math.hypot(ux, uz) || 1) < 0.7) continue;   // not along the chain's way
+          (j ? tails : heads).push([q[1], r, j]);
+        }
+      }
+      for (const t of tails) {
+        let h = null;
+        for (const q of heads) if (q[0] > t[0] + 1.5 && (!h || q[0] < h[0])) h = q;
+        if (!h || h[0] - t[0] > 400 || on.some((sv) => sv > t[0] + 2 && sv < h[0] - 2)) continue;   // nothing ahead, or the network has the stretch
+        const gap = h[0] - t[0], k = Math.max(1, Math.round(gap / 20)), n = k + 1;
+        const xs = new Float32Array(n), ys = new Float32Array(n), zs = new Float32Array(n), cm = new Float32Array(n);
+        for (let j = 0; j < n; j++) {
+          if (j === 0) { xs[j] = t[1].xs[t[2]]; ys[j] = t[1].ys[t[2]]; zs[j] = t[1].zs[t[2]]; }
+          else if (j === k) { xs[j] = h[1].xs[0]; ys[j] = h[1].ys[0]; zs[j] = h[1].zs[0]; }
+          else { const q = at(t[0] + gap * j / k); xs[j] = q[0]; ys[j] = P.atGrade ? roadY(q[0], q[1]) : q[2] + 0.1; zs[j] = q[1]; }
+          if (j) cm[j] = cm[j - 1] + Math.hypot(xs[j] - xs[j - 1], zs[j] - zs[j - 1]);
+        }
+        const mid = n >> 1;
+        runs.push({ xs, zs, ys, cum: cm, len: cm[n - 1], cls: 0, oneway: true, aadt: t[1].aadt, mx: xs[mid], mz: zs[mid], want: 0, cars: [], busy: false });
+        made++; len += cm[n - 1];
+      }
+    }
+    PERF.trafficBridged = { runs: made, m: Math.round(len) };   // __dbg.PERF.trafficBridged
+  }
   // ---- people on the sidewalks (Round 227. Mike, Nov 9, 2026: people on the sidewalks, walking; the plan's STREET-1 as
   // both verifiers amended it). The data and the logic only: where a walker may walk, who is there at a given second, and
   // one call that fills a buffer with the walkers near the eye. No mesh, no material and no program is made here (the
@@ -45306,8 +45666,12 @@ float pinOccGate() {
         // emerges below the bare-earth/embankment sample beside the core cut.
         if (oy !== null) { y = oy; lift = 0.1; }
         else if (cls <= 1) {
-          const sy = sunkCutNear(x, z, 1);
-          if (sy !== null && sy < y - 0.5) { y = sy; lift = 0.35; }
+          const su = ovpSunkY(x, z, ux, uz);   // Round 226: its own sunken run, in the cut and through a tunnel with mouths
+          if (su !== null) { y = su[0]; lift = 0.1; }
+          else {
+            const sy = sunkCutNear(x, z, 1);
+            if (sy !== null && sy < y - 0.5) { y = sy; lift = 0.35; }
+          }
         }
         if (dead) { if (cur && cur.xs.length > 1) runs.push(cur); cur = null; continue; }
         if (!cur) { cur = { xs: [], zs: [], ys: [] }; if (pplTag) cur.j0 = j; }
@@ -45346,6 +45710,7 @@ float pinOccGate() {
         }
       }
     }
+    trafficBridge(trafficRuns);   // Round 226: the expressway's tunnels, which the traffic's data leaves out
     const tLink = performance.now();   // Round 220: the way loop is done; the linker, then the fleet
     trafficPrepareGraph(trafficRuns);
     const tFleet = performance.now();
@@ -45682,9 +46047,22 @@ float pinOccGate() {
       // Smooth only road-joint steering; no teleport or full-size pop at a turn.
       const follow=1-Math.exp(-dt*16);car.px=lerp(car.px,car.x,follow);car.py=lerp(car.py,car.y,follow);car.pz=lerp(car.pz,car.z,follow);
       const angle=Math.atan2(Math.sin(car.yaw-car.heading),Math.cos(car.yaw-car.heading));car.heading+=angle*(1-Math.exp(-dt*9));
-      const life=car.die?Math.max(0,1-(now-car.die)/CAR_FADE_MS):1;
-      car.alpha+=clamp(life-car.alpha,-dt,dt*.85);
+      // Round 226: in a tunnel a car is not drawn (nor its lamps, nor its headlights' pool on the street over it): it
+      // fades out over its first second in the dark behind the mouth (the mouth's box is 28 m deep) and is back, and
+      // solid, before it comes out of the far one (the look ahead of two points, 20 to 40 m, on the way out)
+      const un=trafficRunUnder(rr);let under=false;
+      if(un){const j=Math.min(car.seg||0,un.length-1),n=un.length-1;under=!!(un[j]&&un[Math.min(n,j+1)]&&un[car.dir>0?Math.min(n,j+2):Math.max(0,j-1)]);}
+      const life=car.die?Math.max(0,1-(now-car.die)/CAR_FADE_MS):under?0:1;
+      car.alpha+=clamp(life-car.alpha,-dt,car.un?dt*3:dt*.85);
+      car.un=under||(car.un&&car.alpha<1);
     }
+  }
+  // per vertex of a run: 1 where it runs in a tunnel with mouths (ovpSunkY's covered answer), once; null for every other run
+  function trafficRunUnder(r) {
+    if(r.un!==undefined)return r.un;
+    let a=null;
+    if(r.cls<=1)for(let j=0;j<r.xs.length;j++){const su=ovpSunkY(r.xs[j],r.zs[j]);if(su&&su[1]){if(!a)a=new Uint8Array(r.xs.length);a[j]=1;}}
+    return (r.un=a);
   }
   // the realism pass: past CAR_LOD_D a car is its far copy (trafficFarGroup), and the cars past CAR_SHADE_D, where their
   // shades have faded out, are written after the rest so the shades stop short of them (shadeN: most of a computer's 3,000
@@ -46324,7 +46702,7 @@ float pinOccGate() {
       try { famOf = Uint8Array.from(atob(POLE_FAMILIES.b64), (ch) => ch.charCodeAt(0)); } catch (err) { famOf = null; }
     }
     let tArm = 0, armRoad = 0;
-    let underDeck = 0, polesMoved = 0;
+    let underDeck = 0, polesMoved = 0, cutPoles = 0;
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
     const cells = keepInv ? new Map() : null;   // 400 m buckets for the near-mesh reconcile
     const cellAdd = (x, z, i) => { if (!cells) return; const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400); let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i); };
@@ -46377,6 +46755,7 @@ float pinOccGate() {
         x = q[0]; z = q[1]; gy = q[2];
       } else gy = siteY(x, z, 'ground');
       if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }   // Round 144: it stood in the deck
+      if (vineCut(x, z, 0.5) !== null || apCutNear(x, z, 0)) { pos[i * 3 + 1] = -1000; cutPoles++; continue; }   // Round 226: nor in the expressway's cut, where the survey's poles (the old street's, and the bridges' own) stood on the DEM over the lanes
       const hm = clamp(hft * 0.3048, 3.5, 15);
       X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm;
       pos[i * 3] = x; pos[i * 3 + 1] = gy + hm; pos[i * 3 + 2] = z;
@@ -46580,7 +46959,7 @@ float pinOccGate() {
     poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll, nPoles } : null;
     if (keepInv && REAL && !isTouch) wxLampCol(pcol);   // the wet streets' glints read each lamp's own colour (wxGlintStep, a computer's)
     PERF.streetPush = Object.assign(PERF.streetPush || {}, { polesMoved });
-    PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
+    PERF.lampsDeck = { standards: nDeck, underDeck, inCut: cutPoles, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     if (FAM) { const fc = [0, 0, 0, 0]; for (let i = 0; i < nAll; i++) fc[FAM[i]]++; PERF.lampsReal = { armMs: Math.round(tArm), armRoad, families: fc }; }   // __dbg.PERF.lampsReal
     const el = document.getElementById('lightsCount');
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
@@ -53567,7 +53946,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { ovp: ovpProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

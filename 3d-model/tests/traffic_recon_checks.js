@@ -123,6 +123,7 @@ const bridgeDeckLift = (x, z) => Math.abs(x - 4200) < 60 && Math.abs(z + 900) < 
 const brLaneFit = (pts) => pts;
 const ovpDeckY = (x, z, ux, uz) => Math.abs(ux) > 0.85 && Math.abs((((z % 1400) + 1400) % 1400) - 700) < 30 ? hill(x, z) + 8 : null;
 const sunkCutNear = (x, z) => Math.abs(z - 1500) < 40 ? hill(x, z) - 6 : null;
+const ovpSunkY = () => null, trafficBridge = () => {};   // Round 226: the sunken runs' own height and the tunnels' bridging runs (none on this synthetic ground)
 let TRAFFIC_B64 = B64;
 const trafficRuns = [];
 function decode() {
@@ -146,6 +147,7 @@ const hash01=n=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(
 const ZREV={on:false},REAL=true,SNOW2_ON=true,wxSurfU={uSnowAcc:{value:0},uWet:{value:0}},LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
 const isTouch=TOUCH,NEAR_R=804.67,SCORES={games:[]},SEPTA_STOPS=undefined,STREET_FURN=undefined;
 const inCore=()=>false,roadHalfW=()=>4.5,groundMeshLandY=()=>0,groundMeshY=()=>0,siteY=()=>0;
+const ovpSunkY=()=>null;   // Round 226: no tunnels here (trafficRunUnder answers null for every run, in both sections alike)
 const _sp=new V3(),_sq=new THREE.Quaternion(),_ss=new V3(),_sm=new THREE.Matrix4(),_sc=new THREE.Color();
 const flushInst=()=>{},anisoOf=n=>n,freeTexOnUpload=t=>t,artImage=()=>new Promise(()=>{}),artSrc=(a,b)=>a,lampLightPatch=()=>{throw new Error('a vehicle takes vehLampPatch, never lampLightPatch');};
 const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4()}},sun={intensity:1.85},sunDir=new V3(0,1,0);

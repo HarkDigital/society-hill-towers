@@ -116,6 +116,7 @@ const brLaneFit = (pts) => pts;   // Round 195: the Ben Franklin's lanes (the id
 // meet it in plan but not in height
 const ovpDeckY = (x, z, ux, uz) => Math.abs(ux) > 0.85 && Math.abs((((z % 1400) + 1400) % 1400) - 700) < 30 ? hill(x, z) + 8 : null;
 const sunkCutNear = (x, z) => Math.abs(z - 1500) < 40 ? hill(x, z) - 6 : null;
+const ovpSunkY = () => null, trafficBridge = () => {};   // Round 226: the sunken runs' own height and the tunnels' bridging runs, which this synthetic grid has none of
 let TRAFFIC_B64 = B64;
 const trafficRuns = [];
 function decode() {

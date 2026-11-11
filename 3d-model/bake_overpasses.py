@@ -10,6 +10,14 @@ the DEM, and emits overpasses.json:
   sk:  sunken chains    (same shape; y = roadway surface, below grade)
   cor: open-cut corridor runs for sunken motorways (the Vine Street cut):
        [[[x, z, floorY, halfW], ...], ...]
+  ce:  one [end0, end1] per corridor run (Round 226): 0 = the page's old end face, 1 = a portal
+       (por) closes it, 2 = the cut runs out onto the ground there, nothing across it
+  por: the tunnel mouths the cut runs into (Round 226): [[x, z, roadY, dx, dz, halfW], ...],
+       (dx, dz) pointing into the tunnel
+A sunken run may also carry ap: 1 (Round 226: an approach, the plain road past a tunnel's mouth
+held at the mouth's height until the ground has come down to it; the page opens the ground over
+its whole length) and rp: 1 (a ramp leaving such an approach); a covered run may carry g: 1 (a
+short underpass that touches down at both ends: the page draws its road through at grade).
 
 Height model (model frame, y = 0 at the towers' site):
   grade    = DEM, clamped at the water plane like the app's siteY
@@ -46,6 +54,30 @@ CLS = {"motorway": 0, "motorway_link": 0, "trunk": 1, "trunk_link": 1,
 MOTOR = {"motorway", "motorway_link", "trunk", "trunk_link"}
 CORE = (-640, 770, -520, 850)
 SKIP_NAMES = ("Benjamin Franklin Bridge", "Walt Whitman Bridge")
+# Round 226 (Mike, over the Vine Street Expressway at Logan Circle: "this view has the road running right into the
+# grass. Fix that."). Three things in this file put it there, and the four numbers below undo them:
+#   - OSM now maps the expressway under the 18th and 19th Street bridges, and under the cap between them, as tunnels
+#     of 20 to 36 m with 38 m of open road between each pair. Every piece fell under the 40 m a run needs to be
+#     written, so from 18th Street to the tunnel's mouth neither carriageway was in the file at all and the page drew
+#     both flat on the lawn, 190 m of them, ending where the real tunnel begins. A covered stretch under SHORT_COVER
+#     with open road at both its ends is a bridge's shadow, not a tunnel: it is open cut, and the street's own deck
+#     (el) spans it.
+#   - The westbound carriageway from 15th to 18th Street is two ways without a layer tag, 480 m, past the 360 m a
+#     sunken chain would bridge, so it was never sunk and the cut was fitted to the eastbound one alone, its north
+#     wall down the middle of the westbound lanes. SUNK_FILL carries the chain through.
+#   - A tunnel that met a plain road at its end came up to the ground INSIDE itself (the west mouth, by 21st Street,
+#     stood at street level), though the DEM shows the real road staying down for another 200 m. Where the ground
+#     ahead falls to the road's own depth the mouth holds that depth (approach_plan) and the road past it is an
+#     approach: level until the ground has come down to it.
+# And a tunnel is covered only where there is ground to cover it: the DEM still shows open cut over the first 35 m
+# of the tagged tunnel at its east end (a cap newer than the survey), so the mouth is drawn back, by MOUTH_TRIM at
+# most, to where COVER_MIN of ground stands over the roadway.
+SUNK_FILL = 520
+SHORT_COVER = 45
+COVER_MIN = 5.0
+MOUTH_TRIM = 70
+APPROACH_MAX = 320
+UNDERPASS_MAX = 100
 
 # ---------------------------------------------------------------- load raw dumps
 files = [os.path.join(HERE, "osm_wide_raw.json"), os.path.join(HERE, "osm_south_raw.json")]
@@ -435,7 +467,7 @@ for wid in sorted(W, key=lambda i: -way_len(W[i])):
     w = W[wid]
     if wid in used or not w["sunk"] or not w["mo"] or w["skipname"]:
         continue
-    sunk_chains.append(grow(wid, "sunk", 360))
+    sunk_chains.append(grow(wid, "sunk", SUNK_FILL))
 for wid in sorted(W, key=lambda i: -way_len(W[i])):
     w = W[wid]
     if wid in used or not w["elev"] or w["skipname"]:
@@ -502,6 +534,65 @@ for wid, w in W.items():
         grade_bridge.add(wid)
 print(f"{len(grade_bridge)} elevated ways stay at grade (spans over sunken cuts)")
 
+# ---------------------------------------------------------------- approaches (Round 226)
+def walk_plain(nid, arr, kinds, lim):
+    """The plain road on from node nid, reached by way arr: [(way, its node ids outward), ...], the same kind of
+    highway, never a tagged bridge or tunnel or a way a chain already holds, no sharper than pick_next's turn."""
+    out, node, prev, dist = [], nid, arr, 0.0
+    while dist < lim:
+        cand = [oid for oid in ends.get(node, ()) if oid != prev and oid in W and oid not in used
+                and W[oid]["hw"] in kinds and not W[oid]["sunk"] and not W[oid]["elev"] and not W[oid]["skipname"]
+                and all(oid != o for o, _ in out) and W[oid]["nds"][0] != W[oid]["nds"][-1]
+                and turn_ok(prev, node, oid)]
+        if not cand:
+            break
+        hx, hz = dir_from(W[prev], node)
+        nxt = min(cand, key=lambda o: hx * dir_from(W[o], node)[0] + hz * dir_from(W[o], node)[1])
+        seq = list(W[nxt]["nds"])
+        if seq[0] != node:
+            seq.reverse()
+        out.append((nxt, seq))
+        dist += way_len(W[nxt]); prev = nxt; node = seq[-1]
+    return out
+
+def track_points(steps):
+    """[x, z, way, node id or None] along the ways at solve_chain's own 20 m, with the distance to each."""
+    P = []
+    for wid, seq in steps:
+        for i in range(len(seq) - 1):
+            a, b = nodes[seq[i]], nodes[seq[i + 1]]
+            if not P or P[-1][3] != seq[i]:
+                P.append([a[0], a[1], wid, seq[i]])
+            k = int(math.hypot(b[0] - a[0], b[1] - a[1]) // 20)
+            for j in range(1, k + 1):
+                t = j / (k + 1)
+                P.append([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, wid, None])
+            P.append([b[0], b[1], wid, seq[i + 1]])
+    s = [0.0]
+    for i in range(1, len(P)):
+        s.append(s[-1] + math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]))
+    return P, s
+
+APPROACH = {}      # a tunnel's mouth node -> its approach's plan, or None
+def approach_plan(nid, arr, y_tgt):
+    """A tunnel ends at node nid on a plain motorway. Where the ground along that road falls, within APPROACH_MAX,
+    to at least 2.5 m under the ground at the mouth, the road ahead is still down in its cut (the DEM's own record
+    of it): the mouth holds the depth of that low ground, never deeper than the tunnel's own target, and only when
+    that leaves COVER_MIN of ground over the mouth. Otherwise None, and the end touches down as it always did."""
+    if nid in APPROACH:
+        return APPROACH[nid]
+    plan = None
+    steps = walk_plain(nid, arr, ("motorway",), APPROACH_MAX)
+    if steps:
+        P, s = track_points(steps)
+        g = [grade(q[0], q[1]) for q in P]
+        low = min(g[i] for i in range(len(P)) if s[i] <= APPROACH_MAX)
+        hold = max(y_tgt, low + 0.3)
+        if low + 0.3 < g[0] - 2.5 and g[0] - hold >= COVER_MIN:
+            plan = {"hold": hold, "P": P, "s": s, "g": g}
+    APPROACH[nid] = plan
+    return plan
+
 # ---------------------------------------------------------------- profiles
 LIFT = {1: 6.8, 2: 12.5, 3: 17.5, 4: 17.5}
 node_y = {}
@@ -565,6 +656,10 @@ def solve_chain(cids, sunk):
         touch = ends.get(nid, ()) if nid is not None else ()
         if any(oid in W and W[oid]["skipname"] for oid in touch):
             return tgt[idx]                              # meets a custom bridge: hold
+        if sunk and w["tunnel"] and nid is not None:
+            ap = approach_plan(nid, P[idx][2], tgt[idx])
+            if ap:
+                return ap["hold"]                        # Round 226: the road past the mouth stays down: hold its depth
         if any(oid in W and oid not in chain_set for oid in touch):
             x, z = P[idx][0], P[idx][1]
             y0 = grade(x, z) + 0.3     # meets plain roads: touch down
@@ -578,13 +673,15 @@ def solve_chain(cids, sunk):
         touch = ends.get(nid, ()) if nid is not None else ()
         if any(oid in W and W[oid]["skipname"] for oid in touch):
             return 1
+        if sunk and nid is not None and APPROACH.get(nid):
+            return 1                                     # Round 226: an approach carries the roadway on
         if any(oid in W and oid not in set(cids) for oid in touch):
             return 0
         return 1
-    ek = (end_kind(0), end_kind(n - 1))
     y = list(tgt)
     y[0] = end_constraint(0)
     y[-1] = end_constraint(n - 1)
+    ek = (end_kind(0), end_kind(n - 1))                  # after the constraints: an approach is planned there (Round 226)
     yl = y[-1]
     for i in range(1, n):
         d = (s[i] - s[i - 1]) * slope
@@ -674,7 +771,55 @@ def emit_runs(P, y, ek, prof, keep_core=False):
     return out
 
 out_el, out_sk = [], []
-sunk_solved = []
+sunk_solved = []       # (P, s, g, y, ek, cov, mainline, at_mouth): cov[i] = the stretch on from point i is a tunnel
+approach_tracks = []   # (P, s, g, y, owner): the mainline approaches (Round 226), owner = the chain's place in sunk_solved
+mouths = []            # (x, z, roadY, dx, dz): where an open stretch runs into a covered one, (dx, dz) into the tunnel
+
+def cover_flags(P, s, y):
+    """Which stretches of a solved sunken chain are tunnel (Round 226; the tags alone, before). A tagged stretch under
+    SHORT_COVER with open road at both its ends is a bridge's shadow and counts as open cut. Then each mouth that
+    faces an open stretch is drawn back into the tunnel, MOUTH_TRIM at most, while the DEM across the roadway there
+    stands under COVER_MIN over it: no ground, no tunnel."""
+    n = len(P)
+    cov = [bool(W[P[i][2]]["tunnel"]) for i in range(n)]
+    cov[-1] = cov[-2]
+    def stretches():
+        out, i = [], 0
+        while i < n - 1:
+            if cov[i]:
+                j = i
+                while j < n - 1 and cov[j]:
+                    j += 1
+                out.append((i, j))        # covered from point i to point j
+                i = j
+            else:
+                i += 1
+        return out
+    for i, j in stretches():
+        if i > 0 and j < n - 1 and s[j] - s[i] < SHORT_COVER:
+            for k in range(i, j):
+                cov[k] = False
+    def covered(i):
+        i0, i1 = max(0, i - 1), min(n - 1, i + 1)
+        dx, dz = P[i1][0] - P[i0][0], P[i1][1] - P[i0][1]
+        L = math.hypot(dx, dz) or 1e-9
+        nx, nz = -dz / L, dx / L
+        return min(grade(P[i][0] + nx * o, P[i][1] + nz * o) for o in (-8, 0, 8)) >= y[i] + COVER_MIN
+    for i, j in stretches():
+        if s[j] - s[i] < SHORT_COVER:     # a stub at the chain's end (10th Street's, 39 m): left as it was
+            continue
+        if i > 0:                         # open road before it: the mouth at point i
+            k = i
+            while k < j - 1 and s[k] - s[i] < MOUTH_TRIM and not covered(k):
+                cov[k] = False; k += 1
+            i = k
+        if j < n - 1:                     # open road after it: the mouth at point j
+            k = j
+            while k > i + 1 and s[j] - s[k] < MOUTH_TRIM and not covered(k):
+                cov[k - 1] = False; k -= 1
+    cov[-1] = cov[-2]
+    return cov
+
 for cids in sunk_chains:
     r = solve_chain(cids, True)
     if not r:
@@ -683,12 +828,14 @@ for cids in sunk_chains:
     M = 35
     if all(CORE[0] - M <= p[0] <= CORE[1] + M and CORE[2] - M <= p[1] <= CORE[3] + M for p in P):
         continue                       # the core I-95 trench is already built
-    sunk_solved.append(r)
+    cov = cover_flags(P, s, y)
+    at_mouth = set()               # the points a written tunnel's mouth stands at (Round 226)
+    sunk_solved.append((P, s, g, y, ek, cov, all(W[c]["hw"] == "motorway" for c in cids), at_mouth))
     # split at cover transitions FIRST: covered (tunnel) stretches must not dig
     # holes or grow walls in the app (the I-76 tunnel under 30th St stays buried)
-    segs, cur, cov0 = [], [0], W[P[0][2]]["tunnel"]
+    segs, cur, cov0 = [], [0], cov[0]
     for i in range(1, len(P)):
-        cv = W[P[i][2]]["tunnel"]
+        cv = cov[i]
         if cv != cov0:
             cur.append(i)
             segs.append((cur, cov0))
@@ -697,16 +844,84 @@ for cids in sunk_chains:
         else:
             cur.append(i)
     segs.append((cur, cov0))
-    for idxs, cov in segs:
+    for idxs, cv in segs:
         if len(idxs) < 2:
             continue
         Pseg = [P[i] for i in idxs]
         yseg = [y[i] for i in idxs]
         prof = simplify_profile(Pseg, yseg)
         eks = (ek[0] if idxs[0] == 0 else 1, ek[1] if idxs[-1] == len(P) - 1 else 1)
+        wrote = False
         for run, f0, f1 in emit_runs(Pseg, yseg, eks, prof):
             if run_len(run) > 40:
-                out_sk.append({"c": 0, "w": 12, "p": run, "e": [f0, f1], "cov": 1 if cov else 0})
+                rec = {"c": 0, "w": 12, "p": run, "e": [f0, f1], "cov": 1 if cv else 0}
+                # Round 226: a tunnel under UNDERPASS_MAX that touches down at both its ends is an underpass the model
+                # cannot dig (the profile gets 2 m down at most): the page took its road away for the tunnel's length
+                # and left both ends on the lawn (the I-76 ramps under Broad Street by the arena). g: 1 hands the road
+                # back to the page, which draws it through at grade
+                if cv and f0 == 0 and f1 == 0 and run_len(run) < UNDERPASS_MAX:
+                    rec["g"] = 1
+                out_sk.append(rec)
+                wrote = not rec.get("g")
+        if cv and wrote:               # Round 226: its mouths, where open road or an approach meets it
+            for i, step, far in ((idxs[0], 1, 0), (idxs[-1], -1, len(P) - 1)):
+                if i == far and not APPROACH.get(P[i][3]):
+                    continue
+                dx, dz = P[i + step][0] - P[i][0], P[i + step][1] - P[i][1]
+                L = math.hypot(dx, dz) or 1e-9
+                mouths.append((P[i][0], P[i][1], y[i], dx / L, dz / L))
+                at_mouth.add(i)
+
+# Round 226: the approaches. Past a held mouth the plain road keeps the mouth's height until the ground has come down
+# to it and is written as an open sunken run from the mouth to that point, ap: 1 (the page opens the ground over all
+# of it, however shallow its far end). A ramp that leaves an approach while it is still under the ground climbs out
+# at the motorway's 4.2% and runs one point on at grade, so the cut's wall breaks where it crosses (rp: 1).
+for owner, (P0, s0, g0, y0, ek0, cov0, main0, am0) in enumerate(list(sunk_solved)):
+    for end in (0, len(P0) - 1):
+        plan = APPROACH.get(P0[end][3])
+        if not plan:
+            continue
+        P, s, g = plan["P"], plan["s"], plan["g"]
+        hold = y0[end]
+        ya = []
+        for i in range(len(P)):
+            ya.append(min(g[i] + 0.3, hold))
+            if i and g[i] + 0.3 <= hold + 0.05:
+                break
+        n = len(ya)
+        if n < 2 or s[n - 1] < 40:
+            continue
+        Pa = P[:n]
+        for i, q in enumerate(Pa):
+            if q[3] is not None and q[3] not in node_y:
+                node_y[q[3]] = ya[i]
+        out_sk.append({"c": 0, "w": 12, "p": simplify_profile(Pa, ya), "e": [1, 0], "cov": 0, "ap": 1})
+        approach_tracks.append((Pa, s[:n], g[:n], ya, owner))
+        held = {w for w, _ in walk_plain(P0[end][3], P0[end][2], ("motorway",), APPROACH_MAX)}
+        for i, q in enumerate(Pa[:-1]):
+            if q[3] is None or g[i] - ya[i] < 1.3:
+                continue
+            for oid in ends.get(q[3], ()):
+                o = W.get(oid)
+                if (not o or oid in used or oid in held or o["hw"] != "motorway_link" or o["sunk"] or o["elev"]
+                        or o["nds"][0] == o["nds"][-1]):
+                    continue
+                seq = list(o["nds"])
+                if seq[0] != q[3]:
+                    seq.reverse()
+                Pr, sr = track_points([(oid, seq)] + walk_plain(seq[-1], oid, ("motorway_link",), 200))
+                yr = []
+                for k in range(len(Pr)):
+                    gk = grade(Pr[k][0], Pr[k][1]) + 0.3
+                    up = ya[i] + 0.042 * sr[k]
+                    yr.append(min(gk, up))
+                    if k and gk <= up:
+                        if k + 1 < len(Pr):
+                            yr.append(grade(Pr[k + 1][0], Pr[k + 1][1]) + 0.3)
+                        break
+                if len(yr) > 1 and sr[len(yr) - 1] >= 24:
+                    out_sk.append({"c": 0, "w": 8, "p": simplify_profile(Pr[:len(yr)], yr), "e": [1, 0], "cov": 0,
+                                   "ap": 1, "rp": 1})
 
 # longest/motorway chains first so ramps pin to solved mainlines
 elev_chains.sort(key=lambda cids: (0 if any(W[c]["mo"] for c in cids) else 1,
@@ -735,42 +950,79 @@ for cids in elev_chains:
 # ---------------------------------------------------------------- Vine corridor
 def corridor_runs():
     """One clean corridor from the TWO mainline carriageways (ramps excluded):
-    even 12 m stations, clamped and smoothed width, smoothed floor."""
+    even 12 m stations, clamped and smoothed width, smoothed floor.
+    Round 226: the lead is still the longest sunken chain, but its partner is whichever other mainline carriageway
+    lies beside it at each station (the second-longest chain alone left the cut fitted to one carriageway west of
+    15th Street), a station is an OPEN point by cover_flags, and each mainline approach gets a run of its own for
+    as long as both carriageways are still down. Returns the runs and, for each, its two ends' kinds (ce)."""
     if not sunk_solved:
-        return []
-    chains = sorted(sunk_solved, key=lambda r: -r[1][-1])
-    if len(chains) < 2:
-        return []
-    lead, partner = chains[0], chains[1]
-    P, s, g, y, ek = lead
-    P2, s2, g2, y2, ek2 = partner
-    runs, cur = [], []
-    for i in range(len(P)):
-        w = W[P[i][2]]
-        depth = g[i] - y[i]
-        if (not w["tunnel"]) and depth > 0.5:
-            x, z = P[i][0], P[i][1]
-            best, bj = 1e18, -1
+        return [], []
+    order = sorted(range(len(sunk_solved)), key=lambda k: -sunk_solved[k][1][-1])
+    if len(order) < 2:
+        return [], []
+    lead = order[0]
+    def partners(skip_owner):
+        out = []
+        for k, r in enumerate(sunk_solved):
+            if k != skip_owner and r[6]:
+                out.append((r[0], r[3]))
+        for (Pa, sa, ga, ya, owner) in approach_tracks:
+            if owner != skip_owner:
+                out.append((Pa, ya))
+        return out
+    def nearest(tracks, x, z):
+        """(distance, height) of the nearest partner point, or None past the end of its track."""
+        best, hit = 1e18, None
+        for P2, y2 in tracks:
             for j in range(len(P2)):
                 d2 = (P2[j][0] - x) ** 2 + (P2[j][1] - z) ** 2
                 if d2 < best:
-                    best, bj = d2, j
-            if best < 60 * 60:
-                cx, cz = (x + P2[bj][0]) / 2, (z + P2[bj][1]) / 2
-                hw = math.sqrt(best) / 2 + 12.5
-                fy = min(y[i], y2[bj]) - 0.45
+                    best, hit = d2, (P2, y2, j)
+        if hit is None or best >= 60 * 60:
+            return None
+        P2, y2, j = hit
+        if j in (0, len(P2) - 1) and len(P2) > 1:
+            k = 1 if j == 0 else len(P2) - 2
+            dx, dz = P2[j][0] - P2[k][0], P2[j][1] - P2[k][1]
+            L = math.hypot(dx, dz) or 1e-9
+            if ((x - P2[j][0]) * dx + (z - P2[j][1]) * dz) / L > 12:
+                return None
+        return math.sqrt(best), y2[j], P2[j]
+    def stations(P, y, g, is_open, tracks, need_partner):
+        runs, cur = [], []
+        for i in range(len(P)):
+            depth = g[i] - y[i]
+            st = None
+            if is_open(i) and depth > 0.5:
+                x, z = P[i][0], P[i][1]
+                near = nearest(tracks, x, z)
+                if near:
+                    d, y2, q = near
+                    cx, cz = (x + q[0]) / 2, (z + q[1]) / 2
+                    hw = max(14.0, min(24.0, d / 2 + 12.5))
+                    fy = min(y[i], y2) - 0.45
+                elif not need_partner:
+                    cx, cz, hw, fy = x, z, 14.0, y[i] - 0.45
+                else:
+                    cx = None
+                if cx is not None:
+                    st = [cx, cz, fy, hw]
+            if st:
+                cur.append(st)
             else:
-                cx, cz, hw = x, z, 14.0
-                fy = y[i] - 0.45
-            cur.append([cx, cz, fy, max(14.0, min(24.0, hw))])
-        else:
-            if len(cur) > 2:
-                runs.append(cur)
-            cur = []
-    if len(cur) > 2:
-        runs.append(cur)
-    out = []
-    for run in runs:
+                if len(cur) > 2:
+                    runs.append(cur)
+                cur = []
+        if len(cur) > 2:
+            runs.append(cur)
+        return runs
+    P, s, g, y, ek, cov, main, at_mouth = sunk_solved[lead]
+    raw = [(run, False) for run in stations(P, y, g, lambda i: (not cov[i] and (i == 0 or not cov[i - 1])) or i in at_mouth, partners(lead), False)]
+    for (Pa, sa, ga, ya, owner) in approach_tracks:
+        if owner == lead:
+            raw += [(run, True) for run in stations(Pa, ya, ga, lambda i: True, partners(owner), True)]
+    out, kinds = [], []
+    for run, is_ap in raw:
         # resample to even 12 m stations along the centerline
         seg = [0.0]
         for i in range(1, len(run)):
@@ -799,15 +1051,36 @@ def corridor_runs():
         for i, p in enumerate(ev):
             p[3] = sm[i]
         out.append([[round(p[0], 1), round(p[1], 1), round(p[2], 2), round(p[3], 1)] for p in ev])
-    return out
-out_cor = corridor_runs()
+        kinds.append([0, 2 if is_ap else 0])
+    return out, kinds
+out_cor, out_ce = corridor_runs()
+
+# Round 226: the portals. Each corridor end that a mouth stands at (the two carriageways' mouths lie within a few
+# metres of each other along the road) is closed by one portal across the cut's whole width there; a mouth no
+# corridor reaches gets a portal of its own roadway's width.
+out_por = []
+taken = set()
+for ri, run in enumerate(out_cor):
+    for e in (0, 1):
+        st = run[0] if e == 0 else run[-1]
+        near = [k for k, m in enumerate(mouths) if math.hypot(m[0] - st[0], m[1] - st[1]) < 36]
+        if not near:
+            continue
+        taken.update(near)
+        dx = sum(mouths[k][3] for k in near); dz = sum(mouths[k][4] for k in near)
+        L = math.hypot(dx, dz) or 1e-9
+        out_por.append([st[0], st[1], round(min(mouths[k][2] for k in near), 2), round(dx / L, 4), round(dz / L, 4), st[3]])
+        out_ce[ri][e] = 1
+for k, m in enumerate(mouths):
+    if k not in taken:
+        out_por.append([round(m[0], 1), round(m[1], 1), round(m[2], 2), round(m[3], 4), round(m[4], 4), 8.0])
 
 # ---------------------------------------------------------------- report + write
 tot_el = sum(run_len(c["p"]) for c in out_el)
 tot_sk = sum(run_len(c["p"]) for c in out_sk)
 tot_cor = sum(run_len(r) for r in out_cor)
 with open(os.path.join(HERE, "overpasses.json"), "w") as f:
-    json.dump({"el": out_el, "sk": out_sk, "cor": out_cor}, f, separators=(",", ":"))
+    json.dump({"el": out_el, "sk": out_sk, "cor": out_cor, "ce": out_ce, "por": out_por}, f, separators=(",", ":"))
 size = os.path.getsize(os.path.join(HERE, "overpasses.json"))
 print(f"elevated: {len(out_el)} chains, {tot_el/1000:.1f} km | sunken: {len(out_sk)} runs, "
       f"{tot_sk/1000:.1f} km | corridor: {len(out_cor)} runs, {tot_cor/1000:.1f} km | {size/1024:.0f} KB")
@@ -820,4 +1093,23 @@ def near_any(pts_list, x, z, r):
                 return True
     return False
 print("I-95 viaduct at Front & Reed:", near_any(out_el, -60, 1380, 200))
-print("Vine cut corridor runs x-extents:", [(round(r[0][0]), round(r[-1][0])) for r in out_cor])
+print("Vine cut corridor runs x-extents:", [(round(r[0][0]), round(r[-1][0])) for r in out_cor], "ends", out_ce)
+print("portals:", out_por)
+print("approaches:", [(c["p"][0], c["p"][-1], "ramp" if c.get("rp") else "main") for c in out_sk if c.get("ap")])
+print("underpasses drawn through at grade:", [(c["p"][0][:2], c["p"][-1][:2]) for c in out_sk if c.get("g")])
+# Round 226, the sanity that would have caught it: a covered run whose mouth lies well under the ground has a portal
+for c in out_sk:
+    if not c["cov"] or c.get("g"):
+        continue
+    for q in (c["p"][0], c["p"][-1]):
+        deep = grade(q[0], q[1]) - q[2]
+        def off(o):
+            best = 1e9
+            for a, b in zip(o["p"], o["p"][1:]):
+                dx, dz = b[0] - a[0], b[1] - a[1]
+                t = max(0.0, min(1.0, ((q[0] - a[0]) * dx + (q[1] - a[1]) * dz) / (dx * dx + dz * dz or 1e-9)))
+                best = min(best, math.hypot(a[0] + dx * t - q[0], a[1] + dz * t - q[1]))
+            return best
+        joins = any(o is not c and off(o) < 3 for o in out_sk)   # another run's roadway carries it on underground
+        if deep > 3 and not joins and not any(math.hypot(q[0] - m[0], q[1] - m[1]) < 40 for m in out_por):
+            print("  NOTE covered run end %.0f, %.0f lies %.1f m under the DEM with no portal" % (q[0], q[1], deep))
