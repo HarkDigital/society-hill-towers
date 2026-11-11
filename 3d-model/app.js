@@ -14315,11 +14315,19 @@ vec2 wRing(vec2 rc, float tt) {
   // probe's scale follows the sky. Never two bakes within CITYENV_GAP (the third review: dragging the clock from noon to
   // night and back baked the city 44 times in 70 frames on a phone, a fifth more CPU and its p90 frame 16 to 20 ms): a
   // request inside the gap waits for it, so a still clock's bake lands on the frame refreshEnv asks (its last was minutes
-  // ago) and a moving clock's at most every 0.4 s, with one more as it settles
+  // ago) and a moving clock's at most every 0.4 s, with one more as it settles.
+  // Round 229: a request that lands between a computer's two cubes is KEPT. The first centre's bake (Center City) ends with
+  // nothing asked and the second's (University City) runs on the next frame; a refreshEnv on that frame (a new clock, the
+  // weather landing, the sun's next three degrees) set the flag just before the second bake cleared it, so the request was
+  // lost and Center City's glass kept the light of the frame before, with the scale between bakes capped at 1, until
+  // something asked again. MEASURED: a first frame drawn at night and a day clock set before the second (the fallback
+  // that lights Enter in a tab with no animation frame, and every capture after dark) left the towers mirroring a night
+  // city by day, 6.34% of the entry orbit's pixels, on the page before this round as well once a frame was forced first.
+  // The second cube is still baked on its frame (under the new light); the kept request bakes both again after the gap
   const CITYENV_GAP = 400;
   function cityEnvTick() {
     if (!CITYENV.built) return;
-    if (CITYENV.next === 1) { CITYENV.next = -1; cityEnvBake(1); }
+    if (CITYENV.next === 1) { const asked = CITYENV.pending; CITYENV.next = -1; cityEnvBake(1); CITYENV.pending = asked; }
     else if (CITYENV.pending && performance.now() - CITYENV.at >= CITYENV_GAP) cityEnvBake(0);
     else if (CITYENV.lumAt > 0) CITYENV.u.uCityEnvK.value = Math.min(1, cityEnvLum() / CITYENV.lumAt);
   }
