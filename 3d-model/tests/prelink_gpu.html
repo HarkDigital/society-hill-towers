@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prelink Timing</title>
+<style>body{background:#141a20;color:#e8e6df;font:13px/1.5 monospace;padding:16px}pre{white-space:pre-wrap}iframe{width:100%;height:300px;border:1px solid #39424c;background:#000}a{color:#c9b68a}</style>
+<h1>Prelink Timing</h1>
+<p>Round 229 (Stage 1 of the Nov 10 plan): the measurement that decides Stage 3. On this engine, are N programs issued together and then awaited faster than the same N linked one at a time, and what is left at the first draw? The page below is the built city (?dev=1&amp;probe=0); once its button lights, its own __dbg.PERF.linkProbe runs on its own context: copies of the page's heaviest programs (the facade, the ground, the cloud deck, the curtain-wall glass), every copy's fragment source salted with a random constant so no cache has seen it, each drawn once into a small target of the frame's kind with its mesh's vertex layout, then once more. Nothing is kept: every copy is deleted.</p>
+<p>Run it: build the page, serve the folder that holds it (python3 -m http.server 8917 from a copy of 3d-model outside Dropbox, with art/ and tests/ beside the page) and open /tests/prelink_gpu.html in Chrome, in Safari and in the iOS simulator's Safari (http://localhost:8917/tests/prelink_gpu.html). Options: ?n=8 programs a run (2 to 48), ?pick=facade,ground,clouds,glass-sys (a name is one of those three families or any part of a program's key), ?ext=1 also asks for KHR_parallel_shader_compile and repeats the runs with it (and once more waiting by its completion poll while the page runs on), ?page=../society-hill-towers.html, ?pq=tier%3D1 passes a query on to the page. Each run compiles programs no cache has seen, so a second visit is as cold as the first.</p>
+<pre id="result">Loading the city…</pre>
+<iframe id="city" title="the city"></iframe>
+<script>
+(async () => {
+  const out = document.getElementById('result'), frame = document.getElementById('city');
+  const q = new URLSearchParams(location.search);
+  const N = Math.max(2, Math.min(48, +(q.get('n') || 8) | 0)), pick = (q.get('pick') || 'facade,ground,clouds,glass-sys').split(',').filter(Boolean), ext = q.get('ext') === '1';
+  const task = (ms) => new Promise((r) => setTimeout(r, ms));
+  const lines = [];
+  const say = (s) => { lines.push(s); out.textContent = lines.join('\n'); };
+  try {
+    frame.src = (q.get('page') || '../society-hill-towers.html') + '?dev=1&probe=0' + (q.get('pq') ? '&' + q.get('pq') : '');
+    // the city, to its lit button: its own build, flushes and first frame are over, so what the runs time is theirs alone
+    const t0 = performance.now();
+    let P = null;
+    for (;;) {
+      await task(250);
+      const w = frame.contentWindow, D = w && w.__dbg;
+      const msg = w && w.document && w.document.getElementById('loadmsg');
+      out.textContent = 'Loading the city… ' + Math.round((performance.now() - t0) / 1000) + ' s' + (msg ? ', ' + msg.textContent : '');
+      if (D && D.PERF && D.PERF.lit) { P = D.PERF; break; }
+      if (performance.now() - t0 > 15 * 60000) throw Error('the city never lit its button');
+    }
+    await task(500);
+    const L = P.link, R1 = (v) => Math.round(v * 10) / 10;
+    say('the city: Ready at ' + P.ready + ' ms, ' + frame.contentWindow.__dbg.renderer.info.programs.length + ' programs, the build\'s median program ' + R1(L.med) + ' ms (' + (L.cold === 1 ? 'a cold load' : 'a warm load') + ')');
+    const rows = [], res = [];
+    const row = (label, R) => {
+      if (!R || !R.groups || !R.groups.length || R.st > 2) throw Error(label + ': the trial ended in state ' + (R && R.st) + ' (3 nothing to probe with, 4 a copy did not link, 5 a GL error on the way)');
+      const g = R.groups.reduce((a, G) => { for (const k of ['n', 'i', 's', 'w', 'x', 'd', 'r', 'turns']) a[k] += G[k]; return a; }, { n: 0, i: 0, s: 0, w: 0, x: 0, d: 0, r: 0, turns: 0 });
+      g.label = label; g.link = g.i + g.s + g.w; g.ms = R.ms; g.ext = R.ext;
+      rows.push(g); res.push({ label, R });
+      return g;
+    };
+    const serial = (o) => P.linkProbe(Object.assign({ pick, groups: new Array(N).fill(1) }, o)), batched = (o) => P.linkProbe(Object.assign({ pick, groups: [N] }, o));
+    out.textContent += '\nrunning: one at a time…';
+    const s1 = row('one at a time', serial()); await task(300);
+    const b1 = row('all issued, then awaited', batched()); await task(300);
+    const b2 = row('all issued, then awaited (again, first this time)', batched()); await task(300);
+    const s2 = row('one at a time (again)', serial()); await task(300);
+    const first = res[0].R;
+    say('the engine: KHR_parallel_shader_compile ' + (first.k ? 'offered' : 'not offered') + (ext ? '' : ' (not asked for: add ?ext=1)'));
+    say('the sources (' + first.src.length + ' of ' + pick.length + ' families found; the copies cycle through them):');
+    for (const s of first.src) say('  ' + (s.name + '            ').slice(0, 12) + (s.tag + '                                ').slice(0, 32) + ' fragment ' + s.fs + ' chars, vertex ' + s.vs + ', the build\'s own ' + (s.ref < 0 ? 'untimed' : R1(s.ref) + ' ms'));
+    let se = null, be = null, pe = null;
+    // the extension is asked for HERE, on the page's own context, and never by the page: from this call on the context links as an engine does for a page that asked
+    if (ext && first.k && frame.contentWindow.__dbg.renderer.getContext().getExtension('KHR_parallel_shader_compile')) {
+      se = row('one at a time, extension on', serial({ ext: true })); await task(300);
+      be = row('all issued, then awaited, extension on', batched({ ext: true })); await task(300);
+      pe = row('all issued, polled to completion, extension on', await batched({ ext: true, poll: true })); await task(300);
+    }
+    const pad = (s, n) => (String(s) + ' '.repeat(n)).slice(0, n), num = (v, n) => (' '.repeat(n) + R1(v).toFixed(1)).slice(-n);
+    say('');
+    say(pad('run (' + N + ' programs each, ms)', 52) + '   issue    call    wait    LINK   a prog | 1st draw  a prog | 2nd draw |   total');
+    for (const g of rows) say(pad(g.label, 52) + num(g.i, 8) + num(g.s, 8) + num(g.w, 8) + num(g.link, 8) + num(g.link / g.n, 9) + ' |' + num(g.d, 9) + num(g.d / g.n, 8) + ' |' + num(g.r, 9) + ' |' + num(g.ms, 8) + (g.turns ? '  (' + g.turns + ' tasks ran while it waited)' : ''));
+    say('');
+    const ser = (s1.link + s2.link) / 2, bat = (b1.link + b2.link) / 2, serD = (s1.d + s2.d) / 2, batD = (b1.d + b2.d) / 2, ratio = bat / ser;
+    say('LINK, batched over serial: ' + ratio.toFixed(2) + ' (' + R1(bat) + ' against ' + R1(ser) + ' ms, the mean of two runs each way)');
+    say('with the first draws:      ' + ((bat + batD) / (ser + serD)).toFixed(2) + ' (the first draws are ' + R1(100 * serD / (ser + serD)) + '% of a program linked alone and drawn)');
+    say('the one synchronous call behind ' + N + ' links: ' + R1((b1.s + b2.s) / 2) + ' ms; issuing them: ' + R1((b1.i + b2.i) / 2) + ' ms (a wait in either is an engine that links in the call or stalls its command stream)');
+    // against one at a time WITHOUT the extension: asking for it can change the serial case itself (MEASURED in a WKWebView, where a program linked and waited for alone took 1.7 to 4.8 times as long once the extension was on), so its own serial run is no baseline
+    if (se && be) say('with the extension asked for, each over one at a time without it: one at a time ' + (se.link / ser).toFixed(2) + ', all issued then awaited ' + (be.link / ser).toFixed(2) + (pe ? ', polled to completion ' + (pe.link / ser).toFixed(2) + ' (' + pe.turns + ' tasks ran while it waited)' : ''));
+    say('');
+    // the verdict is for links issued and then WAITED FOR, which a page may do behind the veil; a page that must not block waits by the extension's poll, and that row can read near serial where the verdict says under half (the review: 0.94 in one headless Chrome run), so its ratio is printed beside it
+    say((ratio < 0.5 ? 'UNDER HALF' : 'NOT UNDER HALF') + ' for links issued and then waited for, as a page may behind the veil' + (pe ? '; polled to completion with the extension on, as a page that must not block would wait: ' + (pe.link / ser).toFixed(2) + ' of serial' : '; the polled wait was not run (add ?ext=1)') + '. Stage 3 (linking ahead) is built for an engine only where batched is under half of serial. Every number is wall time: run it on a quiet machine, and twice.');
+    window.__prelink = { n: N, pick, ratio, polled: pe ? pe.link / ser : null, rows, res, ua: navigator.userAgent };
+    say('DONE');
+  } catch (e) { say('FAIL ' + e.message + '\n' + (e.stack || '')); }
+})();
+</script>

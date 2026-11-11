@@ -73,22 +73,30 @@ under `?dev` every roof mask the scanline answers is also asked of the old
 compare a default `?dev` load's `rk` or build time with a beacon's, or with a run
 that had the check off.
 
-### 4. Poll for `__dbg` in its own call
+### 4. Poll for `__dbg` and a lit Enter button in its own call
 
 `javascript_tool` times out at 45 s and a cold load takes 40 to 45 s, so a call
 that both waits and captures will die mid-capture while the page keeps going.
 Split it: poll in one call capped at 38 s, act in the next.
 
 ```js
-const t0 = performance.now();
+const t0 = performance.now(), lit = () => window.__dbg && window.__dbg.goFly && !document.getElementById('btnEnter').disabled;
 while (performance.now() - t0 < 38000) {
-  if (window.__dbg && window.__dbg.goFly) break;
+  if (lit()) break;
   await new Promise(r => setTimeout(r, 1000));
 }
-({ ready: !!window.__dbg, secs: Math.round((performance.now() - t0) / 1000) })
+({ ready: !!lit(), secs: Math.round((performance.now() - t0) / 1000) })
 ```
 
 A warm reload lands in 6 to 8 s, so most calls after the first are quick.
+
+Wait for the button, not only for `__dbg` (Round 229). Enter lights at the end of the
+first drawn frame, no longer as the build ends, and a click on a disabled button does
+nothing at all: the veil stays up and the page never enters. The pane draws no frame of
+its own, so the page's fallback draws that first frame from a timer about 1.5 s after
+`__dbg` appears (a hidden pane's timers tick once a second, so allow 3 s) and then lights
+the button; `__dbg.frameOnce()` lights it at once. `__dbg.PERF.enterBy` reads `'timer'`
+when the fallback did it, and `__dbg.PERF.lit - __dbg.PERF.ready` is the wait in ms.
 
 ### 5. Get past the chrome
 
@@ -200,6 +208,14 @@ The tools in `scripts/memory/` (Node 18+, Google Chrome installed; they launch t
 
 Compare against a build from git that is known to work on the phone (`git show <sha>:3d-model/society-hill-towers.html`):
 Round 158's reference is Sep 17's e90c765, 981 MB of GPU plus copies after the first frames, 162 MB peak live heap.
+
+Since Round 229 the Enter button lights after the first drawn frame, and both `measure.mjs` and `beacons_headless.mjs`
+take their "at ready" reading when the button lights with animation frames held: on a build from Round 229 on that
+reading is taken AFTER the first frame (the page's fallback has drawn it), on an older build before it, so the two are
+not the same instant. The first frame uploads what the last steps staged, so compare "after the frames" across that
+line, or take a true at-Ready reading by polling `__dbg.PERF.ready` and calling `clearTimeout(__dbg.PERF.enterTimer)`
+in the same evaluation, then `__dbg.frameOnce()` to draw the frame and light the button. The page's own GPU bytes at
+Ready (the ready beacon's `gb` fields) are taken in build() and did not move.
 
 ### 7c2. The real devices' timings, and the beacons a build would send (Round 220)
 

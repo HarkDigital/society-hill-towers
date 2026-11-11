@@ -110,7 +110,7 @@ class Wiring(unittest.TestCase):
         # three sorts opaque draws by material id: a twin made at once after its original sorts beside it
         for made, twin in (("  cityMat.userData.vdepth = true;", "  if (VDEPTH_WANT) vdepthTwin(cityMat);"),
                            ("    coreMat = cityMat.clone();", "    if (VDEPTH_WANT) vdepthTwin(coreMat);"),
-                           ("        const hallMat=cityMat.clone(),hallFacade=cityMat.onBeforeCompile;", "        if (VDEPTH_WANT) vdepthTwin(hallMat);"),
+                           ("        const hallMat=cityMat.clone(),hallFacade=wxOwnHook(cityMat);", "        if (VDEPTH_WANT) vdepthTwin(hallMat);"),   # Round 229: the facade's own hook, under the weather's
                            ("        outerGlassMat.userData.vdepth = true;", "        if (VDEPTH_WANT) vdepthTwin(outerGlassMat);")):
             at = SRC.index(made)
             nxt = SRC.index('\n', SRC.index('\n', at) + 1)
@@ -123,7 +123,13 @@ class Wiring(unittest.TestCase):
         tail = SRC[SRC.index('  build().then(() => {'):]
         call = '    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push(\'vdepth\'); }'   # review: a failure leaves fragment depth
         self.assertEqual(tail.count(call), 1)
-        self.assertGreater(tail.index(call), tail.index("coreMat.customProgramCacheKey = () => 'fabric-core|wx';"))
+        self.assertEqual(SRC.count(call), 1)
+        # Round 229: the weather's hooks are laid by wxHookAll, whose last call is build()'s own (after its steps), so the
+        # block after build() runs after every hook is in place: vdepthInit there is still after the weather's hooks
+        b = SRC[SRC.index('  async function build() {'):SRC.index('  build().then(() => {')]
+        self.assertIn('    wxHookAll(true);', b[:b.index("bootMark('ready')")])
+        self.assertNotIn('wxHookAll(', tail)
+        self.assertIn("    facade(coreMat, 'fabric-core|wx');", SRC)
         self.assertLess(tail.index(call), tail.index('requestAnimationFrame(frame);'))
         self.assertIn('if (window.__dbg) window.__dbg.vdepth = vdepthDbg;', tail)
 
