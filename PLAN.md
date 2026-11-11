@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 10, 2026, after Round 230. Round 229 is built and merged on a branch but held (see "In flight").
+Last updated: Nov 10, 2026, after Round 229 (which shipped after Round 230). Camden's heights are held on a branch.
 
 ## The ask
 
@@ -52,9 +52,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **One vertex layout.** The roofs' new bits (Stage 2) and the walls' records (Stage 4) are laid out together.
 - **Every look change** ships behind a flag and goes to Mike as a private side by side (the entry orbit included, see
   the capture skill's `references/poses.md`). Nothing is on by default until he says.
-- **How a round is built** (this worked for Rounds 225 to 228): a git worktree outside Dropbox per item, an implementer,
+- **How a round is built** (this worked for Rounds 225 to 230): a git worktree outside Dropbox per item, an implementer,
   an adversarial reviewer, a fix, a second reviewer; then the lead merges, builds, runs the whole suite, compares
-  captures against main (`render.mjs --png` and a pixel compare, traffic off), writes the devlog, commits the built
+  captures against main himself (`render.mjs --png` and a pixel compare, traffic off; twice on Nov 10 this caught what
+  both reviewers missed: a tree renumbering and the dark glass), writes the devlog, commits the built
   page, pushes with `git push gh-ssh main` and runs `3d-model/deploy_philly3d.sh` (which also ships a TestFlight
   build). Commit from worktrees with `git -c gc.auto=0 -c maintenance.auto=false` (two automatic repacks raced in the
   Dropbox-hosted object store on Nov 10). Server config edits need Mike's explicit go, each time.
@@ -63,7 +64,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 | Stage | What | Status |
 |---|---|---|
-| 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batch one shipped (Round 225). Batch two (Round 229) is built, reviewed and merged on branch `round229`, and HELD for a regression. Remainder below. |
+| 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batches one and two shipped (Rounds 225, 229), except Camden's heights, held on branch `s1b/camden` for Mike's look. Remainder below. |
 | 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Not started. Needs the two side-by-side pages first. |
 | 3 | Link ahead (the cold load's main fix) | Not started. Built only for an engine where Round 229's probe shows batched linking under half of serial. |
 | 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Not started. |
@@ -85,31 +86,23 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 230**: the last see-through slivers beside the expressway's west approach cuts closed (a floor and risers
   under the lawn laid over opened ground, `lawnUnder`; a pier at each end of each headwall).
 
+- **Round 229** (Stage 1, batch two, without Camden): no program compiles twice (`wxHookAll` before the first compile);
+  Enter lights only after the first drawn frame; `?veilcity=1` (off) lets a computer's veil show the city rising;
+  measurement round two in the beacons; `?cold=<n>` and the link probe. The merge found and fixed a Round 192 bug the
+  batch exposed (the city probe's second cube wiped a pending request: dark glass towers in any capture after dark).
+
 ## In flight (finish these first)
 
-0. **Round 229 (Stage 1, batch two) is HELD, not shipped.** Branch `round229` holds main at Round 228 plus the batch:
-   no program compiles twice (`wxHookAll` before the first compile); Enter lights only after the first drawn frame;
-   `?veilcity=1` (off) lets a computer's veil show the city rising; measurement round two in the beacons; `?cold=<n>`
-   and the link probe; Camden at its measured heights. Every package passed two adversarial reviews, and the merged
-   build's phone and computer paths run clean. What holds it:
-   - **Dark glass towers.** At the entry orbit by day (`orbit-e` in the parity poses) Center City's glass towers render
-     dark where main renders them sky-blue: 6.3% of pixels, repeatable, and present in the first-frame branch alone
-     (`s1b/first`), so it is the batch's and not the merge's. Lighting, environment and the glass uniforms read the same
-     on both builds; the glass rooms being loaded is NOT the cause (main with rooms loaded is still blue). Bisect
-     `s1b/first`'s commits, the weather hook (`a250f07`) first. The reviewers compared program sources, which are
-     identical; this is state, not text.
-   - `tests/test_measure_two.py` `test_the_frame` fails on the merge: Round 227's `peopleStep` line now sits between
-     `updateTraffic` and the batch's `tj3` timer in `frame()`.
-   - Its notes are written and waiting beside the research record: `.audit/2026-11-10-performance-and-realism/round229/`
-     (`devlog229.md` for the devlog, `claude_md.txt` for CLAUDE.md's flags and rules, `open_items.md` for Mike's
-     summary). They describe the batch as shipped; apply them when it is.
-   - Camden has no flag: it ships with this deploy, so show Mike the before and after from Penn's Landing first if he
-     wants a say.
-1. (Done in Round 230: the slivers at the Vine cut's west approaches.)
+0. **Camden at its measured heights** (Stage 1, data only) is built and reviewed on branch `s1b/camden` and NOT shipped:
+   it has no flag, so it waits for Mike's look at the before and after from Penn's Landing (capture paths in
+   `.audit/2026-11-10-performance-and-realism/round229/open_items.md`; they are in a session scratchpad and may be gone:
+   retake them from the branch). To ship it: merge the branch, rename nothing, run its recipe's checks
+   (`tests/test_wide_repack.py`), and add the two `wide.b64` rules from `round229/claude_md.txt` to CLAUDE.md. Three port
+   structures there were never checked against imagery.
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
-3. **Read the next real beacons** once Round 229 is out, against its predictions (`devlog229.md` lists the fields): the first frame
+3. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
    after Ready on cold loads, programs linked per flush, the link probe's ratio by engine, the memory crumbs after
    Enter on the phone.
 
@@ -122,7 +115,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - The service worker and the reload: Round 229's navigation fields must first confirm that a reload under the worker
   downloads the whole page again; only then let Chromium navigations bypass the relay in `sw.js`.
 - The deploy's two verify lines for the server config (the art's cache header; gzip through a `Via` header).
-- Round 229's open findings, once it ships (`devlog229.md` lists them): a computer's second and third frames still link programs
+- Round 229's open findings (its devlog entry lists them under "Known, open"): a computer's second and third frames still link programs
   under a lit button; tier 2 still links about ten weather programs in its first frame; `beacons.py`'s engine line
   leaves out probes that produced no ratio.
 
@@ -206,8 +199,8 @@ walkers on bare ground where no sidewalk is drawn; an About line saying the peop
 6. May the model stage dated scenes (a game crowd, the holiday tree, fireworks)?
 7. Other people's weak GPUs: does "never resolution" bind strangers' machines? It holds one measured 4K Windows laptop
    at 20 fps.
-8. Camden (ships with Round 229): the before and after from Penn's Landing, and three port structures nobody has
-   checked against imagery.
+8. Camden: the before and after from Penn's Landing (it is held until he has seen it), and three port structures nobody
+   has checked against imagery.
 9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks

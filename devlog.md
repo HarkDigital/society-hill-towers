@@ -13476,3 +13476,482 @@ same floor and risers, which touches the whole corridor. The risers wear the law
 kerb face of about 0.5 m beside the packed motorway at B's end, a band up to 0.3 m over the flush approach walls) it
 reads as a dark green bank. The phone path was not captured for this round.
 
+## Round 229 — no program compiled twice, Enter lit when it can answer, the cold load on demand (Camden's heights held) (Nov 10)
+
+**Read this first: what shipped differs from the batch as reviewed, in two ways.**
+1. **Camden (the fourth package below) is NOT in this release.** It has no flag, and a look change goes to Mike before it
+   is on by default, so branch `s1b/camden` holds it until he has seen the before and after from Penn's Landing. Its
+   section below describes that branch.
+2. **The merge found a bug the reviews could not see, and fixed it.** On the merged build Center City's glass towers
+   drew grey-black at the entry orbit by day in every capture taken after dark (6.34% of the `orbit-e` parity pose,
+   repeatable). The cause is Round 192's, already on main: a computer's city probe (CITYENV) is two cubes baked on
+   consecutive frames, and `cityEnvBake(1)` ended by clearing `CITYENV.pending`, which wiped a request `refreshEnv` had
+   raised on that same frame; Center City's cube then kept the previous frame's light, and the scale between bakes is
+   capped at 1, so a night cube cannot be lifted by day. This batch exposed it: the new 1,500 ms timer draws frame 1 at
+   the real hour, the tool then sets the pose's clock, and frame 2 is exactly the second cube's frame. MEASURED: main
+   with one frame forced before the pose gives the identical trace and the identical 6.34%; the weather-hook commit
+   alone is clean. A real visitor would have met it only on a computer, loading in a background tab and returning after
+   dusk or dawn had crossed (about two minutes of glass mirroring the wrong half of the day; INFERRED from the code and
+   the captures, no real hidden tab was tested). The fix is one line in `cityEnvTick` that keeps the request across the
+   second cube's bake (`tests/test_cityenv_request.py`, 8 tests, the old line as a control); `cityEnvBake` is untouched.
+   Every final program's source is still main's: the union of sources over five main runs and three fixed runs is the
+   same 288. Parity with conditions matched (the first pose's clock in the link for both, main primed one frame):
+   `orbit-e` 0.0000% on three pairs, every other pose at main's own floor. The capture tool now carries the first pose's
+   clock in the link so a capture no longer depends on the hour it is run (`--first-live`, `--prime <n>`), because the
+   first frame also seeds the skyline theme (3.9% at `night-cityhall`) and the water's phase (5.8% at `x-30th-st`), which
+   had been put down to noise. The merge also put Round 227's `peopleStep` between `updateTraffic` and this batch's
+   `tj3` timer in `frame()`: that order is right (the walkers read the traffic's runs) and `test_the_frame` now pins
+   the three lines. The merged build was run with the people on (`?people=sharp`; a phone at tier 1 and tier 2) and the
+   expressway cut under it: no console error, no failed step, `PERF.prog.lost` empty, `PERF.wxHook.over` 0, walkers
+   drawn, both of their programs linked by the lit button.
+
+
+The second batch of the plan's Stage 1 (Round 225's "Left of Stage 1";
+`.audit/2026-11-10-performance-and-realism/PLAN.md`). Four packages, each built by one implementer in a worktree off
+e4b6a2f (Round 225's last commit), reviewed adversarially, fixed, and confirmed by a second reviewer: the first frame
+and the wait, measurement round two, the cold run with its link probe, and Camden. The first three sit one on another on
+one branch and Camden on its own; both were merged onto d5cdd61. The agents wrote "Round 226" throughout; 226 to 228
+went the same day to the pins' range, the walking people and the Vine Street cut, so the code and the tests say Round
+229. Verdicts: the first frame pass and pass; the measurements FAIL (a fence that blocks in WebKit), then pass; the cold
+run pass and pass; Camden FAIL (a bridge anchorage raised across its own roadway), then pass. 114 tests were added
+(1,277 to 1,362 on the first branch, 1,277 to 1,306 on Camden's).
+
+How far to trust the numbers. Every timing below was taken on one M2 Max: headless Chrome 157 on ANGLE Metal through the
+capture skill's `render.mjs` and scratch recorders, and from the measurement review on also a real WKWebView on macOS
+26. Other agents shared the machine throughout (load average 17 to 190), so counts, sums, ratios and side-by-side pairs
+are the evidence and wall-clock milliseconds are upper figures. Nobody ran a real iPhone, the iOS simulator, a Windows
+machine or Firefox. Nothing cold has been measured on a real device: the only cold loads are this Mac's under the new
+`?cold=<n>` salt. Every device gain is INFERRED until the fields this round adds come back.
+
+Shader text. No GLSL string changed in any package: each reviewer read its diff for it and hashed what the pages hand to
+`shaderSource` (334 sources on a computer and 281 on the phone path before and after the measurements; 410 calls and 318
+distinct with 0 on one side only for the cold run's package with no flag; the same program cache keys before and after
+Camden). But this is NOT a deploy that links what the last one linked. The first package changes which programs a device
+links and when: the weather's variants are linked in the flushes where they were linked in the first frame, and the
+hookless variants the old page linked behind the veil and threw away are never linked at all. What the reviewers proved
+is that every FINAL program's source is identical to the old page's and that the new page links no source the old page
+never linked.
+
+- **No program compiles twice.** The block after `build()` laid the weather's hooks on the facade, the ground and every
+  plain material AFTER the flushes had compiled them, re-keyed them and disposed four, so those programs compiled a
+  second time in the first frame. `wxHookAll(last)` lays the same wrappers under the same keys (on `cityMat` and
+  `coreMat`, on every `userData.wxSurf` flat round the material's own hook, and the bare `wxSurfacePatch` on every other
+  hookless, non-flat-shaded MeshStandardMaterial) before each flush's render in `flushUploads` (after `packResident`)
+  and once more as `build()` ends (`wxHookAll(true)`). It is idempotent; what it has hooked is remembered in the WeakMap
+  `WX_OWN`, never in `userData`, with the hook that lay under the weather's. The four `dispose()` calls are gone and the
+  block after `build()` holds a comment. City Hall's `?real=0` clone of the facade is made after the first flush, so it
+  reads the facade's own hook through `wxOwnHook(cityMat)`: reading `onBeforeCompile` there would have brought the
+  weather's lines in twice. Tripwires: `PERF.wxHook` (`n`, `ms`, `mats`, and `over`, a hook found laid over the
+  weather's after a material's first flush, which must read 0) and, under `?dev`, `progNote` after each flush and
+  `progLost` at the first frame's end (`PERF.prog.lost`, the programs a flush linked that the first frame no longer has:
+  it must be empty, with a console warning `render.mjs` prints). MEASURED, old page (e4b6a2f's) against new over 11 to
+  19 poses with the weather driven through rain, storm and snow: the final source multisets are equal on a computer (303
+  to 304 live programs, 277 distinct sources in the reviewer's set), on the phone path at tiers 0, 1 and 2, on a
+  log-depth phone (`?zbuf=log`, the vertex-depth twins on), under `?real=0` and under `?veilcity=1`; sources only the
+  new page ever linked: 0 on every path; sources only the old page linked, the variants it compiled behind the veil and
+  released at Ready: 27 to 28 on a computer, 26 to 27 on the phone path at tier 0, 25 to 26 at tier 1, 17 at tier 2, 20
+  under `?real=0` (the counts move by one with the pose list). The reviewer's census, which no pose can miss (every
+  material in the scene after the run, its key and a hash of what its hook makes of the stock shader), is equal on five
+  paths (397 materials on a computer, 262 of them standard) and no hook brings the weather in twice. The first frame,
+  warm, one render at a time, `?rkcheck=0`: 1,498 to 2,417 ms on the old page and 353 to 447 ms on the new on a
+  computer; 1,100 to 1,594 against 295 to 333 on the phone path; 1,501 against 458 on a log-depth phone. The flushes are
+  no slower warm (5.7 to 8.9 s old, 5.5 to 6.3 s new on a computer; 3.9 to 4.3 s both ways on the phone path).
+  `wxHookAll` costs 2.1 to 4.5 ms a load over 12 to 16 calls and 87 to 100 materials, and nothing of it runs after
+  Ready. Weather captures on a computer match the old page at the noise of two runs (rain, snow and clear: old against
+  old 0.01 to 0.82 of 255, old against new 0.01 to 0.81).
+  - The implementer's claim that no weather-hooked program is linked after Ready on any path was FALSE at tier 2, and
+    the review caught it: tier 2 has five flushes, so what its later steps build is first compiled in the first frame,
+    ten weather programs (the lane roads, two lot and two ground variants, the deck walls, storefront panels and
+    awnings, the tree cards, the bare patch) where the old page linked 26. Links between Ready and the lit button: 27 on
+    a computer, 18 at tiers 0 and 1, none of them weather-hooked; 35 at tier 2, ten of them weather-hooked, every one a
+    first compile; 20 on a log-depth phone, one of them the facade's vertex-depth twin (`fabric|wx|vdepth`), by design
+    (`vdepthInit` runs after the build). Programs after the last flush and after the first frame: 141 and 165, 139 and
+    154, 138 and 153, 88 and 121. `wxHookAll`'s header now says so under "What this does NOT do", and the figure to
+    watch is `PERF.prog.f1` less `PERF.flush.p1`. Taking tier 2's ten needs a draw before Ready, which is the plan's
+    COMPILE-4 and not this package.
+  - Phone weather parity: at 24 frames a pose the old page against the new differs more than two lock-step old runs
+    (City Hall at night 34% of pixels against 15%). The reviewer traced it for rain: the difference is rain streaks,
+    their phase is the sum of the clamped frame dt, the signed mean has no consistent sign, and two runs of the new page
+    out of lock-step differ as much (0.32 to 1.16 of 255). So it is phase, not a look, and two simultaneous runs of one
+    page understate run-to-run noise. The implementer's one snow triple at 0.44 at a night pose was not separately
+    traced.
+  - Found on the way: the flushes draw things the old page then never drew again until first seen (the Olympia's rails,
+    the El stations' plain materials), so the old page compiled their weather variant in flight, on first sight. And a
+    source-set comparison with a storm pose can differ by one program, the lightning bolt's, because strikes are random:
+    leave storm out or expect it.
+  - Left alone on purpose: comments inside hook functions that still speak of "the weather's re-hook after the build".
+    Editing text inside a hook changes its `toString()`, and with it a cache key.
+- **Enter lights when a tap can be answered.** `build()` no longer touches the button; it records `ENTER.fail`, and the
+  ready beacon and `PERF.ready` stay where they were. `enterLight()` sets the Ready line, the done class, the button's
+  enable and 'Explore the City' and the bar's 100, and is the last thing `frame()` does on its first drawn frame. The
+  Ready line, the pulse's stop and the bar's last step moved with the button (more than the plan named), so the veil
+  never says Ready over a disabled button; no wording changed. A page that gets no animation frame (a hidden tab, the
+  Browser pane, `render.mjs`) must still open, so `enterArm()` arms a timer of `ENTER_WAIT` 1,500 ms that draws the
+  first frame itself through the once path and lights the button; a frame that throws or a lost context still lights it;
+  `bootGate`'s 'Load the City' is untouched. MEASURED warm: with real animation frames the button lit 350 to 768 ms
+  after Ready on a computer and 957 ms on the phone path, which is the first frame itself, and the timer did nothing;
+  with frames held it lit by the timer 1.80 to 2.58 s after Ready on a computer, 2.18 s at tier 1 and 3.58 s at tier 2,
+  which is 1.5 s plus the first frame and not the second and a half the package asked for. The review's nit, applied:
+  `enterArm()` was the block's last statement, so a throw earlier in the block after `build()` (`applyHashView` on a
+  copied link is the one unguarded call outside `?dev`) left the button dark for good; it is now the block's first
+  statement, proved by making the block throw on a real page (lit by the timer 1,862 and 1,994 ms after Ready). That is
+  parity with the old page, a lit button over a page with no frame loop, not a fix. Probes: `PERF.lit`, `PERF.enterBy`
+  (`'timer'` when the fallback drew the frame), `PERF.enterTimer`. The second reviewer's finding is under Known, open:
+  on a computer the second and third frames still link programs under the lit button.
+- **`?veilcity=1`, off by default: the veil shows the city rising.** Under the post pipeline a flush draws off screen
+  and never presents, so a computer's veil is empty for the whole build. With the flag `veilCityShow()` (beside
+  `renderPost`; called by `flushUploads` after its render) draws one composite of the flush's picture to the canvas with
+  the frames' own `postComp` on the frames' own quad, `uAO` 0, and never writes `uBloom` (`wxGrade` stays its one
+  writer; a target never drawn into reads as black). Where the canvas goes through reversed depth's own framebuffer
+  (`ZREV.sub`) it calls `zrevPresent()`, because the phone path under reversed depth turned out to show an empty veil
+  too, against the critic's line that a phone shows the city assembling (likely true since Round 192). MEASURED: 14
+  presents a load, 6.3 to 7.9 ms of CPU in all and one full-screen pass a flush; flushes 5.80 s against 5.59 s without,
+  inside the spread; the composite's program moves from the first frame into the flushes (142 against 141 at Ready) and
+  the final sets are equal. It changes the loading screen, so it waits for Mike: with the flag the city is seen from the
+  build's own camera pose and the picture jumps to the entry orbit at the first frame. `PERF.veilCity` counts the
+  presents.
+- **Pins moved on purpose by the first package.** `tests/test_memory_cuts.py`: `test_rehooked_materials_are_disposed`
+  became `test_no_material_is_rehooked_after_it_compiled`. `tests/test_vdepth.py`: the City Hall line, and `vdepthInit`
+  pinned after `build()`'s last `wxHookAll(true)`. `tests/test_landmark_cityhall.py`: the City Hall line.
+  `tests/test_gput.py`'s count of `PERF.frame1Ms` in `frame()` still reads 2. New: `tests/test_wx_hook.py` (11),
+  `tests/test_enter_lit.py` (11), `tests/test_veil_city.py` (7). The capture skill's SKILL.md was edited on the branch
+  (step 4 polls for the lit button; a note that the memory tools' "at ready" reading is now after the first frame):
+  needed, because a click on a disabled button is lost, and outside the package's scope, so the lead accepts it or
+  reverts it.
+- **Measurement round two: fields and timers only.** Everything comes through `measFacts(st)`, spread into `beacon()`;
+  lists are whole numbers joined by dots and entries by underscores, which a query never escapes. (1) Link timers
+  (`LINK`, `linkInstall`): instance wraps on the real context, laid before anything compiles, timing each program's two
+  compiles, its link, its first status query, its introspection and the texture calls apart. A load reads cold when ten
+  or more programs are in and the median compile plus link plus query is over `COLD_MS`, 60 ms (`?coldms=<n>` moves it);
+  only a cold load drains one `getError()` before each program's first `shaderSource` and names its five slowest
+  programs (`progKey`, `progTag`: material type plus custom key). No draw call is ever wrapped. A warm load's wraps come
+  off at Ready (`measReady`), a cold load's at the end of the one frame drawn behind the unlit button (`measLit`). (2)
+  The build's waits: `yieldNow` times itself (`PERF.yld`), `build()` keeps each step's own yield and the yields inside
+  it apart, `flushUploads` records each flush's step, ms and programs (`flushNote`) and, on a computer in Chromium only,
+  lays a fence behind it that the yields poll (`fencePoll`). (3) Time hidden before Ready and the bail's moment
+  (`PERF.hid`), a computer's `ctxlost` beacon, stalls of 250 ms or more after Enter split by whether programs were added
+  (`measFrame`). (4) GPU bytes on every device (`GPUMEM.on`; `?gpumem=0` turns it off), the textures a framebuffer has
+  attached summed apart, geometry by family (`famWalk`), compressed-format support read from `getSupportedExtensions`
+  alone (`capField`), the drawing buffer (`dbField`). (5) A crumb every second for the 19.5 s after Ready (`readyCtx`),
+  only while the page is visible and focused, stopped for good on pagehide. (6) The navigation's `workerStart`,
+  `fetchStart` and `responseStart` on every beacon: the plan's three fields for the service worker's reload, which is
+  measured here and not changed. (7) Counters: `artImage`'s nulls, the traffic reconcile's worst ms, the JavaScript
+  before the draw in five parts (`measJs`), the pins' captures and landings (`capNote`).
+  - The fields (the docstring of the capture skill's `beacons.py` gives every number's meaning). Every beacon: `ws`,
+    `fs`, `rs`, `gbs`. Ready: `cold`, `lk` (programs timed; compile, link, first query, introspection and drain ms; the
+    median program), `l5` (cold only), `tu`, `fll`, `gw`, `gi`, `gy`, `gf` (nine numbers, the last a state: 0 laid
+    throughout, 1 stopped at a slow call, 2 never laid on this engine or device, 3 no `fenceSync`), `hd`, `hn`, `bl`,
+    `cap`, `db`, `gbf`, `on`, `an`, `wn`. Enter: `cold`, `f1p`, `lit`, `eb`, and on a cold load alone `f1k`, `f1t`,
+    `f15`. Bail: `cold`. Perf, settled and late: `stl`, `prg`, `db`, `gbf`, `pl`, `pt`, `eh`, `js`, `fgl`, `trm`, `an`.
+    `ctxlost`: `d`, `ar`, `ae`. The next load's `pc` reads `q..` for the 20 s after Ready. `beacons.py` decodes every
+    one under `--all` (`FIELDS`; a new field must be named in `READY2`, `ENTER2` or `RUN2` or a test fails), pairs each
+    bail with a later Ready, prints `ctxlost`, reduces cold and warm loads apart and re-cuts the cold line from `lk`'s
+    median with `--coldms=<n>`. Dev probes: `PERF.link`, `PERF.meas`, `PERF.programs()`, `PERF.families()`,
+    `PERF.gpuAtt()`.
+  - MEASURED (the build served as philly3d.com so the page sends its real beacons). Longest beacons: ready 1,048 to
+    1,070 bytes warm (577 to 635 on the old page) and 1,167 to 1,179 cold; enter 383 to 417 warm and 508 to 557 cold;
+    perf 758 to 992; the worst the build could send, composed by the real `beacon()` in the test, 3,135 bytes with the
+    cold run's fields at their widest against a bound of 3,200 (nginx's line is 8 KB). The sums hold: `fll`'s ms sum to
+    `flms` exactly, and the family sums come to 918 MB against the page's own 924 to 930 on a computer and 664 against
+    673 on the phone path (180 buffers made and freed between walks were never sized, about 9 MB: `gbf` is a floor after
+    a flight). Where the wait is: compile and link read 0 to 1 ms and the whole wait is in the first status query, in
+    Chrome (3.2 to 4.3 s for 144 programs, median 18 to 38 ms a program on a fresh profile or a repeat) and in WKWebView
+    (2.8 to 3.5 s warm, median 13 to 16 ms; introspection 0.5 to 1.0 s a load there against 55 to 88 ms in Chrome).
+    Texture calls: 2.0 to 2.2 s for about 356 calls on a computer against 0.22 to 0.24 s for 271 on the phone path. GPU
+    at Ready on a computer: buffers 898 MB, textures 796 (94 attached), renderbuffers 88; after a short flight textures
+    1,153 to 1,191 (144 to 172 attached); phone path 653, 177 (33) and 29. Geometry on a computer: 459 MB of chunks, 177
+    of roads, 92 of flats, 28 to 37 instanced and 153 the rest. Flushes by step: the outer districts 60 programs, the
+    rebuilds 34 to 36, the cladding 39 to 40. Cost: old and new computer loads run at the same moment reached Ready in
+    46,415 and 45,678 ms; 60 driven frames after Enter made the same GL calls on both pages but for 8 binding reads
+    behind `bufferData`; `famWalk` 6 to 24 ms a load; no own function is left on the context once the wraps are off.
+    Nothing drawn changed: side-by-side lossless captures differ by 0, 0 and 1 to 2 pixels at three poses (renders
+    minutes apart differ by up to 136,591, so only a side-by-side pair is evidence).
+  - The first review FAILED it on a fence. WebKit's `fenceSync` is a synchronous call that waits until the GPU process
+    has worked through what the flush queued; in Chrome it returns at once, which is why the Chrome-only proof never saw
+    it. MEASURED in a real WKWebView: 264 to 865 ms a load on a computer's path over five loads of 14 calls, and 527 and
+    2,680 ms on the phone path over two loads of 11 (single calls of 772 and 1,608 ms after the far ring's flushes), on
+    warm loads and in no field. Fixed: a fence is laid only where `FENCE_OK` (not touch, and `window.chrome` an object;
+    no agent string is read), the `fenceSync` and `flush` pair is timed, and the first pair of `FENCE_SLOW_MS` 4 ms or
+    more is the load's last. After: 0 `fenceSync` calls in WKWebView on both paths; in Chrome 14 pairs cost 0.2 to 1.3
+    ms a load. WebKit therefore sends no fence numbers; its backlog shows only in `gy`'s after-flush waits (3.4 to 3.7 s
+    a load in those runs).
+  - The review's other findings. The cold line at 40 ms mislabelled a warm but busy machine (this Mac read cold at 45 ms
+    in Chrome and 71 to 74 ms in WKWebView with no flag; the implementer's "this Mac never reads cold at 40" held only
+    when quiet): it is 60, twice the quiet warm ceiling and under the fastest cold load's likely median of about 70. The
+    wraps stayed on after Ready against the package's note: a warm load's now come off at Ready to the letter; a cold
+    load keeps them through the one frame behind the unlit button, because that is the frame where a cold device froze
+    8.5 to 29 s and the timers are what let the enter beacon name what it linked. The second reviewer judged the decline
+    right (Verifier B's own text puts the Ready rule on a draw-call wrap, which does not exist here); it stands as an
+    exception the lead must accept or refuse (Known, open). Nits, all applied: the drain moved before a program's first
+    `shaderSource` so a cold program's own translation stays in its record (a forced-cold load: 173 drains, 414 to 657
+    ms, no error swallowed); the per-second crumb is written only while visible and focused, as `bootRun`'s is; `on` is
+    the mean of ten matrix passes.
+  - Left out on purpose: a first-draw timer and any draw-call wrap (the probe's job); the long-animation-frame observer;
+    heap readings across yields (Chrome quantises `performance.memory`); the GPU's name (Mike's privacy question, and
+    `privacy.html` needs no change without it); the skill's `beacons_headless.mjs` and `measure.mjs`, neither edited nor
+    run. Pins moved on purpose: `tests/test_gpu_mem.py` (the `GPUMEM` line, and `gpuMemField`'s exact dictionaries gain
+    `gbs`); `tests/test_beacon_fields.py` (one more beacon is sent, so its counts go from 4 and 5 to 5 and 6; `ws`,
+    `fs`, `rs`; the `measFacts` line). `tests/test_gput.py`'s pins stand. New: `tests/test_measure_two.py`, 30 tests,
+    the block cut from app.js and run under Node against a scripted context and clock.
+- **A cold load on demand, `?cold=<n>`.** The project has no cold machine: this Mac's caches are always warm. With the
+  flag (n of 1 or more; it works without `?dev`) `coldSalt` renames every fragment shader's `main` and appends a new one
+  that calls it and then runs one never-taken branch on `gl_FragCoord` writing the shader's own first output, the
+  constants picked by n. Not a comment or an unused constant, which are stripped before the program-binary and Metal
+  caches key. The wrap sits on both context prototypes' `createShader` and `shaderSource` before the first context
+  exists, and only with the flag (the link timers' `LINK.off` deletes instance properties, which would have unsalted a
+  cold load's first frame). Vertex shaders are untouched, and no `discard` or `gl_FragDepth` is added. A salted load
+  carries `cs` on every beacon and is reduced apart, never as a visitor's cold load; `shareQuery` strips `cold`,
+  `coldms` and `probe` from a copied link; nothing is saved. MEASURED: a new n gives a median program of 105 to 555 ms
+  against 15 to 33 warm, flush renders of 41 to 90 s against 6 to 11, Ready in 63 to 160 s against 27 to 48; the same n
+  a second time in a fresh profile reads warm (15 to 33 ms), so the salt is what made the load cold; 0 of 184 to 191
+  fragment sources are shared with the plain page and every vertex source is; in a WKWebView a new n gives 71 and 73 ms,
+  35 s of flushes and Ready in 69 and 72 s. With no flag the prototypes' methods are the native ones and the links are
+  the same pairs in the same order (221 links, 194 distinct). Each run leaves about 200 salted programs in the browser's
+  and the system's caches until they are evicted.
+- **The link probe, which decides Stage 3 for an engine.** The plan asks whether issuing links together and waiting once
+  is under half the cost of one at a time; no Windows machine exists here, so visitors' PCs answer through the beacon.
+  `linkProbeAtReady` runs in `build()` after `wxHookAll(true)` and before Ready is stamped, only on a load that reads
+  cold (the latched verdict and, since the review, the median as it stands at the call), never on a warm load, a hidden
+  page, a lost context or WebGL 1; `?probe=1` forces it and `?probe=0` forbids it. `lpSteps` copies one of the page's
+  own linked programs (the slowest the build timed at no more than `LP_EACH_MS` 400 ms; sources read back with
+  `getShaderSource`), salts each copy and runs one, three together, one: five copies, not the plan's four, by an
+  amendment of COMPILE-1's first verifier, with the one synchronous call behind the three timed apart, which is the
+  number that showed where WebKit waits. Every copy is drawn twice into a 4 by 4, 4-sample target of the frame's kind
+  with the mesh's real vertex layout (`lpLayout`). Two bounds: no batch if the first single took over `LP_ONE_MS` 800 ms
+  linked and drawn, and no new group after 2.5 s. It deletes all it made, restores every binding it moved, calls the
+  prototype's methods for everything the link timers wrap, and never calls `getExtension`. Fields on the ready beacon:
+  `pp` (14 numbers, the last the probe's own ms, already inside Ready) and `ppk` (the copied program's tag). The scratch
+  page `tests/prelink_gpu.html` loads the built page in an iframe, waits for the lit button and runs the same code
+  through `__dbg.PERF.linkProbe` on the page's own context: N copies cycling the facade, the ground, the cloud deck and
+  the curtain-wall glass, one at a time against all issued then awaited, in ABBA order; `?ext=1` has the scratch page
+  itself ask for KHR_parallel_shader_compile and repeat, with a polled wait.
+  - MEASURED on this Mac, ratios not ms. Chrome on Metal, eight programs through the scratch method: batched over serial
+    0.35 to 0.47 across the implementer's and the first reviewer's runs, 0.41 for the fixer, and 0.51 for the second
+    reviewer with three Chromes sharing the cores (the page printed NOT UNDER HALF); no better at 16 programs than at 8:
+    about 2.3 to 2.8 times, not a thread pool's 8. The page's own three-program field over seven cold loads read 0.39 to
+    0.73 with a median of 0.51, and 0.55 on an eighth: a three-program batch cannot read under 0.33, so one `pp` is
+    close to a coin flip on this engine. WKWebView: 0.86 to 0.97 through the scratch page, 1.02 and 1.11 from the page's
+    own probe. The link call returns at once and the first synchronous call behind it waits for every link issued:
+    WebKit bug 251514's behaviour stands in this WebKit, though issuing does not block the page (143 tasks ran while 8
+    links completed under the polled wait). A program's first draw is 25 to 34% of it in Chrome and 42% in WebKit, 50 to
+    400 ms each, and is paid one at a time whatever the links did; with first draws the ratio is 0.54 to 0.63 in Chrome
+    and 0.90 to 0.99 in WebKit. Asking for the extension made a program linked and waited for alone 1.7 to 4.8 times
+    slower in WebKit over three runs and changed nothing outside the noise in Chrome; the polled wait with it on read
+    0.78 to 0.96 of serial in Chrome. The facade is 0.7 to 1.5 s cold here. The probe cost 0.8 to 2.4 s of cold loads of
+    69 to 160 s, and left nothing: the reviewer snapped 54 GL parameters and 16 units' bindings round it and counted
+    every create and delete (no state differed, `getError` 0, `renderer.info.programs` 203 before and after).
+  - What that means for the plan, INFERRED from one Mac: linking ahead alone would recover roughly 40 to 45% of a cold
+    program's cost in Chrome on Metal, not the thread-pool figure Stage 3 assumed, and nearly nothing in WebKit; a
+    design that must not block the page may gain little even in Chrome (the polled row); the critique's worry about
+    first draws holds on Metal as well as Direct3D; and the plan's steps that ask for the extension on every device
+    (COMPILE-3 step 1, OUTSIDE-1 step 2) should not be done on WebKit. Windows (ANGLE on Direct3D 11) and a cold iPhone
+    are still unknown, and are what the field is for.
+  - The first review passed it with three should-fixes, all applied. In the iOS and Android app the probe was not once a
+    device and build: Capacitor's asset handler sends no Last-Modified, so `document.lastModified` is the moment it is
+    read and the marker never matched (MEASURED on a server that withholds the header: two loads probed, 1.2 and 6.2 s;
+    after the fix the first of three). `lpBuild` now returns no build date in the app or where the document's date is
+    within `LP_NOW_MS` 5 s of the clock, and there the marker (`localStorage philly3d.pp`, not a kept key) holds the
+    time and the probe runs at most once in `LP_AGAIN_MS`, seven days. The probe's ms sat inside the ready beacon's ms
+    and so inside every cold median: `beacons.py` takes `pp`'s last number out of `gaps` and `ready` and prints it as
+    `probe=`. And the per-load verdict words are gone: every probe is listed with its engine, and an ENGINE MEDIANS
+    section gives each engine's median with its count, range and salted count. Nits applied: the median must be over the
+    line at the call; `?coldms` is stripped from a copied link; the scratch page prints the polled ratio beside its
+    verdict and says the verdict is for links issued and then waited for. One nit declined: judging `LP_ONE_MS` on the
+    link alone would let the measured misread-warm case through (665 ms of link plus 400 ms of draw: 2.5 s before the
+    line, 1.07 s with it).
+  - Pin moved on purpose: `tests/test_measure_two.py`'s worst-case beacon carries `cs`, `pp` and `ppk` at their widest
+    and its bound went from 3,072 to 3,200 bytes. New: `tests/test_cold_probe.py`, 25 tests. Not done: no vertex-shader
+    salt (it would have to touch `gl_Position`), so where an engine caches the stages apart the vertex half of a `?cold`
+    load may be warm.
+- **Camden at its measured heights.** The City's footprint heights stop at the city line, so everything east of the
+  Delaware stood at `process_osm`'s defaults. `lidar_join.py` now gives a building the City join leaves unmeasured,
+  standing outside the city line (`city_limit.json`, fatal if missing) and east of a belt (`EAST_X` 1,000), the roof
+  pass's own height for its own OSM way from `lidar_city_roofs.json` (P90 for a flat roof, the ridge for a pitched one).
+  The match is identity, not a blend: the way and the building cover at least half of each other (`ROOF_COVER`); the
+  talls' ratchet applies (Camden Tower stays 37.2 m against a reading of 28.4). Every row goes to
+  `lidar_east_heights.json` and `lidar_report.json` gains an `east_roof_pass` block. `pack_wide.py --against <a copy of
+  the wide.b64 it replaces>` calls `pack_common.repack_diff`, which walks both blobs record by record: if anything but a
+  height word differs (or the storey-pitch bits on a record whose height moved), or `wide_walls.b64` would change, it
+  writes nothing and exits 1; otherwise it writes `wide_repack.json` with both hashes and every changed record. The page
+  gained nine lines of JavaScript: `WIDE_COLK_KEEP`, a scene point for each record lifted over 45 m so it still counts
+  toward the far ring's colour reservoir (`wideColK`), and `__dbg.colStats().wideColK`.
+  - MEASURED. The pipeline reproduced Round 225's `wide.b64`, `wide_walls.b64`, both scenes and `lidar_report.json` byte
+    for byte before any change. Then: 580 rows (497 in the wide scene, 83 in the south scene, which is Gloucester City;
+    445 flat, 120 gable, 15 hip); 549 height words changed in `wide.b64` and nothing else (112,752 records in the same
+    order, 0 storey pitches since New Jersey has no OPA word; `wide_walls.b64`, `city.b64` and `storefronts.b64`
+    byte-identical; both reviewers recomputed it with their own decoders); 109 raised and 440 lowered, the median from
+    10.4 to 7.6 m; over 20 m from 5 buildings to 15. In the plan's box (x 1,250 to 2,400, z -1,400 to 3,600: 1,203
+    packed records, where the plan counted 614 of 1,195) the 10.5 m default went from 613 to 420. Six records cross 30 m
+    upward and so take the tower styles: One Port Center 13 to 54.2 m (the one 45 m crosser, now a dark glass tower on
+    the waterfront), Riverview Towers 15 to 40.7, the Board of Education building 29.8 to 44.0, 330 Cooper 21.3 to 39.2,
+    the county jail 13 to 30.9, and way 576393381 13 to 33.2. The far ring's colours did not move: `wideColK` 111,992
+    before and after (111,991 and 3 of 1,024 reservoir slots changed without the pin), all 1,024 reservoir colours
+    identical, every `far*` and `town*` key of `colStats` identical on a computer and on the phone path, the same
+    program cache keys on both pages. The page is 1,118 bytes larger, the nine lines; the blob's length is unchanged.
+    How far to trust the roof pass: on the 7,353 wide buildings west of the river that both sources measure it reads a
+    median 1.5 m under the City's `max_hgt`, within 3 m on 71%, and over by more than 5 m on 0.27%: it under-reads, it
+    does not spike, so Camden stands about 1.5 m under Philadelphia's convention.
+  - The first review FAILED it on a bridge. The roof pass's flat reading over a bridge anchorage is the deck: the Walt
+    Whitman's New Jersey anchorage (way 1044593722, record 111999) went from 13 to 38.8 m, and a 55 by 33 m glass block
+    stood across the roadway with the traffic driving into its wall, on every device. The implementer had checked the
+    Ben Franklin's Camden anchorage, which `BRIDGE_SKIP` drops, and missed this one. Fixed in the join, not with a new
+    `BRIDGE_SKIP` entry (that `continue` sits before the sampler and would drop the record from `wideColK`): a way OSM
+    tags `bridge:support` gives no roof-pass height (`ROOF_HELD`). Three ways east of the river carry the tag: this
+    anchorage, the Ben Franklin's Camden anchorage and one under the Ben Franklin's east tower that the ratchet already
+    held. `test_no_changed_record_stands_in_a_delaware_bridge` fails on the first cut's blob and passes on this one. The
+    first cut's 553 changes and 584 rows became 549 and 580: exactly four records went back to their Round 225 words.
+  - The review's should-fixes. Storefronts: the page clamps a panel, its awning and its blade sign to the host height
+    baked in `storefront_info.json`, which still held the defaults; by the page's own formula two panels stood over
+    their wall (Buster's Liquor, 3.6 m on a host now 3.2 m; Friend's Cafe, 3.75 m on 3.3 m; the implementer's "six" was
+    a looser count). A run-time clamp is not cheap (`sfHostNote` is called only for style-5 walls) and a full re-bake is
+    not available (below), so `bake_storefronts.py --host-heights` bakes nothing and rewrites only the host-height bits
+    of the 52 records on hosts the join moved, refusing any record that does not carry exactly its host's old height;
+    `storefronts.b64` is untouched and a second run changes nothing. The panels now stand at 3.05 and 3.15 m. Three
+    unnamed port structures had risen over 30 m and into office dress with no capture and no cross-check: two are held
+    at their defaults by name in `ROOF_HELD` (way 265973742, an 84 by 31 m shed at the foot of Kaighn Avenue, read at
+    35.8 m and back at 6; way 1186523447, read at 31.9 m and back at 13), and the third keeps its 33.2 m because OSM
+    tags it `office=company` (the second reviewer found a service road named Holtec Boulevard 332 m east, so it is very
+    likely the Holtec campus's office block). Nobody has looked at imagery for any of the three.
+  - Deviations the lead accepts knowingly. The Camden side is "outside the city line, with x over 1,000 as a belt", not
+    the plan's x over 1,250: north of about z -2,400 the river bends and x over 1,250 is Fishtown and Kensington. That
+    adds 14 records on Camden's own bank (American Water 18 to 28.9 m, the Battleship New Jersey Museum 13 to 4.9), and
+    the south scene's 83 buildings are included (62 changed records lie at z over 3,600). Not done: Camden City Hall
+    stays at its 13 m default (it lies beyond the 2022 tiles and wants a base and a tower, whose shape is Mike's call);
+    the plan's step 3, lifting the area gate and re-streaming the tiles east of the river, needs the NOAA download, so
+    420 records in the box still stand at 10.5 m; the orthophoto check.
+  - Nothing else is stale, by reading and not by a run: `bake_landmask.py` reads type and ring, and
+    `bake_people_walk.py` (Round 227, merged under this round) type, ring and minimum height, so neither sees a height
+    word; no researched tower stands near Camden. Tests: `tests/test_wide_repack.py`, 29 tests (the guard on synthetic
+    blobs; putting the listed words back gives Round 225's blob byte for byte; every changed record east of the river
+    and a row of the join's table; the held ways; the six tower-style records; the sidecar). No existing test file was
+    touched. The next heights-only repack is four steps: copy the committed `wide.b64` aside, `lidar_join.py
+    --skip-city`, `pack_wide.py --against <the copy>`, `bake_storefronts.py --host-heights`, then move the test's pins
+    (`PREDECESSOR`, the counts, the 30 m list, `REC_225`). A record lifted over 45 m of type 6 or under goes in
+    `WIDE_COLK_KEEP`, one lifted over 30 m is looked at in a capture first, and a way that is not a building goes in
+    `ROOF_HELD`. The working venv was uv's Python 3.13 with shapely 2.1.2: the main checkout's `.venv` points at a
+    Homebrew Python 3.14 this Mac does not have.
+
+**Known, open.** Every finding the confirming reviews left standing, and the risks nobody closed.
+
+- On a computer the second and third frames still link programs under a lit button (the second reviewer of the first
+  frame; a should-fix, not fixed). MEASURED with real animation frames and no tap: 27 programs linked between Ready and
+  the lit button, then 18 more 70 to 276 ms after it lit (the nine mirror sprite twins `mirzWarm` draws at the second
+  frame, five shadow depth programs, three ShaderMaterials) and 3 more by 629 ms; the phone path links 2. At the plan's
+  cold rates that is 4.3 to 7.4 s in which a tap is not answered on a cold computer (INFERRED), right after the button
+  lit: the aim is met on phones and about three fifths met on a cold computer (27 of 48 post-Ready links are behind an
+  unlit button, where all 77 were behind a lit one). So "no dead button" is not yet true on a computer. The lead's
+  choice: light at the end of the first drawn frame that links no program (capped at about five frames), or leave it to
+  COMPILE-4's warm frame; `enterLight`'s comment does not yet say so.
+- Tier 2 still links about ten weather programs in its first frame, roughly 2.4 s cold (INFERRED at 0.24 s each), now
+  behind an unlit button; COMPILE-4.
+- The cold exception to "the wraps come off at Ready". A cold load keeps the fifteen link wraps through the one frame
+  behind the unlit button. The lead records the acceptance here, or makes `LINK.off()` unconditional in `measReady` and
+  drops `f1k`, `f1t`, `f15` and the cold half of `test_where_the_wraps_come_off`.
+- The cold line is still a guess. At 60 ms a truly cold load on a fast GPU reads warm (a fresh Chrome profile on this
+  Mac: 38 ms) and then sends no `l5` and no first-frame timers, so Mike's own Mac is read with `?coldms=0`; and a warm
+  but badly loaded machine still reads cold (202 ms with three heavy jobs running), which now also costs it a probe once
+  a build. The median rides `lk`, and `--coldms` re-cuts.
+- One fence pair of 4 ms or more retires the fences for the rest of the load, on the Windows Chrome loads the instrument
+  exists for; one preemption would do it. Suggested and not done: trip on a second slow call, on one of 20 ms, or on a
+  summed 50 ms. Not measured on Windows.
+- The per-second crumb's focus gate was not checked in the iOS app before the first tap (in the macOS harness
+  `document.hasFocus()` was false and only the plain 'ready' crumb was written). Check once in the simulator or on the
+  iPhone; if no `q` crumb appears, gate on `document.hidden` alone.
+- `beacons.py`'s ENGINE MEDIANS line leaves out every probe that produced no ratio (stopped after its first single, or
+  states 3, 4 and 6) and counts a state 5 probe as whole: on the reviewer's ten-load log Chromium Win printed "median
+  0.44 of n=2" with four more probes uncounted. Slow machines are the ones that stop early, so the line Stage 3 is read
+  from is a median of the survivors. Not fixed: add the no-ratio count by state and the stopped-early probes' serial and
+  first-draw medians.
+- `LP_ONE_MS` counts the first single's first draw, so the Windows machines in the record (354 to 413 ms a program) will
+  mostly send state 2 and no ratio; all five of the second reviewer's forced probes on warm caches were state 2. After a
+  week of beacons, move the line or lower `LP_EACH_MS` if Chromium Win is mostly stopped early.
+- The probe's comment says "about 3.3 s at the worst", which is not a cap: the first single is unbounded (3,601 ms seen
+  in state 2 at load 100; 6,202 ms on the first cut). The pick goes by ms alone and can be a light program (an 11
+  thousand character fragment source once), and the LINK PROBES line does not print the source's size. A ChromeOS agent
+  lands in "Chromium other".
+- The probe has no end date and no sampling: every public first visit, cold by definition, pays 0.8 to 2.4 s once a
+  build until it is taken out with `pp` and `ppk` when Stage 3 is decided. In the app the weekly cap means one `pp` a
+  device a week; keying it on the build needs a build id from build.py or Capacitor's `App.getInfo`. The app's branch is
+  proven only under Node. A device killed during the probe leaves the crumb 'link probe', which the tier logic reads as
+  a build death.
+- Chrome on this Mac sits on the plan's line (0.35 to 0.51 through the scratch page, a median of 0.51 from the page's
+  own field), so Stage 3 is not decided for any engine by this round.
+- The three Camden port structures nobody checked against imagery: the office slab at (1794, 3585) kept at 33.2 m, and
+  the two sheds held at 6 and 13 m against readings of 35.8 and 31.9 m, so the package's aim is unmet for those two. The
+  Board of Education building's 44.0 m is not cross-checked either (a flat-roof P90 can sit on a large penthouse).
+- The full storefront bake no longer reproduces `storefronts.b64`, even from Round 225's inputs (record 44 differs), and
+  refuses as designed: the implementer's finding, not verified by the reviewer and older than this round. Until someone
+  finds why, `storefront_info.json` is frozen data that only `--host-heights` can move. Also from the heights: 13 more
+  storefronts draw their own panel (`__dbg.sf()` made 1,419 to 1,432, on a base 772 to 759), read as hosts lowered under
+  the height that earns a generated street floor, inferred from the code and not traced.
+- `WIDE_COLK_KEEP` is a hand list the test ties only to the latest repack. A bridge support is recognised only by its
+  OSM tag, and the new test sees only the Ben Franklin's and the Walt Whitman's axes.
+- The memory tools (`scripts/memory/measure.mjs`, `beacons_headless.mjs`) still take their "at ready" reading when the
+  button lights, which is now after the first frame, so their at-Ready figures are not comparable with earlier rounds;
+  only the skill's note says so (the remedy: `clearTimeout(__dbg.PERF.enterTimer)` when `PERF.ready` appears, then
+  `__dbg.frameOnce()`). Any private script that clicks Enter as soon as `__dbg` exists now clicks a disabled button and
+  never enters.
+- Tools that hold animation frames get one frame drawn before Enter, which shifts every-Nth-frame work and the weather's
+  phase by a frame: for a pixel parity set across this round drive the new page on the old sequence (clear the timer at
+  `PERF.ready`, enable the button, click, then frames). A hidden tab now draws its first frame, with its uploads and
+  compiles, 1.5 to 2.5 s after Ready where it used to wait for the visitor's return. `applyHashView` is still unguarded:
+  a bad copied link gives a lit button over a page with no frame loop, as before.
+- Smaller, each recorded so nobody rediscovers it: the drain's new place is proved in Chrome only and consumes one GL
+  error flag a program on a cold load; `trm` reads the first reconcile after load (36 to 40 ms headless), not the
+  once-a-second figure Round 225 trimmed; `stl` and `fgl` have never seen a real flight; the program tags depend on
+  r149's cache key layout; no frame-time A/B at the six poses was taken with the GPU byte wraps on a computer (the call
+  counts show nothing per steady frame); the ready beacon's worst case has 65 bytes of headroom (3,135 of 3,200), so the
+  next ready field trips its test by design; the probe's restore of GL state is proved on Metal alone.
+- Not built from Stage 1's list: the entry orbit's captures, the retaken day set and the staged light trials; the
+  service worker's change (its three fields ship first). Still Mike's: the Mac flights, the GPU's name, the veil.
+
+**What the next real beacons should show.** The deploy is itself the first test, and it is not the clean one the plan
+described. The plan predicted that the phone's first launch after a deploy with no shader change flushes in about 1.4 s.
+This release changes no shader text but does change which programs are linked and when; every source it links is one the
+old page linked too, so a cache keyed on source still hits. Read `flms`, `cold` and `lk`'s seventh number on the
+iPhone's first ready beacon after the deploy: about 1.4 s, `cold=0` and a median of 9 to 30 ms confirm that an update
+leaves the cache alone. A 30 s flush with `cold=1` means either that updates empty the cache or that the cache keys on
+more than source, and this deploy alone cannot tell the two apart: compare the first launches after Rounds 225 to 228,
+which changed nothing that is linked.
+
+- The first frame: `f1` on cold enter beacons was 8.5 to 9.1 s on the Apple devices and 29 s on a PC; the INFERRED gain
+  is 2.4 to 10 s. Confirmed if `f1` falls by that and `f1p` reads about 24 to 36 on a computer and 15 to 28 on a phone
+  at tiers 0 and 1 (33 at tier 2); refuted if a cold `f15` at tier 0 or 1 names `Std-wx` programs, which would mean a
+  second compile is back. Ready may come a few tenths later on a cold device (the flushes now compile the larger weather
+  variants): `flms` up by under a second is expected.
+- The button: `lit` (Ready to the lit button) should equal `f1` within a frame on visible pages, and `eb=1` marks a page
+  opened hidden. The residual on a computer shows as `stl`'s stalls with new programs in the first seconds after Enter
+  and as `prg` on the first perf beacon against Ready's count plus `f1p` (about 21 more on a computer and 2 on a phone,
+  MEASURED headless): if cold computers show 4 to 7 s there, the second-frame fix is worth its frames.
+- The unexplained 9 to 21 s between steps on Windows: `gw`, `gi` and `gy` say where the build waited, and `gf`'s third
+  number (state 0) says how long the GPU stayed busy behind a flush. If the after-flush waits account for the gap it is
+  the GPU catching up; if `gy` is small the time is elsewhere and `sp` against `fll` finds the step. `hd` and `hn` take
+  hidden time out of every long load, and `bl` pairs a bail with its Ready.
+- Where a cold program waits: `lk` splits compile, link and first query, and `l5` names the five slowest. Headless, all
+  of it is in the first query on both engines; a real iPhone or Windows machine showing it in the link or the compile
+  changes Stage 3's design.
+- Stage 3's decision: `pp` by engine through `beacons.py`'s ENGINE MEDIANS over many loads, never one. Chromium on
+  Windows with a median under 0.5 and a first-draw share well under a half builds Stage 3 for Windows; a median near 1.0
+  on WebKit (MEASURED 0.86 to 1.11 on macOS) leaves Apple devices out and, by the plan, moves Stage 4 up. A Chromium Win
+  line that is mostly state 2 means the instrument, not the engine, failed (Known, open). One cold launch of the app
+  sends the iPhone's.
+- The phone's real ceiling: after a death in the 20 s after Ready the next load's `pc` now reads `q..` with the GPU MB
+  at the last second, where 871 MB was only ever the reading at Ready. `gbs` and `gbf` give computers their first GPU
+  bytes, with `cap` saying which devices offer ASTC.
+- The reload: the plan's INFERRED cause is the relay in sw.js. A reload answered through the worker (`ws` over 0) with a
+  long `rs` less `fs` and a full 14.26 MB transfer in nginx's log would confirm it, and then Chromium navigations bypass
+  the relay; a short one refutes it.
+- A slow PC's frame: `js`'s five parts say where its 26 to 33 ms of JavaScript before the draw goes, and `trm` whether
+  the reconcile still stalls.
+- Round 225's own proofs are still owed on the same beacons: `ts`, `rk`, `fg`, `fr` and the iPhone's Ready.
+- Camden has no beacon: its proof is the diff test and Mike's eye from Penn's Landing.
+
+Not yet read on the merged tree. Every proof above was taken on the two branches off e4b6a2f, before Rounds 226 to 228
+were under them; the merge onto d5cdd61 is the lead's to prove (the lead adds a line at the foot of this entry saying
+what was): the whole suite with the built page, since `tests/test_build.py` fails until `build.py` has run on the new
+`wide.b64`; one `?dev` load reading `PERF.prog.lost` empty and `PERF.wxHook.over` 0 with Round 228's cut and portals in
+the scene; one load with `?people=1`, whose two programs are made between Ready and Enter and were never run against
+`wxHookAll` or the lit button; `__dbg.colStats().wideColK` at 111,992; and a parity set against d5cdd61 with Camden out
+of frame. The notes are owed too: handoff.md's file table has no row for `lidar_east_heights.json`, `wide_repack.json`,
+`tests/prelink_gpu.html` or the six new test files, and its gotchas 12 and 15 still describe the weather's re-hook after
+the build.

@@ -5,8 +5,8 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
-`app.js` (~54,000 lines, one IIFE) is the application and `rebuilds/` the landmark rebuilds (seven in Round 161, nine files now),
-`build.py` inlines them with the data into `society-hill-towers.html` (34.1 MB raw / 14.37 MB gzip at Round 228, Nov 10, 2026; the generated art, 785 files and 44.0 MB, is files under `art/` since Round 184). The old claude.ai
+`app.js` (~55,000 lines, one IIFE) is the application and `rebuilds/` the landmark rebuilds (seven in Round 161, nine files now),
+`build.py` inlines them with the data into `society-hill-towers.html` (34.2 MB raw / 14.40 MB gzip at Round 229, Nov 10, 2026; the generated art, 785 files and 44.0 MB, is files under `art/` since Round 184). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -296,13 +296,14 @@ textures), `?vart=0` (the old box vehicles), `?parked=0`, `?furniture=0`, `?carp
 texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, `keyLight(f)`, `clouds3d()`, `facade()`,
 `fronts()`, `veg()`, `water()`, `vehicles()`, `lampNear()`, `lampReal(k)`, `lampAt(x, z)`, and after the first frame
 `wxTune({...})` and `wxFx()`.
-`?gpumem=1` turns on the page's GPU-byte accounting on a computer (Round 220; every phone has it: `gb`, `gbp`, `gbw`, `gbm` on every beacon, `__dbg.gpuMem()`, a floor), `?gput=0` turns the GPU pass timer off (on by default in a desktop post-pipeline session, sampled 30 frames in 300, continuous under `?dev`; `gt` and the pass counters on the perf beacons, `__dbg.PERF.gput()`); `__dbg.beaconQuery(st)` previews a beacon's URL, `__dbg.stepExtra(name)` a step's phases, `__dbg.staged()` what is still staged for the first frame.
+`?gpumem=0` turns the page's GPU-byte accounting off (Round 220 gave it to every phone and to a computer behind `?gpumem=1`; since Round 229 it is on for every device: `gb`, `gbp`, `gbw`, `gbm` on every beacon with `gbs`, the buffers, textures, renderbuffers and attached textures apart, and `gbf`, the geometry by family; `__dbg.gpuMem()`, `__dbg.PERF.families()`, `__dbg.PERF.gpuAtt()`, a floor), `?gput=0` turns the GPU pass timer off (on by default in a desktop post-pipeline session, sampled 30 frames in 300, continuous under `?dev`; `gt` and the pass counters on the perf beacons, `__dbg.PERF.gput()`); `__dbg.beaconQuery(st)` previews a beacon's URL, `__dbg.stepExtra(name)` a step's phases, `__dbg.staged()` what is still staged for the first frame.
 `?banks=0` puts the Schuylkill's banks back as they were before Round 222 (the Delaware's quad over the corridor, the old floor, every tree, pole, post, stop and dock on the DEM); `__dbg.bankCheck(step)` counts the bank drawn as water and anything off the drawn ground or in the river (all 0 since Round 222).
 The realism round two (Round 223) adds, each on by default under REAL: `?roofs16=0` (the flat roofs' sixteen surfaces back to Round 185's four; `__dbg.PERF.roofs(2)` paints the variants), `?cirrus=0` (no cirrus from `WX.high`; `?wx=cirrus` pins a clear deck under 60% high cloud, `__dbg.cirrus(k)` pins the amount), `?rivercity=0` (a phone's river back to the sky alone; `__dbg.riverCity()`), `?shadowbias=0` (the old fixed shadow biases; `__dbg.shadowBias(d, n)`), `?wind1=0` (the fixed sway in place of the live wind; `__dbg.wind(spd)`), `?snow2=0` (no ruts, caps or snow picture), `?wear=0` (no worn earth or kerb dust) and `?blades=0` (no blade signs; `?signs=0` blanks them with the boards).
 `?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
 broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
 `?rkcheck=0` leaves out the `?dev` roof-mask self-check for a timing run (Round 225; see The staged plan).
 `?people=1` draws the walking people (Round 227, a first look, OFF by default and refused at tier 2); `?people=sharp` the same with a computer's sharper atlas; `__dbg.people()`, `__dbg.people(false)`, `__dbg.peopleAt(t)`, `__dbg.peopleTune({...})`.
+Stage 1's second batch (Round 229) adds: `?veilcity=1` (OFF by default until Mike has seen it: every flush behind the veil is presented, so the veil shows the city rising; `__dbg.PERF.veilCity`), `?cold=<n>` (a cold load on demand, n of 1 or more, without `?dev` too: every fragment shader is salted so the browser's and the system's shader caches miss; take a new n for each cold run, since the same n twice is a cold then a warm load of the same programs; each run leaves about 200 programs in those caches; it beacons `cs`; `__dbg.PERF.salt`), `?coldms=<n>` (the median program's ms over which a load reads cold, 60 by default; 0 reads every load cold, which keeps the link timers through the first frame and runs the link probe) and `?probe=1|0` (the link probe forced on any load, or refused; left alone it runs on a load that reads cold, once a device and build, once a week in the app; `pp` and `ppk` on the ready beacon, `__dbg.PERF.linkProbe(o)`, `__dbg.PERF.lp.last`). None of the three is saved and Copy Link strips them. `tests/prelink_gpu.html?n=8` (add `&ext=1` for the extension's rows) is the scratch page that runs the same probe over eight programs on a built page staged outside Dropbox and prints the table. Probes: `__dbg.PERF.wxHook` (`over` must read 0) and `PERF.prog` (`f1`; under `?dev` `lost`, which must be empty), `PERF.lit`, `PERF.enterBy` and `PERF.enterTimer` (the Enter button), `PERF.link`, `PERF.meas` and `PERF.programs()` (the link timers and round two's facts), `__dbg.colStats().wideColK` (111,992, the count a repack of wide.b64 must leave as it was).
 
 ## The landmark rounds (Rounds 195 to 200)
 
@@ -405,6 +406,51 @@ What Round 225 added (Stage 1's first batch: JavaScript and data only, nothing d
 - The app copies only what a touch device can ask for, keyed by kind (`app/scripts/art-touch.mjs`, `KEEP_FULL`): load art
   only as `artImage(artSrc(rec.x, rec.xHalf))` (`tests/test_app_art.py`).
 - The new tests carry wall-clock assertions, and the deploy refuses on any failing test: rerun one alone before believing it.
+
+What Round 229 added (Stage 1's second batch):
+- The weather's hooks are laid only by `wxHookAll`, before each flush's render and once as `build()` ends, so no program
+  compiles twice. Give a material its own `onBeforeCompile` where it is made, before the flush that first draws it; never
+  chain a hook onto a material already in the scene, never dispose a material to re-key it, and read another material's
+  hook through `wxOwnHook(m)`. Under `?dev`, `PERF.prog.lost` must be empty and `PERF.wxHook.over` must read 0
+  (`tests/test_wx_hook.py`). Text inside a hook function is a cache key (`toString()`): do not tidy its comments.
+- That ends the second compiles, not the first frame's first ones: tier 2 still links about ten weather programs in its
+  first frame, and a computer about 21 more programs in its second and third frames, under a lit button (devlog Round
+  229, Known, open). Do not write "no dead button" for a computer until the plan's warm frame (COMPILE-4) ships.
+- The Enter button is lit only by `enterLight`, as the first drawn frame ends; `build()` never touches it. `enterArm` is
+  the first statement of the block after `build()`, and its timer (`ENTER_WAIT`, 1,500 ms) draws that frame for a page
+  that gets no animation frame. A click before the button lights is lost: every tool waits for the lit button, not only
+  for `__dbg` (`tests/test_enter_lit.py`; the capture skill's step 4).
+- The memory tools' "at ready" reading is now taken AFTER the first frame, so it does not compare with a round before
+  229; a true one clears `__dbg.PERF.enterTimer` when `PERF.ready` appears, then calls `__dbg.frameOnce()`. A parity set
+  across Round 229 drives the new page on the old sequence (clear the timer, enable the button, click, then frames), and
+  two captures are compared only when rendered side by side.
+- `?veilcity=1` stays off until Mike says. `veilCityShow` adds no material and no shader text and never writes `uBloom`
+  (`tests/test_veil_city.py`).
+- Measurement round two's fields go out through `measFacts(st)`. A new field is named in `beacons.py`'s `READY2`,
+  `ENTER2` or `RUN2` (a test fails otherwise), joins its lists with dots and underscores, carries no URL, GPU name or
+  anything personal, and leaves the worst-case ready beacon under 3,200 bytes (3,135 today; `tests/test_measure_two.py`).
+- The link timers are instance wraps on the context that `LINK.off` deletes: a warm load's at Ready, a cold load's after
+  the one frame behind the unlit button. Never wrap a draw call, or any call a frame that compiles nothing makes. Raw GL
+  on three's context calls the context prototype for anything the timers wrap and restores every binding it moves.
+- Never make a synchronous GL call behind a flush or an upload on a path a phone or Safari runs: WebKit's `fenceSync`
+  waits for the GPU process (0.3 to 2.7 s a load, measured). Fences are laid only where `FENCE_OK`, and a new timer that
+  makes a synchronous GL call is measured in a real WKWebView before it ships: a Chrome-only proof cannot see the wait.
+- The page never calls `getExtension('KHR_parallel_shader_compile')` (asking made a lone link 1.7 to 4.8 times slower in
+  WebKit); only `tests/prelink_gpu.html` asks, on the page's own context.
+- A load salted by `?cold` (`cs`) is never a visitor's cold load, and one `pp` decides nothing: Stage 3 is read from
+  `beacons.py`'s ENGINE MEDIANS over many loads. The link probe is an instrument with an end: it, `pp` and `ppk` come out
+  once Stage 3 is decided. `?cold`, `?coldms` and `?probe` never ride a copied link (`tests/test_cold_probe.py`).
+- The city probe's two cubes (a computer's CITYENV) bake on consecutive frames, and a request raised between them is
+  kept (`cityEnvTick`, `tests/test_cityenv_request.py`): Round 192's tick wiped it, which left Center City's glass
+  mirroring the wrong half of the day for about two minutes whenever the first frame was drawn at one hour and the next
+  under another (a background-tab load across dusk; every capture taken after dark). `cityEnvBake` itself is the glass
+  calibration's fingerprint: do not edit it.
+- The capture tool carries the first pose's clock in the link (`#t=`), so a capture no longer depends on the hour it is
+  run; `--first-live` restores the old behaviour and `--prime <n>` draws n frames before the first pose (use 1 on a
+  build before Round 229 when comparing across it). The first frame also seeds the skyline theme and the water's phase.
+- Camden's measured heights (the batch's fourth package) are NOT in Round 229: branch `s1b/camden` holds them until Mike
+  has seen the before and after. Its rules for repacking `wide.b64` are in
+  `.audit/2026-11-10-performance-and-realism/round229/claude_md.txt` and go in here when it ships.
 
 ## The Vine Street Expressway's cut (Round 228)
 
