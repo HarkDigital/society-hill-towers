@@ -6255,7 +6255,7 @@
       if (e > 5) o.off5++;
     };
     const trees = tally(), poles = tally(), posts = tally(), stops = tally(), docks = tally();
-    if (treeInv) for (let i = 0; i < treeInv.n; i++) look(trees, treeInv.x[i], treeInv.z[i], treeInv.gy[i]);
+    if (treeInv) for (let i = 0; i < treeInv.n; i++) if (!treeInv.hid[i]) look(trees, treeInv.x[i], treeInv.z[i], treeInv.gy[i]);
     const PV = poleInv;   // (poleReconcile is the inventory's one reader in the build: a probe reads it through a local, as streetCheck does)
     if (PV) for (let i = 0; i < PV.nPoles; i++) if (PV.X[i] !== 0 || PV.Z[i] !== 0) look(poles, PV.X[i], PV.Z[i], PV.GY[i]);
     for (const r of markerRecs) if (r.type <= 1 && !r.river) look(posts, r.x, r.z, r.gy);
@@ -8287,10 +8287,11 @@
   }
   // square (Round 226): the corridor stops at its end stations' own lines instead of rounding on past them by its half
   // width, for an approach's first point beyond the corridor (its own walls, collars and asphalt start there)
-  function vineCut(x, z, pad, square) {
-    if (x < vineBox.x0 || x > vineBox.x1 || z < vineBox.z0 || z > vineBox.z1) return null;
+  // runs (Round 226 coda): another corridor than the baked one (VINE_CUT_225, for the trees)
+  function vineCut(x, z, pad, square, runs) {
+    if (!runs && (x < vineBox.x0 || x > vineBox.x1 || z < vineBox.z0 || z > vineBox.z1)) return null;
     pad = pad || 0;
-    for (const run of OVP.cor) {
+    for (const run of runs || OVP.cor) {
       for (let i = 0; i + 1 < run.length; i++) {
         const a = run[i], b = run[i + 1];
         const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -8305,6 +8306,13 @@
     }
     return null;
   }
+  // Round 226 coda (the review: every tree in the city changed its look). The trees are dealt their looks by their
+  // number, and a tree in the cut was left out before it was numbered, so the longer cut renumbered every tree after
+  // the first one it newly took. The corridor as Round 225 knew it is kept here for that one question: a tree it left
+  // out is still left out unnumbered, and a tree only the new cut or an approach takes keeps its number and is stood
+  // TREE_HIDE_Y under the ground, out of sight, out of the picks and the shadows (keepTree, treeInv.hid)
+  const VINE_CUT_225 = [[[-2046.4,-1453.9,-6.89,14.0],[-2034.5,-1452.0,-6.89,14.0],[-2022.6,-1450.2,-6.89,14.0],[-2010.7,-1448.3,-6.88,14.0],[-1998.8,-1446.5,-6.87,14.0],[-1986.9,-1444.7,-6.85,14.0],[-1975.0,-1442.8,-6.82,14.0],[-1963.0,-1441.1,-6.8,14.0],[-1951.1,-1439.3,-6.78,14.0],[-1939.2,-1437.6,-6.77,14.0],[-1927.3,-1436.0,-6.77,14.0],[-1915.4,-1434.2,-6.78,14.0],[-1903.4,-1432.5,-6.8,14.0],[-1891.5,-1430.6,-6.82,14.0],[-1879.7,-1428.6,-6.84,14.0],[-1867.8,-1426.6,-6.86,14.0],[-1855.9,-1424.5,-6.87,14.0],[-1844.1,-1422.4,-6.86,14.0],[-1832.2,-1420.4,-6.84,14.0],[-1820.3,-1418.3,-6.79,14.0],[-1808.4,-1416.3,-6.71,14.0],[-1796.6,-1414.2,-6.59,14.0],[-1784.7,-1412.1,-6.44,14.0],[-1772.8,-1410.1,-6.27,14.0],[-1760.9,-1408.2,-6.1,14.0],[-1749.1,-1406.2,-5.95,14.0],[-1737.2,-1404.3,-5.81,14.0],[-1725.3,-1402.4,-5.69,14.0],[-1713.4,-1400.5,-5.56,14.0],[-1701.5,-1398.6,-5.43,14.0],[-1689.6,-1396.7,-5.27,14.0],[-1677.7,-1394.8,-5.11,14.0],[-1665.8,-1392.9,-4.94,14.0],[-1653.9,-1391.1,-4.79,14.0],[-1642.0,-1389.6,-4.65,14.7],[-1630.0,-1388.4,-4.54,15.9],[-1618.0,-1387.8,-4.46,17.7],[-1606.0,-1387.4,-4.38,19.7],[-1594.0,-1386.9,-4.28,20.5],[-1582.0,-1385.9,-4.16,20.7],[-1570.1,-1384.4,-4.03,20.3],[-1558.1,-1382.6,-3.92,19.2],[-1546.2,-1380.7,-3.83,18.0],[-1534.4,-1378.8,-3.77,17.9],[-1522.5,-1376.9,-3.72,17.9],[-1510.6,-1374.9,-3.69,17.8],[-1498.7,-1372.9,-3.67,17.8],[-1486.8,-1371.0,-3.66,17.7],[-1474.9,-1369.0,-3.65,17.7],[-1463.0,-1367.0,-3.63,17.6],[-1451.2,-1365.1,-3.62,17.6],[-1439.3,-1363.1,-3.62,17.6],[-1427.4,-1361.2,-3.63,17.6],[-1415.5,-1359.2,-3.66,17.7],[-1403.6,-1357.3,-3.7,17.9],[-1391.7,-1355.3,-3.73,18.1],[-1379.8,-1353.4,-3.74,18.3],[-1367.9,-1351.5,-3.72,18.5],[-1356.1,-1349.5,-3.7,18.5],[-1344.2,-1347.6,-3.7,18.4],[-1332.3,-1345.7,-3.72,18.2],[-1320.4,-1343.7,-3.75,17.9],[-1308.5,-1341.8,-3.79,17.7],[-1296.6,-1339.8,-3.81,17.5],[-1284.7,-1337.8,-3.84,17.3],[-1272.9,-1335.8,-3.88,17.3],[-1261.0,-1333.8,-3.95,17.2],[-1249.1,-1331.8,-4.04,17.2],[-1237.2,-1329.8,-4.15,17.1],[-1225.3,-1327.8,-4.27,17.1],[-1213.5,-1325.8,-4.39,17.1],[-1201.6,-1323.8,-4.51,17.2],[-1189.7,-1321.8,-4.59,17.5],[-1177.8,-1319.7,-4.57,17.6],[-1166.0,-1317.6,-4.4,17.7],[-1154.1,-1315.5,-4.09,17.9],[-1142.3,-1313.4,-3.72,17.9],[-1130.4,-1311.3,-3.38,17.9],[-1118.5,-1309.2,-3.19,18.1],[-1106.7,-1307.1,-3.21,18.3],[-1094.8,-1305.0,-3.44,18.6],[-1083.0,-1302.9,-3.76,18.8],[-1071.1,-1300.8,-4.06,18.9],[-1059.2,-1298.7,-4.23,18.9],[-1047.4,-1296.7,-4.23,18.9],[-1035.5,-1294.6,-4.06,18.9],[-1023.6,-1292.5,-3.77,18.8],[-1011.8,-1290.4,-3.4,18.8],[-999.9,-1288.3,-2.99,18.8],[-988.0,-1286.2,-2.54,18.8],[-976.2,-1284.1,-2.05,18.8],[-964.3,-1282.0,-1.54,18.8]]];
+  const TREE_HIDE_Y = 40;
   // sunken RAMP approaches dive below grade outside the main corridor: the ground
   // must open over them too (they get their own narrow walled cuts)
   function sunkCutNear(x, z, pad) {
@@ -34697,7 +34705,7 @@ if (uOlLamp > 0.001) {
         dep = clamp(need, Math.min(dep, 0.45), dep);
       }
       const bots = pts.map((p, i) => {
-        if (overCut[i]) return p[2] - dep;
+        if (overCut[i] && ((i > 0 && i < pts.length - 1) || vineCut(p[0], p[1], 0) !== null)) return p[2] - dep;   // (a deck's end outside the cut's walls keeps its abutment: 21st Street's, beside the ramp's cut, stood open underneath)
         const gy = siteY(p[0], p[1], 'ground'), gm = groundMeshY(p[0], p[1]) ?? gy;   // near-grade by the DEM, the skirt down to the drawn mesh (the carved bank, Round 85)
         return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gm - 0.4) : p[2] - dep;
       });
@@ -34926,20 +34934,39 @@ if (uOlLamp > 0.001) {
     // (applyFly), so it never comes down into the cut, and the headwall stands 1.2 m over the lawn, as the cut's own
     // parapets do
     const PORTAL_H = 4.6, PORTAL_D = 28;
+    // Round 226 coda (the review: pale-blue slivers of the water under the world, in the lawn by the west approach and by
+    // the exit ramp). The lawn was put back as separate sheets, each on its own 4 m lattice: where two overlapped across
+    // a street's bench they lay at two heights, and an eye low over the lawn saw between them. Now a sheet only names
+    // the opened ground cells in its reach, and one lawn is laid on those cells (lawnLay, below): a 5 by 5 grid a cell,
+    // every cell on the ground mesh's own lattice, its rim on the mesh's own edge heights, so no two pieces overlap and
+    // the lawn meets the drawn ground without a step
+    const lawnCells = new Map();
     const groundSheet = (at, u0, u1, v0, v1) => {
-      const tris = [], st = 4, nu = Math.max(1, Math.ceil((u1 - u0) / st)), nv = Math.max(1, Math.ceil((v1 - v0) / st));
-      const P = (iu, iv) => { const q = at(u0 + (u1 - u0) * iu / nu, v0 + (v1 - v0) * iv / nv); return [q[0], lawnY(q[0], q[1]), q[1]]; };
-      const open = (p) => groundMeshY(p[0], p[2]) === null;
-      for (let iu = 0; iu < nu; iu++) for (let iv = 0; iv < nv; iv++) {
-        const a = P(iu, iv), b = P(iu + 1, iv), c2 = P(iu + 1, iv + 1), d = P(iu, iv + 1);
-        if (!(open(a) || open(b) || open(c2) || open(d))) continue;   // only where the ground's cell is opened (and one sheet cell on, under the mesh's edge)
-        tris.push(a[0], a[1], a[2], c2[0], c2[1], c2[2], b[0], b[1], b[2], a[0], a[1], a[2], d[0], d[1], d[2], c2[0], c2[1], c2[2]);
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const [u, v] of [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]) { const q = at(u, v); x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+      for (let x = x0; x < x1 + 10; x += 10) for (let z = z0; z < z1 + 10; z += 10) {
+        const xx = Math.min(x, x1), zz = Math.min(z, z1), G = groundGridAt(xx, zz);
+        if (!G || !G.skip) continue;
+        groundCell(G, xx, zz, _gc4);
+        const i = _gc4[0], j = _gc4[1];
+        if (G.skip[j * G.nx + i]) lawnCells.set(groundGrids.indexOf(G) + ':' + i + ':' + j, [G, i, j]);
       }
-      if (!tris.length) return;
+    };
+    const lawnLay = () => {
+      if (!lawnCells.size) return;
+      const tris = [], N = 5, RIM = [[0.01, 0], [-0.01, 0], [0, 0.01], [0, -0.01], [0.01, 0.01], [-0.01, 0.01], [0.01, -0.01], [-0.01, -0.01]];
+      const rim = (x, z) => { for (const o of RIM) { const y = groundMeshY(x + o[0], z + o[1]); if (y !== null) return y; } return lawnY(x, z); };
+      for (const [G, i, j] of lawnCells.values()) {
+        const cw = (G.x1 - G.x0) / G.nx, ch = (G.z1 - G.z0) / G.nz, X = G.x0 + i * cw, Z = G.z0 + j * ch;
+        const P = (a, b) => { const x = X + cw * a / N, z = Z + ch * b / N; return [x, a === 0 || a === N || b === 0 || b === N ? rim(x, z) : lawnY(x, z), z]; };
+        for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) {
+          const p00 = P(a, b), p10 = P(a + 1, b), p11 = P(a + 1, b + 1), p01 = P(a, b + 1);
+          tris.push(p00[0], p00[1], p00[2], p01[0], p01[1], p01[2], p11[0], p11[1], p11[2], p00[0], p00[1], p00[2], p11[0], p11[1], p11[2], p10[0], p10[1], p10[2]);
+        }
+      }
       const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3)); g2.computeVertexNormals();
-      const nr = g2.attributes.normal.array; let up = 0; for (let i = 1; i < nr.length; i += 3) up += nr[i];
-      if (up < 0) { const pos = g2.attributes.position.array; for (let i = 0; i < pos.length; i += 9) for (let k = 0; k < 3; k++) { const t = pos[i + 3 + k]; pos[i + 3 + k] = pos[i + 6 + k]; pos[i + 6 + k] = t; } g2.computeVertexNormals(); }
       collarParts.push({ geom: g2, color: new THREE.Color(COLORS.ground), style: 3 });
+      PERF.lawnCells = lawnCells.size;
     };
     const portalStat = [];
     for (const m of OVP.por) {
@@ -34956,10 +34983,17 @@ if (uOlLamp > 0.001) {
       const dark = [], shell = [];
       const quad = (arr, a, b, c2, d) => arr.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2], a[0], a[1], a[2], c2[0], c2[1], c2[2], d[0], d[1], d[2]);
       const P3 = (u, v, y) => { const q = at(u, v); return [q[0], y, q[1]]; };
-      const u0 = 0, u1 = PORTAL_D, vi = hw - 0.05, vo = hw + 0.45, roof = head + 0.45;   // from the headwall's own face: a gap there showed the water under the world
+      // Round 226 coda: the box runs to meet the facing mouth's box halfway (the tunnel was dark for 28 m at each end and
+      // open to the water under the world between), and a riser closes the step at the mouth: the cut's floor lies 0.48 m
+      // under the roadway, the box's floor at the roadway, and beside and between the carriageways an eye looking in
+      // from the cut saw under the box's floor
+      let deep = PORTAL_D;
+      for (const m2 of OVP.por) { if (m2 === m || m2[3] * dx + m2[4] * dz > -0.9) continue; const al = (m2[0] - mx) * dx + (m2[1] - mz) * dz, la = Math.abs((m2[0] - mx) * nx + (m2[1] - mz) * nz); if (al > 40 && al < 600 && la < 12) deep = Math.max(deep, al / 2 + 0.2); }
+      const u0 = 0, u1 = deep, vi = hw - 0.05, vo = hw + 0.45, roof = head + 0.45;   // from the headwall's own face: a gap there showed the water under the world
       quad(dark, P3(u0, -vi, my + 0.03), P3(u1, -vi, my + 0.03), P3(u1, vi, my + 0.03), P3(u0, vi, my + 0.03));   // the roadway in the dark
       quad(dark, P3(0, -vi, head), P3(u1, -vi, head), P3(u1, vi, head), P3(0, vi, head));                         // the soffit
       quad(dark, P3(u1, -vi, floor), P3(u1, vi, floor), P3(u1, vi, head), P3(u1, -vi, head));                     // the back
+      quad(dark, P3(0, -vo, floor - 0.6), P3(0, vo, floor - 0.6), P3(0, vo, my + 0.03), P3(0, -vo, my + 0.03));   // the riser under the roadway's level at the mouth
       for (const sg of [-1, 1]) {
         quad(dark, P3(u0, sg * vi, floor), P3(u1, sg * vi, floor), P3(u1, sg * vi, head), P3(u0, sg * vi, head));
         quad(shell, P3(0, sg * vo, floor - 0.6), P3(u1 + 0.5, sg * vo, floor - 0.6), P3(u1 + 0.5, sg * vo, roof), P3(0, sg * vo, roof));
@@ -35010,9 +35044,15 @@ if (uOlLamp > 0.001) {
         // its sides go down to the ground beside it: toward its far end the ground lies under the roadway (the DEM's
         // valley is deeper than the level approach in places) and the half-metre box stood clear of it, open underneath
         const nT = norms(pts), skirt = (k) => pts.slice(k).map((p, i) => Math.min(p[2] - 0.5, rimY(p[0] + nT[k + i][0] * (hw + 0.75), p[1] + nT[k + i][1] * (hw + 0.75)) - 0.4, rimY(p[0] - nT[k + i][0] * (hw + 0.75), p[1] - nT[k + i][1] * (hw + 0.75)) - 0.4));
-        boxRibbon(pts.slice(apTail), hw, 0, -0.5, tint(cTop[0], 1), tint(0x2b2926, 1), skirt(apTail), null, true, 1);
+        // Round 226 coda: 3 m on past its end, 3 cm down: the packed road takes over at its first vertex more than 2.6 m
+        // past the chain (ovpOwned), and the lawn showed across the road between; and the shoulder is a remembered
+        // surface, so the one lawn (lawnLay) is cut over it and stops at the wall
+        const eA = pts[pts.length - 1], eB = pts[pts.length - 2], eL = Math.hypot(eA[0] - eB[0], eA[1] - eB[1]) || 1;
+        const on = [eA[0] + (eA[0] - eB[0]) / eL * 3, eA[1] + (eA[1] - eB[1]) / eL * 3, eA[2] - 0.03];
+        const sk1 = skirt(apTail); sk1.push(sk1[sk1.length - 1]);
+        boxRibbon(pts.slice(apTail).concat([on]), hw, 0, -0.5, tint(cTop[0], 1), tint(0x2b2926, 1), sk1, null, true, 1);
         const k0 = Math.max(0, apTail - 2);
-        boxRibbon(pts.slice(k0), hw + 0.75, -0.04, -0.5, tint(cGutter, 1), tint(0x2b2926, 1), skirt(k0));   // a shoulder out to its walls: the 0.7 m between the roadway's edge and the wall was open to the water under the world
+        boxRibbon(pts.slice(k0), hw + 0.75, -0.04, -0.5, tint(cGutter, 1), tint(0x2b2926, 1), skirt(k0), null, true);   // a shoulder out to its walls: the 0.7 m between the roadway's edge and the wall was open to the water under the world
       } else boxRibbon(pts, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1), null, null, true);
       // pale edge lines read as lane striping from altitude
       const nrm = norms(pts);
@@ -35092,6 +35132,7 @@ if (uOlLamp > 0.001) {
       mesh.receiveShadow = true;
       for (const t of addTiles(mesh, 'decks')) rayTargets.push(t);   // Round 167: each tile a raycast target (positions kept, freeShadingOnUpload)
     }
+    lawnLay();   // Round 226 coda: the one lawn over the opened cells the sheets named
     if (collarParts.length) {
       for(const p of collarParts)p.geom=trimTerrainPatch(p.geom);
       const collarMat = groundSurfMat({ side: THREE.DoubleSide });
@@ -35859,8 +35900,10 @@ if (uOlLamp > 0.001) {
     // per-vertex scale runs to 1.21) and read as boulders lying in the field rather than as
     // trees. At 9 m a 60-inch oak carries its crown 2.6 m clear of the ground.
     const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
+    const HID = new Uint8Array(X.length); let hidN = 0;   // Round 226: the trees kept for their numbers and hidden (the cut's)
     const keepTree = (x, z, dbh, ni, core, outer) => {
-      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null || apCutNear(x, z, 2) || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut (nor its approaches', Round 226) or PATCO's, nor on a rebuilt landmark's ground (Round 161)
+      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2, false, VINE_CUT_225) !== null || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut (as Round 225 drew it: see VINE_CUT_225) or PATCO's, nor on a rebuilt landmark's ground (Round 161)
+      const hid = vineCut(x, z, 2) !== null || apCutNear(x, z, 2);   // Round 226: in the cut as it is now, or an approach's: numbered as before, and hidden
       let gy;   // the realism round two (R1): on the Schuylkill's bank a tree stands on the drawn slope, and none in the river (bankPlace)
       if (core) gy = siteY(x, z, 'ground');
       else { const q = bankPlace(x, z, false); if (!q) { BANK_STAT.trees++; return; } x = q[0]; z = q[1]; gy = q[2]; }
@@ -35873,6 +35916,7 @@ if (uOlLamp > 0.001) {
       }
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0; OUT[n] = outer ? 1 : 0;
       GY[n] = gy;
+      if (hid) { GY[n] -= TREE_HIDE_Y; HID[n] = 1; hidN++; }
       CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
       CY[n] = GY[n] + boleH(dbh) * 0.75 + CR[n] * st[4] * 0.72;
       const k = Math.floor(x / TREE_CELL) + ':' + Math.floor(z / TREE_CELL);
@@ -35947,7 +35991,7 @@ if (uOlLamp > 0.001) {
       if (bermHit(x, z)) continue;
       keepTree(x, z, dbh, -1, inCore(x, z));
     }
-    treeInv = { x: X, z: Z, gy: GY, cr: CR, cy: CY, dbh: DBH, ni: NI, n };
+    treeInv = { x: X, z: Z, gy: GY, cr: CR, cy: CY, dbh: DBH, ni: NI, n, hid: HID, hidden: hidN };
     PERF.streetPush = Object.assign(PERF.streetPush || {}, { treesMoved: pushedT, treesDropped: droppedT });   // __dbg.streetCheck()
     // ---- instancing: full trees in the core, light trees in 3x3 wide chunks
     // the crowns are lumpy, flat-shaded blobs: every vertex of the unit icosahedron steps in
@@ -38534,6 +38578,7 @@ if (uOlLamp > 0.001) {
           const cell = treePickGrid.get(ix + ':' + iz);
           if (!cell) continue;
           for (const ti of cell) {
+            if (treeInv.hid[ti]) continue;   // Round 226: a hidden tree is no tap's
             const dx = treeInv.x[ti] - px, dy2 = treeInv.cy[ti] - py, dz = treeInv.z[ti] - pz;
             const rr = Math.max(2.5, treeInv.cr[ti] + 0.6);
             if (dx * dx + dy2 * dy2 + dz * dz < rr * rr) { bestT = ti; break; }
@@ -38550,6 +38595,7 @@ if (uOlLamp > 0.001) {
             const cell = treePickGrid.get(ix + ':' + iz);
             if (!cell) continue;
             for (const ti of cell) {
+              if (treeInv.hid[ti]) continue;
               const dx = treeInv.x[ti] - gp[0], dz = treeInv.z[ti] - gp[1];
               const d2 = dx * dx + dz * dz;
               const r = Math.max(3.5, treeInv.cr[ti] + 0.8);
