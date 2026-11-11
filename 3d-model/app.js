@@ -173,6 +173,7 @@
       ...safe(() => gpuMemField(), {}) };   // Round 220: the GPU bytes held (gb, gbp, gbw, gbm) on every checkpoint, a phone's and ?gpumem=1's
     if (st === 'ready') Object.assign(q, safe(() => readyFacts(safe), {}));   // Round 220: the build's facts ride the ready checkpoint (the call keeps its three fields, which a test pins)
     Object.assign(q, safe(() => measFacts(st), {}));   // Round 226: measurement round two's facts, by checkpoint (measFacts; {} for most)
+    { const cs = safe(() => COLD.n, 0); if (cs) q.cs = cs; }   // Round 226: a load salted by ?cold=<n> says so on every checkpoint, so no summary counts it as a visitor's cold load (nothing on any other load)
     if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
     const url = BEACON + '?' + new URLSearchParams(q).toString();
     if (dry) return url;
@@ -623,6 +624,73 @@
 
   PERF.gpuAtt = () => Math.round(GPUMEM.att() / 104857.6) / 10;   // Round 226, __dbg.PERF.gpuAtt(): the MB of textures a framebuffer has attached (gbs's fourth number)
 
+  // ---- Round 226 (Stage 1 of the Nov 10 plan, measurement round two, part two): cold runs on demand, ?cold=<n>. A cold
+  // load is the plan's largest number (MEASURED from the beacons: the flush renders are 32 to 34 s cold on Apple devices and
+  // 12 to 57 s on Windows PCs against 0.8 to 1.4 s warm) and until now it could be had only by a new deploy or a reinstall:
+  // a brand-new Chrome profile leaves macOS's own Metal shader cache warm, and the capture skill's headless runs, which
+  // start one every time, read a median of 9 to 30 ms a program. ?cold=<n> (1 or more; works without ?dev) salts every
+  // FRAGMENT shader the page compiles, on every context it makes, where three hands the source to the context: the wrap
+  // sits on the two context prototypes' shaderSource (and createShader, which says which shaders are fragment shaders with
+  // no round trip to the GPU process), laid here before the first context exists (the reversed-Z probe's throwaway one,
+  // below). No GLSL string in this file is touched, and WITHOUT THE FLAG NOTHING IS INSTALLED: no wrap, no test on any
+  // call, and every program's source is to the byte what it was (tests/test_cold_probe.py, and the round's proof: the set
+  // of every source linked is the old page's).
+  // THE SALT (coldSalt). A comment or an unused constant would not do: the browser's program cache and the system's
+  // (Metal's library and pipeline caches, D3D's bytecode) key on what is left AFTER translation and optimisation, and both
+  // strip what nothing reads. So the page's main is renamed p3dColdMain and a new main calls it and then runs one branch
+  // that is never taken and that no compiler can prove so: `if (gl_FragCoord.x < -A.5 && gl_FragCoord.y < -B.5)` (a
+  // fragment's window coordinates are never negative), writing zero to the shader's own first output. n picks A and B
+  // (n mod 1000, and the thousands: both exact in a 16-bit float, so a mediump implementation still tells every n apart),
+  // a million distinct programs. Harmless by construction: the output is exactly the page's (the branch never runs), no
+  // discard and no gl_FragDepth are added (either would cost the early depth test and Apple's hidden-surface removal, and
+  // the frame being measured with them), and the price is two compares a fragment. A source with no main or no float
+  // output to write (none in this page today: COLD.missed counts them, __dbg.PERF.salt) gets a comment only, which misses
+  // the browser's source-keyed cache alone. The vertex shader is the page's own text: a salt there would have to touch
+  // gl_Position, and the passes that must agree to the bit (the depth passes, the pins' anchors) would then be at a
+  // compiler's mercy; where an engine caches the two stages apart the vertex half of a ?cold load can be warm.
+  // THE SAME n TWICE is a warm load of the salted page (the caches now hold it): take a new n for every cold run, and
+  // load one n twice for a cold and a warm run of byte-identical programs. Every ?cold load leaves its programs in the
+  // browser's and the system's shader caches until they evict them. MEASURED on this M2 Max, the machine busy: in headless
+  // Chrome a new n took the build's median program from 18 to 33 ms to 105 to 520, the flush renders from 6 to 11 s to 41
+  // to 90 and Ready from 31 to 48 s to 63 to 124, and the same n again read 18 and 33 ms; in a WKWebView a new n read a
+  // median of 71 ms, 34.9 s of flush renders and Ready at 69 s. The picture is the unsalted page's.
+  // IT CANNOT SHIP SALTED: the flag is read here once, from the address, and kept nowhere (no localStorage, no prefs, no
+  // link: shareQuery strips it from a copied link), and a salted load says so on every beacon (cs=<n>, so beacons.py
+  // never counts one as a visitor's cold load).
+  const COLD = PERF.salt = (() => { const m = /[?&]cold=(\d{1,9})(?![\d.])/.exec(location.search), n = m ? +m[1] : 0; return { n: n > 0 ? (n - 1) % 999999 + 1 : 0, salted: 0, missed: 0 }; })();
+  const coldCond = (n) => 'gl_FragCoord.x < -' + (n % 1000) + '.5 && gl_FragCoord.y < -' + (Math.floor(n / 1000) % 1000) + '.5';
+  // a fragment source salted with n, or null where it cannot be (no main, or no float output to write). A source salted
+  // already (the link probe salts copies of programs a ?cold page compiled) only has its constants moved
+  function coldSalt(src, n) {
+    const s = String(src), tail = /\nvoid main\(\) \{ p3dColdMain\(\); if \([^)]*\) /, main = /\bvoid\s+main\s*\(\s*(?:void\s*)?\)/;
+    if (tail.test(s)) return s.replace(tail, '\nvoid main() { p3dColdMain(); if (' + coldCond(n) + ') ');
+    if (!main.test(s) || s.indexOf('p3dColdMain') >= 0) return null;
+    // the sink: GLSL ES 3.00's first declared float output (three's own is pc_fragColor, which its gl_FragColor is defined
+    // to; a GLSL3 material declares its own), ES 1.00's gl_FragColor or gl_FragData[0] (a shader may write only one of them)
+    const o = /(?:^|[;{}\n])[ \t]*(?:layout\s*\([^)]*\)\s*)?out\s+(?:(?:highp|mediump|lowp)\s+)?(vec4|vec3|vec2|float)\s+(\w+)\s*;/.exec(s);
+    const sink = /^\s*#version\s+300\s+es/.test(s) ? (o ? o[2] + ' = ' + o[1] + '(0.0)' : '') : /\bgl_FragData\b/.test(s) ? 'gl_FragData[0] = vec4(0.0)' : 'gl_FragColor = vec4(0.0)';
+    if (!sink) return null;
+    return s.replace(new RegExp(main.source, 'g'), 'void p3dColdMain()') + '\nvoid main() { p3dColdMain(); if (' + coldCond(n) + ') ' + sink + '; }\n';
+  }
+  if (COLD.n) {
+    const frag = new WeakSet();   // the fragment shaders, noted as they are made (a context that goes holds nothing here)
+    for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) {
+      if (!C || !C.prototype || !C.prototype.shaderSource) continue;
+      const P = C.prototype, cs = P.createShader, ss = P.shaderSource;
+      P.createShader = function (type) { const s = cs.apply(this, arguments); try { if (s && type === 0x8B30) frag.add(s); } catch (e) { /* the shader is made either way */ } return s; };
+      P.shaderSource = function (shader, src) {
+        let out = src;
+        try {
+          if (frag.has(shader) && String(src).indexOf('p3dColdMain') < 0) {   // a source salted already (the link probe's) passes as it is
+            const t = coldSalt(src, COLD.n);
+            if (t === null) { COLD.missed++; out = src + '\n// cold ' + COLD.n + '\n'; } else { COLD.salted++; out = t; }
+          }
+        } catch (e) { out = src; COLD.missed++; }
+        return ss.call(this, shader, out);
+      };
+    }
+  }
+
   let renderer;
   // ---- the depth mode (Round 192, Mike: hold about 60 fps). Reversed-Z float depth is the default wherever it can be had:
   // a throwaway WebGL 2 context must report EXT_clip_control AND a complete 4x multisampled DEPTH32F_STENCIL8 framebuffer
@@ -914,6 +982,7 @@
   const MEAS = PERF.meas = { err: 0, step: -1, gw: [], gi: [], flushes: [], fq: [], fence: { n: 0, late: 0, lo: 0, hi: 0, max: 0, at: -1, pend: 0, cms: 0, st: FENCE_OK ? 0 : 2 }, ready: null, lit: null, left: false, away: false,
     lastMs: 0, worstMs: 0, stall: { n: 0, ms: 0, pn: 0, pms: 0, max: 0, prg: -1 }, eh: [0, 0, 0, 0], js: [0, 0, 0, 0, 0], jsN: 0, fg: [0, 0, 0, 0], landPrev: 0, landed: false,
     cap: { n: 0, ms: 0, tris: 0, calls: 0, near: 0 }, traf: 0, artNull: 0, on: '', caps: null, fam: new WeakMap(), famMs: 0 };
+  MEAS.fmt = new WeakMap(); MEAS.pp = ''; MEAS.ppk = '';   // part two: each buffer's element type as famWalk notes it, and the link probe's two fields for the ready beacon
   try { linkInstall(renderer.getContext()); } catch (e) { LINK.err++; }
   window.addEventListener('pagehide', () => { MEAS.left = true; });
   document.addEventListener('visibilitychange', () => { if (document.hidden) MEAS.away = true; });
@@ -976,7 +1045,7 @@
       const add = (a) => {
         if (!a) return;
         let n = W.get(a);
-        if (a.array) { n = a.array.byteLength; W.set(a, n); }
+        if (a.array) { n = a.array.byteLength; W.set(a, n); MEAS.fmt.set(a, a.array.constructor); }   // and its element type, for the link probe's vertex layout (an upload frees the array and the type with it)
         if (!sum || seen.has(a)) return;
         seen.add(a);
         if (n === undefined) out[5]++; else out[fam] += n;
@@ -1125,6 +1194,7 @@
         gy: [YLD.n, YLD.ms, YLD.max, YLD.afN, YLD.afMs].map(Math.round).join('.'), gf: [F.n, F.late, F.lo, F.hi, F.max, F.at, F.pend, F.cms, F.st].map(Math.round).join('.'),
         hd: R.hd, hn: R.hn, bl: HID.bail >= 0 ? HID.bail : '', cap: f(capField), db: f(dbField), gbf: f(famField), on: MEAS.on, an: MEAS.artNull, wn: LINK.err + MEAS.err };
       if (R.top) o.l5 = R.top;
+      if (MEAS.pp) { o.pp = MEAS.pp; if (MEAS.ppk) o.ppk = MEAS.ppk; }   // part two: the link probe, on the loads that ran it
       return o;
     }
     if (st === 'enter') {
@@ -1142,6 +1212,268 @@
         fgl: [M.fg[1] ? t(M.fg[0] / M.fg[1]) : 0, M.fg[1], M.fg[3] ? t(M.fg[2] / M.fg[3]) : 0, M.fg[3]].join('.'), trm: Math.round(M.traf * 10) / 10, an: M.artNull };
     }
     return {};
+  }
+  // ---- Round 226, measurement round two, part two: THE LINK PROBE (lpSteps; linkProbeAtReady on a cold load;
+  // __dbg.PERF.linkProbe for tests/prelink_gpu.html). One question, and Stage 3 of the Nov 10 plan (linking ahead) is built
+  // for an engine only where the answer is yes: on this engine, are several programs issued together and then waited for
+  // faster than the same programs linked one at a time, and by how much (batched under half of serial)? r149 creates,
+  // links and waits on one program at a time, so no load has ever shown it; the cold flush is 30 to 57 s of exactly that,
+  // and WebKit bug 251514 says its link is itself the blocking call, which would make the answer no on every Apple device.
+  // WHAT IT RUNS. Copies of one of the page's own programs, of real weight (a tiny shader cannot tell a fixed latency a
+  // program from a compile that scales with its source): the vertex and fragment sources are read back from a linked
+  // program (getShaderSource: a shader three has deleted stays readable while it is attached) and each copy's fragment
+  // source is salted with a random constant (coldSalt, the ?cold flag's own salt), so no cache has seen it. One copy is
+  // issued (two shaders compiled, attached, linked) and waited for (LINK_STATUS, the call that blocks); then three are
+  // issued together, one trivial synchronous call is timed (getError: in an engine whose command stream stalls behind a
+  // link the wait lands THERE, and in one whose link call blocks it lands in the issue), and the three are waited for;
+  // then one more alone, because the first compile after a pause can pay one-off costs and the two singles should agree.
+  // EACH PROGRAM IS THEN DRAWN, because a link alone can lie: ANGLE on Direct3D compiles a second vertex or pixel shader
+  // at the first draw with a vertex layout or an output it did not assume at link, and Metal builds its pipeline state
+  // there. The draw is three vertices from zeroed buffers laid out as the program's own mesh lays its attributes (every
+  // type, size, normalized flag, stride and offset: lpLayout, from the geometry while its arrays stand and from famWalk's
+  // record of each buffer's element type once an upload has freed them), into a 4 by 4 target of the frame's own kind
+  // (four samples, RGBA16F under the post pipeline and RGBA8 without, the depth the frame uses), each sampler type on a
+  // unit of its own so the draw is valid, and a getError behind it to wait for it; a second draw of each gives what the
+  // wait alone costs. The triangle is degenerate (every uniform is zero), so nothing is shaded: the draw-time compiles
+  // happen on the CPU side of the draw whatever it covers, and anything a driver defers past that no page can reach.
+  // WHERE AND WHEN. linkProbeAtReady, as build() ends, before Ready is stamped, and ONLY ON A COLD LOAD (LINK.cold, the
+  // link timers' own verdict: the median of ten or more programs over COLD_MS): a warm load, which is every load of a
+  // device that has seen this build, never runs it, and neither does a page built hidden, a lost context or WebGL 1. Once
+  // a device and build (localStorage philly3d.pp holds the build's date; a load salted by ?cold ignores and leaves it),
+  // because a slow machine whose every load reads cold would otherwise pay it every time. ?probe=1 runs it on any load
+  // and ?probe=0 never (neither is kept, nor rides a copied link).
+  // WHAT IT COSTS A COLD LOAD: five programs and ten draws. The program copied is chosen by the build's own timing of it
+  // (LINK.recs), the slowest that took no more than LP_EACH_MS (400 ms; the quickest of the others where every one took
+  // longer), so the probe is about five times a typical cold program. MEASURED on this Mac under ?cold, with the machine
+  // busy: 1.4, 1.7 and 2.4 s of a computer's cold loads of 124, 98 and 69 s in headless Chrome, 2.2 s of the phone
+  // path's 75 s, 2.1 and 1.9 s of a WKWebView's 69 and 72 s. Two lines bound it. The three are not issued when the first
+  // single took over LP_ONE_MS (800 ms, linked and drawn: twice what the pick allowed for, so the device is slower than
+  // the build's timing said, or the load was warm and misread, where the build's ms are a cache's and the copies' are
+  // not: MEASURED under ?coldms=0, 2.5 s before this line and 1.1 s with it). And no group starts once LP_STOP_MS
+  // (2.5 s) have gone. So about 3.3 s at the worst, on an engine that links one at a time, once a device and build. Its
+  // own ms is the field's last number, so a summary can take it back out of Ready.
+  // WHAT IT LEAVES: nothing. Its programs, shaders, vertex arrays, buffers, target and renderbuffers are deleted, every
+  // binding it moved (program, vertex array, array buffer, both framebuffers, renderbuffer, viewport) is put back as it
+  // was read, so three's state cache still tells the truth, and no GL error is left for the page's own checks. It calls
+  // the context prototype's methods for everything the link timers wrap, so its programs are in none of lk, l5 or the
+  // cold verdict, and renderer.info.programs never sees them. KHR_parallel_shader_compile is read from the list and never
+  // asked for anywhere in this file (asking changes how the engine links from then on, which is the thing being measured:
+  // MEASURED in a WKWebView, a program linked and waited for alone took 1.7 to 4.8 times as long once it was on); the scratch
+  // page asks for it on this context itself, for its second table, and says so with { ext: true }.
+  // WHAT IT FOUND HERE (MEASURED on this M2 Max with tests/prelink_gpu.html, the machine busy, so the ratios and not the
+  // ms): headless Chrome on ANGLE Metal, batched over serial 0.36 to 0.47 over eight and sixteen programs (links run side
+  // by side with nothing asked for; the wait is in the status query); a WKWebView, 0.86 to 0.97 (one at a time: the
+  // link call returns at once and the first synchronous call behind it waits for every link issued). In both a program's
+  // FIRST DRAW is a quarter to two fifths of it (25 to 34% in Chrome, 42% in WebKit) and is paid one at a time however
+  // the links were issued. The public's Windows PCs and a cold iPhone are what the field is for.
+  // THE FIELDS, on the ready beacon of a load that ran it: pp, whole numbers joined by dots: the state (1 whole, 2 stopped
+  // early for time, 5 a GL error on the way, and alone: 3 nothing to probe with, 4 a copy did not link, 6 it threw);
+  // whether the extension is offered; the first single's ms (issue to linked) and its first draw's; the three's issue,
+  // the one synchronous call and the wait, and their first draws; the last single's ms and draw; the five second draws;
+  // the build's own ms for the program copied; its fragment source in thousands of characters; the whole probe's ms.
+  // ppk is the copied program's tag (progTag). Batched under half of serial is (issue + call + wait) under 1.5 times
+  // the singles' mean. Nothing personal: milliseconds, and a program key that is the page's own source
+  const LP_KEY = 'philly3d.pp', LP_EACH_MS = 400, LP_ONE_MS = 800, LP_STOP_MS = 2500;
+  const LP_FLAG = (/[?&]probe=([01])\b/.exec(location.search) || [0, ''])[1];
+  // an array's GL type and bytes an element (three's own table: r149 has no half-float attribute in this page)
+  const LP_TYPES = new Map([[Float32Array, [5126, 4]], [Int8Array, [5120, 1]], [Uint8Array, [5121, 1]], [Uint8ClampedArray, [5121, 1]], [Int16Array, [5122, 2]], [Uint16Array, [5123, 2]], [Int32Array, [5124, 4]], [Uint32Array, [5125, 4]]]);
+  // the sampler types, each given the unit of its index (two samplers of different types on one unit make a draw invalid):
+  // 2D, 3D, cube, 2D shadow, 2D array, 2D array shadow, cube shadow, then the integer and unsigned 2D, 3D, cube and 2D array
+  const LP_UNITS = [0x8B5E, 0x8B5F, 0x8B60, 0x8B62, 0x8DC1, 0x8DC4, 0x8DC5, 0x8DCA, 0x8DCB, 0x8DCC, 0x8DCF, 0x8DD2, 0x8DD3, 0x8DD4, 0x8DD7];
+  const LP = PERF.lp = { last: null };   // __dbg.PERF.lp.last: the last trial whole (its groups' ms unrounded)
+  // a geometry's vertex layout as the GL calls three makes for it, or null where a buffer's type is not known or it is
+  // instanced. bytes is three vertices of the buffer
+  function lpLayout(geo) {
+    const out = {};
+    for (const k in geo.attributes) {
+      const a = geo.attributes[k], il = !!a.isInterleavedBufferAttribute, d = il ? a.data : a;
+      const t = LP_TYPES.get(d && d.array ? d.array.constructor : MEAS.fmt.get(d));
+      if (!t || a.isInstancedBufferAttribute || d.isInstancedInterleavedBuffer || !(a.itemSize >= 1 && a.itemSize <= 4)) return null;
+      out[k] = { buf: d, type: t[0], size: a.itemSize, norm: !!a.normalized, int: t[0] === 5124 || t[0] === 5125 || a.gpuType === 1013,   // r149's rule for vertexAttribIPointer (1013 is THREE.IntType)
+        stride: il ? d.stride * t[1] : 0, off: il ? a.offset * t[1] : 0, bytes: 3 * (il ? d.stride : a.itemSize) * t[1] };
+    }
+    return out;
+  }
+  // every program a plain mesh in the scene has compiled, with that mesh's layout: three's program wrapper -> { w, lay }
+  function lpCands() {
+    const by = new Map();
+    scene.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || !o.geometry || !o.geometry.attributes || !o.material) return;
+      let lay;   // worked out once a mesh, and only if one of its programs is new
+      for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+        const mp = m && renderer.properties.get(m), ps = mp && mp.programs;   // r149 keeps a material's programs by cache key
+        if (!ps) continue;
+        for (const w of ps.values()) {
+          if (by.has(w)) continue;
+          if (lay === undefined) lay = lpLayout(o.geometry);
+          if (lay) by.set(w, { w, lay, t: -1, name: '' });
+        }
+      }
+    });
+    return by;
+  }
+  // a family by name, for the scratch page: the facade (cityMat's program), the ground (the first bare-earth material's),
+  // the cloud deck's, or any program whose custom key holds the name ('glass-sys' is the curtain wall's)
+  function lpFamily(cands, name) {
+    const mat = name === 'facade' ? cityMat : name === 'ground' ? groundMats[0] : name === 'clouds' ? cloudDeck.material : null;
+    if (mat) { const ps = renderer.properties.get(mat).programs; if (ps) for (const w of ps.values()) if (cands.has(w)) return cands.get(w); return null; }
+    for (const c of cands.values()) if (progKey(c.w.cacheKey).indexOf(name) >= 0) return c;
+    return null;
+  }
+  // the trial, as steps: it yields only where a polled wait wants the page to run on (o.poll, the scratch page's, once
+  // it has turned the extension on), so the page's own probe runs it straight through. o.groups is how many programs each group issues together
+  // ([1, 3, 1] is the page's; [1, 1, ...] against [n] the scratch page's), o.pick the families by name (the scratch
+  // page's; without it the build's own timing picks one program, see WHAT IT COSTS), o.one the ms of the first group
+  // (linked and drawn) over which the second is not issued, o.stop the ms after which no further group starts
+  function* lpSteps(o) {
+    const gl = renderer.getContext(), t00 = performance.now();
+    const R = LP.last = { st: 3, k: 0, ext: 0, src: [], groups: [], ms: 0, err: 0, left: 0 };
+    R.k = (gl.getSupportedExtensions() || []).indexOf('KHR_parallel_shader_compile') >= 0 ? 1 : 0;
+    if (!renderer.capabilities.isWebGL2) return R;
+    R.ext = o.ext ? 1 : 0;   // the caller's word that it has turned the extension on for this context (the scratch page's alone: nothing here ever asks)
+    const cands = lpCands(), fams = [], rec = new Map();
+    for (const r of LINK.recs) if (r.q >= 0) rec.set(r.p, r);
+    if (o.pick) {
+      for (const name of o.pick) { let c = null; try { c = lpFamily(cands, name); } catch (e) { c = null; } if (c && fams.indexOf(c) < 0) { c.name = name; fams.push(c); } }
+    } else {
+      let best = null;
+      for (const c of cands.values()) {
+        const r = rec.get(c.w.program);
+        if (!r) continue;
+        c.t = r.c + r.l + r.q;
+        if (!best || (c.t <= o.each ? best.t > o.each || c.t > best.t : best.t > o.each && c.t < best.t)) best = c;
+      }
+      if (best) fams.push(best);
+    }
+    for (let i = fams.length - 1; i >= 0; i--) {
+      const c = fams[i];
+      c.vsrc = gl.getShaderSource(c.w.vertexShader); c.fsrc = gl.getShaderSource(c.w.fragmentShader);
+      if (!c.vsrc || !c.fsrc || coldSalt(c.fsrc, 1) === null) fams.splice(i, 1);
+    }
+    if (!fams.length) return R;
+    for (const c of fams) { const r = rec.get(c.w.program); R.src.push({ name: c.name, tag: progTag(c.w.name, progKey(c.w.cacheKey), r ? r.fl : c.fsrc.length), fs: c.fsrc.length, vs: c.vsrc.length, ref: r ? r.c + r.l + r.q : -1 }); }
+    const used = new Set([COLD.n]);
+    const salt = () => { let n; do { n = 1 + Math.floor(Math.random() * 999999); } while (used.has(n)); used.add(n); return n; };
+    // the prototype's own method for every call the link timers wrap on the instance (LINK): the probe's programs are not the page's
+    const P = Object.getPrototypeOf(gl), X = (name, a, b) => P[name].call(gl, a, b);
+    for (let k = 0; k < 8 && gl.getError() !== 0; k++);   // what is queued ahead is waited for here, and an error left from before is not the probe's
+    const keep = [gl.CURRENT_PROGRAM, gl.VERTEX_ARRAY_BINDING, gl.ARRAY_BUFFER_BINDING, gl.DRAW_FRAMEBUFFER_BINDING, gl.READ_FRAMEBUFFER_BINDING, gl.RENDERBUFFER_BINDING, gl.VIEWPORT].map((e) => gl.getParameter(e));
+    const made = { sh: [], pr: [], vao: [], buf: new Map(), fb: null, rb: [] };
+    const issue = (j) => {
+      const vs = gl.createShader(gl.VERTEX_SHADER), fs = gl.createShader(gl.FRAGMENT_SHADER), p = j.p = gl.createProgram();
+      made.sh.push(vs, fs); made.pr.push(p);
+      X('shaderSource', vs, j.vsrc); X('compileShader', vs); X('shaderSource', fs, j.fsrc); X('compileShader', fs);
+      X('attachShader', p, vs); X('attachShader', p, fs); X('linkProgram', p);
+    };
+    // a linked copy made drawable (its samplers on their units, its attributes laid out as the mesh's), then drawn twice
+    const draw = (j) => {
+      const t0 = performance.now();
+      gl.useProgram(j.p);
+      for (let i = 0, n = X('getProgramParameter', j.p, 0x8B86) | 0; i < n; i++) {   // ACTIVE_UNIFORMS
+        const u = X('getActiveUniform', j.p, i), unit = u ? LP_UNITS.indexOf(u.type) : -1;
+        if (unit < 0) continue;
+        const loc = X('getUniformLocation', j.p, u.name);
+        if (loc) { if (u.size > 1) gl.uniform1iv(loc, new Int32Array(u.size).fill(unit)); else gl.uniform1i(loc, unit); }
+      }
+      const vao = gl.createVertexArray();
+      made.vao.push(vao); gl.bindVertexArray(vao);
+      for (let i = 0, n = X('getProgramParameter', j.p, 0x8B89) | 0; i < n; i++) {   // ACTIVE_ATTRIBUTES
+        const a = X('getActiveAttrib', j.p, i), L = a && j.lay[a.name];
+        if (!L) continue;   // an attribute the mesh does not carry stays a constant, as three leaves it
+        const loc = X('getAttribLocation', j.p, a.name);
+        if (loc < 0) continue;
+        let b = made.buf.get(L.buf);
+        if (b) gl.bindBuffer(gl.ARRAY_BUFFER, b);
+        else { b = gl.createBuffer(); made.buf.set(L.buf, b); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, L.bytes, gl.STATIC_DRAW); }
+        gl.enableVertexAttribArray(loc);
+        if (L.int) gl.vertexAttribIPointer(loc, L.size, L.type, L.stride, L.off); else gl.vertexAttribPointer(loc, L.size, L.type, L.norm, L.stride, L.off);
+      }
+      const t1 = performance.now();
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const e1 = gl.getError(), t2 = performance.now();
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
+      const e2 = gl.getError(), t3 = performance.now();
+      j.x = t1 - t0; j.d = t2 - t1; j.r = t3 - t2; j.err = e1 || e2;
+    };
+    try {
+      // the target: the frame's own kind, 4 by 4
+      const fb = made.fb = gl.createFramebuffer(), c = gl.createRenderbuffer(), d = gl.createRenderbuffer(), ns = Math.min(4, gl.getParameter(gl.MAX_SAMPLES) | 0);
+      made.rb.push(c, d);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, c); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ns, POST.on ? gl.RGBA16F : gl.RGBA8, 4, 4);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, d); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ns, ZREV.on ? gl.DEPTH32F_STENCIL8 : gl.DEPTH24_STENCIL8, 4, 4);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, c);
+      gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, d);
+      if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) return R;
+      gl.viewport(0, 0, 4, 4);
+      const sizes = o.groups || [1, 3, 1];
+      R.st = 1;
+      for (let g = 0, k = 0; g < sizes.length; g++) {
+        if (g > 0 && ((o.stop && performance.now() - t00 > o.stop) || (g === 1 && o.one && R.groups[0].i + R.groups[0].s + R.groups[0].w + R.groups[0].d > o.one))) { R.st = 2; break; }
+        const js = [];
+        for (let i = 0; i < sizes[g]; i++) { const f = fams[k++ % fams.length]; js.push({ vsrc: f.vsrc, fsrc: coldSalt(f.fsrc, salt()), lay: f.lay, p: null, ok: false, x: 0, d: 0, r: 0, err: 0 }); }
+        const G = { n: js.length, i: 0, s: 0, w: 0, x: 0, d: 0, r: 0, turns: 0 };
+        R.groups.push(G);
+        const t0 = performance.now();
+        for (const j of js) issue(j);
+        const t1 = performance.now();
+        if (gl.getError()) R.err++;   // the one trivial synchronous call
+        const t2 = performance.now();
+        if (o.poll) while (js.some((j) => X('getProgramParameter', j.p, 0x91B1) === false) && performance.now() - t2 < 120000) { G.turns++; yield; }   // COMPLETION_STATUS_KHR, a task at a time: the page runs on meanwhile (null where the extension is not on: no poll, and the error is counted)
+        for (const j of js) j.ok = !!X('getProgramParameter', j.p, 0x8B82);   // LINK_STATUS: the call that waits
+        const t3 = performance.now();
+        G.i = t1 - t0; G.s = t2 - t1; G.w = t3 - t2;
+        if (!js.every((j) => j.ok)) { R.st = 4; break; }
+        for (const j of js) { draw(j); G.x += j.x; G.d += j.d; G.r += j.r; if (j.err) R.err++; }
+      }
+    } finally {
+      // everything bound is put back as it was read and everything made is deleted
+      try {
+        gl.useProgram(keep[0]); gl.bindVertexArray(keep[1]); gl.bindBuffer(gl.ARRAY_BUFFER, keep[2]); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, keep[3]); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, keep[4]);
+        gl.bindRenderbuffer(gl.RENDERBUFFER, keep[5]); if (keep[6]) gl.viewport(keep[6][0], keep[6][1], keep[6][2], keep[6][3]);
+        for (const v of made.vao) gl.deleteVertexArray(v);
+        for (const b of made.buf.values()) gl.deleteBuffer(b);
+        for (const p of made.pr) gl.deleteProgram(p);
+        for (const s of made.sh) gl.deleteShader(s);
+        if (made.fb) gl.deleteFramebuffer(made.fb);
+        for (const r of made.rb) gl.deleteRenderbuffer(r);
+        for (let k = 0; k < 8 && gl.getError() !== 0; k++) R.left++;   // an error of the probe's own is counted here and left for no one
+      } catch (e) { R.left++; }
+      R.ms = performance.now() - t00;
+    }
+    if (R.st <= 2 && (R.err || R.left)) R.st = 5;
+    return R;
+  }
+  function lpTrial(o) { const it = lpSteps(o); let r = it.next(); while (!r.done) r = it.next(); return r.value; }   // straight through (nothing polls)
+  // __dbg.PERF.linkProbe(o): the trial on any ?dev load, for tests/prelink_gpu.html and the console. The families by name
+  // unless o.pick says otherwise; with o.poll it returns a promise and waits a task at a time
+  PERF.linkProbe = (o) => {
+    o = Object.assign({ pick: ['facade', 'ground', 'clouds', 'glass-sys'] }, o);
+    if (!o.poll) return lpTrial(o);
+    const it = lpSteps(o);
+    return (async () => { try { for (;;) { const r = it.next(); if (r.done) return r.value; await new Promise((f) => setTimeout(f, 0)); } } finally { it.return(); } })();
+  };
+  // the page's own field (pp): see THE FIELDS
+  function lpField(R) {
+    if ((R.st !== 1 && R.st !== 2 && R.st !== 5) || !R.groups.length) return String(R.st);
+    const Z = { i: 0, s: 0, w: 0, d: 0, r: 0 }, A = R.groups[0], B = R.groups[1] || Z, E = R.groups[2] || Z, s = R.src[0];
+    return [R.st, R.k, A.i + A.s + A.w, A.d, B.i, B.s, B.w, B.d, E.i + E.s + E.w, E.d, A.r + B.r + E.r, Math.max(0, s.ref), s.fs / 1000, R.ms].map(Math.round).join('.');
+  }
+  // as build() ends, before Ready is stamped: see WHERE AND WHEN
+  function linkProbeAtReady() {
+    try {
+      if (LP_FLAG === '0' || glDead || document.hidden || !renderer.capabilities.isWebGL2) return;
+      if (LP_FLAG !== '1') {
+        if (LINK.cold !== 1) return;
+        if (!COLD.n) {
+          const b = String(document.lastModified);
+          try { if (localStorage.getItem(LP_KEY) === b) return; localStorage.setItem(LP_KEY, b); } catch (e) { /* private mode: nothing is kept, and the probe runs a cold load at a time */ }
+        }
+      }
+      bootMark('link probe');   // a load that dies here says so to the next (pv); bootMark('ready') follows at once
+      const R = lpTrial({ each: LP_EACH_MS, one: LP_ONE_MS, stop: LP_STOP_MS });
+      MEAS.pp = lpField(R); MEAS.ppk = R.src[0] ? R.src[0].tag : '';
+    } catch (e) { MEAS.pp = '6'; MEAS.err++; }
   }
   // ---- reversed-Z depth (Round 192, from perf spike 1). r149's logarithmic depth buffer writes gl_FragDepth from every
   // fragment of every program, which turns off the early depth test and Apple's hidden-surface removal: each of the 7 to
@@ -38021,7 +38353,7 @@ if (uOlLamp > 0.001) {
   let shareNoteT = 0;
   const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;   // Round 154: the app shares the site's links, never its own origin
   const shareQuery = () => {   // the app's query holds only what the page itself put there (the skyline theme, the crown bands)
-    if (!IN_APP) return location.search.replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's
+    if (!IN_APP) return location.search.replace(/[?&](?:cold|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's; Round 226: nor do ?cold= and ?probe= (a copied link must never salt another device's shaders)
     const u = new URLSearchParams(location.search), o = new URLSearchParams();
     for (const k of ['lights', 'bands']) if (u.has(k)) o.set(k, u.get(k));
     const t = o.toString(); return t ? '?' + t : '';
@@ -52013,6 +52345,7 @@ float pinOccGate() {
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
     wxHookAll(true);   // Round 226: and hooked for the weather before it (the last call: it also counts any hook laid over the weather's)
+    linkProbeAtReady();   // Round 226: a cold load's link probe (serial against batched links, each with a first draw), once a device and build; a warm load returns at its first test
     PERF.ready = Math.round(performance.now() - PERF.t0);
     bootMark('ready');
     measReady();   // Round 226: the timers' sums at Ready for the ready beacon, and the crumb every second until the running crumb takes over

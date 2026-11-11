@@ -28,6 +28,19 @@ joined by dots and its entries by underscores, which a query never escapes):
   perf, settled, late: stl (stalls of 250 ms or more after Enter), prg, db, gbf, pl (pin landings), pt (the pins'
     captures), eh (eye-height bands), js (the JavaScript before the draw in five parts), fgl (frame gap after a landing
     frame against the rest), trm (the traffic reconcile's worst ms), an.
+  part two, the cold run on demand and the link probe:
+    every beacon of a load salted by ?cold=<n>: cs (the n). Such a load is a dev's cold run, never a visitor's: it is
+      printed 'salted' and reduced apart, so the cold medians are the public's own.
+    ready, on a cold load that ran the probe (once a device and build): pp, whole numbers joined by dots: the state (1 whole,
+      2 stopped early for time, 5 a GL error on the way; and alone, 3 nothing to probe with, 4 a copy did not link, 6 it
+      threw), whether KHR_parallel_shader_compile is offered, the first single program's ms (issue to linked) and its first
+      draw's, the three's issue, the one synchronous call behind them and the wait, their first draws, the last single's ms
+      and draw, the five second draws (what the wait alone costs), the build's own ms for the program copied, its fragment
+      source in thousands of characters, and the whole probe's ms (already inside Ready); ppk, the copied program's tag.
+      decode adds batched_over_serial, the three's issue + call + wait over three times the singles' mean (Stage 3, linking
+      ahead, is built for an engine only where it is under 0.5), where_it_waits (issue: the link call itself blocks; call:
+      the command stream stalls behind a link; wait: neither, the status query waits) and first_draw_share, the first draw's
+      part of a program linked alone and drawn. Every probe is listed again after the medians.
   pc, the last session's crumb, reads q.. for the 20 s after Ready: q seconds since Ready, e since Enter, f frames, m the
     last frame gap and w the worst (ms), gb b x r the GPU MB (all, buffers, textures, renderbuffers), p programs, l lit.
 The medians are printed for cold and warm loads apart. The page calls a load cold when its median program (lk's seventh
@@ -60,12 +73,15 @@ FIELDS = {
     'eh': ('under_12m', 'to_150m', 'to_755m', 'above'),
     'js': ('land_tenths', 'sim_tenths', 'live_tenths', 'steps_tenths', 'pins_tenths', 'frames'),
     'fgl': ('after_landing_tenths', 'landing_frames', 'other_tenths', 'other_frames'),
+    'pp': ('state', 'khr_offered', 'serial_ms', 'serial_draw_ms', 'batch_issue_ms', 'batch_call_ms', 'batch_wait_ms', 'batch_draw_ms', 'serial2_ms', 'serial2_draw_ms', 'redraw_ms', 'build_ms',
+           'frag_kchars', 'probe_ms'),
 }
 # the list fields: an entry's numbers
 LISTS = {'fll': ('step', 'flushes', 'ms', 'programs'), 'gi': ('step', 'yields', 'ms')}
 FENCE_STATE = {0: 'laid', 1: 'stopped-at-a-slow-call', 2: 'never-laid-here', 3: 'no-fenceSync'}
+PROBE_STATE = {1: 'whole', 2: 'stopped-early', 3: 'nothing-to-probe-with', 4: 'a-copy-did-not-link', 5: 'gl-error', 6: 'threw'}
 CAPS = {'a': 'ASTC', 'b': 'BPTC', 's': 'S3TC', 'r': 'RGTC', 'e': 'ETC2', '1': 'ETC1', 'p': 'PVRTC', 'k': 'parallel-compile', 't': 'gpu-timer'}
-READY2 = ('cold', 'lk', 'l5', 'tu', 'fll', 'gw', 'gi', 'gy', 'gf', 'hd', 'hn', 'bl', 'cap', 'db', 'gbs', 'gbf', 'on', 'an', 'wn', 'ws', 'fs', 'rs')
+READY2 = ('cold', 'cs', 'lk', 'l5', 'pp', 'ppk', 'tu', 'fll', 'gw', 'gi', 'gy', 'gf', 'hd', 'hn', 'bl', 'cap', 'db', 'gbs', 'gbf', 'on', 'an', 'wn', 'ws', 'fs', 'rs')
 ENTER2 = ('cold', 'f1', 'f1p', 'f1k', 'f1t', 'f15', 'lit', 'eb', 'tap')
 RUN2 = ('stl', 'prg', 'db', 'gbs', 'gbf', 'pl', 'pt', 'eh', 'js', 'fgl', 'trm', 'an')
 
@@ -86,6 +102,8 @@ def decode(key, value):
         d = dict(zip(FIELDS[key], [num(x) for x in value.split('.')]))
         if key == 'gf' and 'state' in d:
             d['state'] = FENCE_STATE.get(d['state'], d['state'])
+        if key == 'pp':
+            return probe(d)
         return d
     if key in LISTS:
         return [dict(zip(LISTS[key], [num(x) for x in e.split('.')])) for e in value.split('_') if e]
@@ -99,6 +117,26 @@ def decode(key, value):
         p = value.split('.')
         return {'formats': [CAPS.get(c, c) for c in p[0] if c != '0'], 'max_texture': num(p[1]) if len(p) > 1 else '', 'max_samples': num(p[2]) if len(p) > 2 else ''}
     return value
+
+
+def probe(d):
+    """The link probe's numbers with what they answer (part two): batched over serial, where the wait lands and the first
+    draw's share. A probe that did not run whole keeps its state's name and whatever numbers came."""
+    d = dict(d)
+    d['state'] = PROBE_STATE.get(d.get('state'), d.get('state'))
+    ints = lambda *ks: all(isinstance(d.get(k), int) for k in ks)
+    if ints('serial_ms', 'batch_issue_ms', 'batch_call_ms', 'batch_wait_ms'):
+        singles = [d[k] for k in ('serial_ms', 'serial2_ms') if isinstance(d.get(k), int) and d[k] > 0]
+        batch = d['batch_issue_ms'] + d['batch_call_ms'] + d['batch_wait_ms']
+        if singles and batch > 0:
+            one = sum(singles) / len(singles)
+            d['batched_over_serial'] = round(batch / (3 * one), 2)
+            d['under_half'] = d['batched_over_serial'] < 0.5
+            d['where_it_waits'] = max(('issue', d['batch_issue_ms']), ('call', d['batch_call_ms']), ('wait', d['batch_wait_ms']), key=lambda e: e[1])[0]
+            if ints('serial_draw_ms'):
+                draws = [d[k] for k, s in (('serial_draw_ms', 'serial_ms'), ('serial2_draw_ms', 'serial2_ms')) if isinstance(d.get(k), int) and isinstance(d.get(s), int) and d[s] > 0]
+                d['first_draw_share'] = round(sum(draws) / (sum(draws) + sum(singles)), 2) if draws else ''
+    return d
 
 
 def decoded(q, keys):
@@ -150,6 +188,7 @@ def main():
     show_all = '--all' in sys.argv
     coldms = next((float(a.split('=', 1)[1]) for a in sys.argv[2:] if a.startswith('--coldms=')), None)
     agg = collections.defaultdict(list)
+    probes = []
     for L in loads_of(path):
         ev = L['ev']; q0 = ev[0][2]
         ready = [e for e in ev if e[0] == 'ready']; steps = [e for e in ev if e[0] and e[0].startswith('step:')]
@@ -169,6 +208,10 @@ def main():
         bsum = sum(int(q.get('ms', 0)) for st, t, q in steps)
         eg = (int(enter[0][2]['ms']) - rt) if enter else None
         cold = cold_of(ready[0][2], coldms)   # Round 226: cold and warm loads apart (the page's flag, or --coldms against the median)
+        if ready[0][2].get('cs'):   # part two: a load salted by ?cold=<n> is a dev's cold run on demand, reduced apart from the visitors'
+            cold = ('salted ' + cold).strip()
+        if ready[0][2].get('pp'):
+            probes.append((L['start'], kind, name, cold, ready[0][2].get('ppk', ''), decode('pp', ready[0][2]['pp'])))
         agg[(kind, name, q0.get('tier'), cold)].append((t0, boot, bsum, rms - boot - bsum, rms, eg))
         print(f"{L['start']} {kind} {name} tier={q0.get('tier')} cores={q0.get('cores')} tx={q0.get('tx', '')} net={q0.get('net', '')} fcp={q0.get('fcp', '')} gb={ready[0][2].get('gb', '')} {cold}: t0={t0} boot={boot} build={bsum} gaps={rms - boot - bsum} ready={rms} enter_gap={eg}")
         durs = sorted(((int(q.get('ms', 0)), st[5:]) for st, t, q in steps), reverse=True)
@@ -191,6 +234,14 @@ def main():
     for k, v in agg.items():
         med = lambda i: statistics.median([x[i] for x in v if x[i] is not None]) if any(x[i] is not None for x in v) else None
         print(k, 'n=', len(v), [med(i) for i in range(6)])
+    if probes:
+        print('\nLINK PROBES (part two): batched over serial under 0.5 is an engine that links side by side')
+        for start, kind, name, cold, tag, d in probes:
+            if isinstance(d, dict) and 'batched_over_serial' in d:
+                print(f"{start} {kind} {name} {cold}: {tag} batched/serial={d['batched_over_serial']} ({'UNDER HALF' if d['under_half'] else 'not under half'}) serial={d['serial_ms']},{d.get('serial2_ms', '')} "
+                      f"batch={d['batch_issue_ms']}+{d['batch_call_ms']}+{d['batch_wait_ms']} waits_in={d['where_it_waits']} first_draw_share={d.get('first_draw_share', '')} khr={d.get('khr_offered', '')} probe_ms={d.get('probe_ms', '')} state={d['state']}")
+            else:
+                print(f"{start} {kind} {name} {cold}: {tag} state={d.get('state') if isinstance(d, dict) else d}")
 
 
 if __name__ == '__main__':

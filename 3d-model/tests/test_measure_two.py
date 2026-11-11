@@ -776,6 +776,7 @@ for (let i = 0; i < 48; i++) { PERF.steps.push(['step ' + i, 99000 + i]); MEAS.g
 Object.assign(YLD, { n: 9999, ms: 999999, max: 99999, afN: 999, afMs: 99999 });
 Object.assign(MEAS.fence, { n: 999, late: 999, lo: 999999, hi: 999999, max: 99999, at: 47, pend: 8, cms: 99999, st: 3 });
 HID.n = 99; HID.ms = 999999; HID.bail = 999999; MEAS.artNull = 999; LINK.err = 999;
+const COLD = { n: 999999 }; MEAS.pp = '5.1.' + new Array(12).fill(99999).join('.'); MEAS.ppk = 'Std-venue-texture-rich-n-12345';   // part two: a salted cold load that ran the link probe, every number at its widest
 gl.ext = ['WEBGL_compressed_texture_astc', 'EXT_texture_compression_bptc', 'WEBGL_compressed_texture_s3tc', 'EXT_texture_compression_rgtc', 'WEBGL_compressed_texture_etc', 'WEBGL_compressed_texture_etc1', 'WEBKIT_WEBGL_compressed_texture_pvrtc', 'KHR_parallel_shader_compile', 'EXT_disjoint_timer_query_webgl2'];
 for (let k = 0; k < 6; k++) sceneObjs.push({ isInstancedMesh: k === 3, geometry: { attributes: { position: { array: { byteLength: 9999 * 1048576 } } } }, material: { userData: { wxSurf: k === 2 } } });
 outerMeshes.push(sceneObjs[0]); LANE_MATS.push(sceneObjs[1].material);
@@ -798,9 +799,12 @@ console.log(JSON.stringify({ bytes: sent[0].length, q, keys: Object.keys(q).leng
         self.assertEqual(q['gbf'], '9999.9999.9999.9999.19998.0')
         self.assertEqual(q['gbs'], '911.844.89.172')
         self.assertEqual(len(q['pc']), 80)
+        self.assertEqual((q['cs'], len(q['pp'].split('.')), q['ppk']), ('999999', 14, 'Std-venue-texture-rich-n-12345'), "part two: the salt's field and the link probe's two")
         for k in ('ws', 'fs', 'rs', 'lk', 'tu', 'gy', 'gf', 'hd', 'hn', 'bl', 'db', 'on', 'an', 'wn', 'sp', 'prg', 'fl', 'flms', 'flp', 'pu', 'pub', 'gb', 'gbp', 'gbw', 'gbm'):
             self.assertIn(k, q)
-        self.assertLess(o['bytes'], 3072, 'the longest beacon at its worst, well under nginx\'s 8 KB request line: %d' % o['bytes'])
+        # part two: the bound was 3,072 before the link probe's two fields and the salt's (pp, ppk, cs: 3,135 with every number
+        # of theirs at its widest too, on a load that is salted, cold and probed at once)
+        self.assertLess(o['bytes'], 3200, 'the longest beacon at its worst, well under nginx\'s 8 KB request line: %d' % o['bytes'])
         print('\n    the ready beacon at its worst: %d bytes, %d fields' % (o['bytes'], o['keys']))
 
     def test_a_fact_that_throws_costs_only_itself(self):
