@@ -27,7 +27,8 @@ const parked = line('  const PARK_HW = [') + line('  const parkHalfW = (r) =>') 
 const people = cut('  // ---- people on the sidewalks (Round 227', '  // ---- people on the sidewalks: the section ends');
 const FLAT = `
 const riverCorridor = () => false, demY = () => 0, siteY = () => 0, groundMeshLandY = () => null, inCapSite = () => false, inCore = () => false;
-const bridgeDeckLift = () => null, ovpDeckY = OPT.deck || (() => null), sunkCutNear = () => null;`;
+const bridgeDeckLift = () => null, ovpDeckY = OPT.deck || (() => null), sunkCutNear = () => null;
+const ovpSunkY = () => null, trafficBridge = () => {};   // Round 226: the sunken runs' own height and the tunnels' bridging runs (none on these stand-in grounds)`;
 // tests/test_traffic_link.py's ground: the height test and the dead-water splits both fire
 const ROUGH = `
 const hill = (x, z) => 9 * Math.sin(x / 610) * Math.cos(z / 740) + 4 * Math.sin((x + z) / 233) + 0.0015 * z;
@@ -39,7 +40,8 @@ const inCapSite = (x, z) => Math.abs(x + 300) < 120 && Math.abs(z - 200) < 120;
 const inCore = (x, z) => Math.abs(x) < 1200 && Math.abs(z) < 900;
 const bridgeDeckLift = (x, z) => Math.abs(x - 4200) < 60 && Math.abs(z + 900) < 400 ? 25 : null;
 const ovpDeckY = (x, z, ux, uz) => Math.abs(ux) > 0.85 && Math.abs((((z % 1400) + 1400) % 1400) - 700) < 30 ? hill(x, z) + 8 : null;
-const sunkCutNear = (x, z) => Math.abs(z - 1500) < 40 ? hill(x, z) - 6 : null;`;
+const sunkCutNear = (x, z) => Math.abs(z - 1500) < 40 ? hill(x, z) - 6 : null;
+const ovpSunkY = () => null, trafficBridge = () => {};   // Round 226: no tunnels with mouths on this ground either`;
 function make(opt) {
   opt = opt || {};
   const body = helpers + `

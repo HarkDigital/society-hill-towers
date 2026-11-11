@@ -403,6 +403,20 @@ What Round 225 added (Stage 1's first batch: JavaScript and data only, nothing d
   only as `artImage(artSrc(rec.x, rec.xHalf))` (`tests/test_app_art.py`).
 - The new tests carry wall-clock assertions, and the deploy refuses on any failing test: rerun one alone before believing it.
 
+## The Vine Street Expressway's cut (Round 228)
+
+The cut runs from 10th Street to the tunnel under 20th Street and the Parkway, with a built portal at each mouth and
+approach cuts west of it (`overpasses.json`: `cor`, `ce`, `por`, the `ap`, `rp`, `g` flags; `bake_overpasses.py`
+reproduces it byte for byte; `tests/test_vine_portals.py`; `__dbg.ovp()`, `__dbg.ovpCars()`, `PERF.portals`). Its
+comments say Round 226. The rules it leaves:
+- Never leave a tree out of `keepTree` for a new reason: that renumbers every later tree in the city and re-deals its
+  look. Hide it in its slot (`TREE_HIDE_Y`, `treeInv.hid`), as a pole is hidden at `y = -1000`.
+- A covered run with mouths gets portals (`por`); an underpass the model cannot dig is flagged `g` and its packed road
+  drawn through at grade. A road must never end at a bare edge on the lawn.
+- The traffic's tunnels are bridged at run time (`trafficBridge`); traffic.b64 is untouched.
+- Known: slivers of the world's underside beside the far ends of the two approach cuts, from a very low eye (devlog
+  Round 228).
+
 ## The people (Round 227, behind `?people=1`)
 
 Mike asked for people walking; this is the first look, three test figures, and nothing is on by default until he says.

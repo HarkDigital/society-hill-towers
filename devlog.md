@@ -13365,3 +13365,61 @@ A note for the next worktree round: two commits made back to back from a worktre
 repacks at once in the Dropbox-hosted object store and left an orphan pack index (nothing lost). Commit from worktrees
 with `git -c gc.auto=0 -c maintenance.auto=false`.
 
+## Round 228 — the Vine Street Expressway's cut carried to the tunnel, a portal at each mouth (Nov 10)
+
+Mike, Nov 10, from `#p=-2166.8,53.7,-1495.2,-1.538,-0.500`: "this view has the road running right into the grass. Fix
+that." Begun the same hour as Round 226 and shipped after Round 227, so the code's comments and
+`tests/test_vine_portals.py` say Round 226.
+
+**The cause (verified in the bake).** Not a hand-set extent. OSM maps the expressway under the 18th and 19th Street
+bridges and the cap between them as tunnels of 20 to 36 m with 38 m of plain road between each pair; every piece fell
+under the 40 m a sunken run needs to be written by `bake_overpasses.py`, so from x -2046 to -2238 neither carriageway
+was in `overpasses.json` and the page drew both flat on the lawn, ending where the real tunnel (under 20th Street and
+the Parkway) begins. The tunnel's own profile climbed to street level inside itself because it met a plain road, though
+the DEM shows the road staying about 6 m down for another 200 m west. The westbound carriageway from 15th to 18th had
+never been sunk either (two untagged ways, 480 m, past the bridging limit). And `bake_traffic.py` drops every
+tunnel-tagged way, so the traffic network dead-ended five times along the stretch.
+
+**What was built.** The open cut (two carriageways, walls, floor, median) from 18th Street to the tunnel's east mouth,
+the 18th and 19th Street bridges standing over it. At each mouth (x -2292 and x -2429) a headwall across the cut with
+the cut's coping, a pier between the carriageways, a dark box mouth to mouth behind it with a riser closing the step in
+the floors, and the lawn put back over the tunnel as one surface on the ground mesh's own cells. West of the west mouth
+the cut runs 88 m on, then each carriageway in its own narrowing approach cut (141 m and 218 m) to where the ground
+comes down to it; 21st Street's bridge stands over it. All of it is the overpasses' own mesh and the cut's own collars:
+no new material, no shader text. `overpasses.json` gained `ce`, `por` and the `ap`, `rp`, `g` flags (documented in the
+bake's header and handoff.md); the bake reproduces the old file byte for byte before the change and the new one after;
+all 554 elevated chains are unchanged, the sunken runs went from 13 to 16.
+- Keep-outs: 88 packed poles out of the cut (their slots kept, `y = -1000`), tufts kept out, no deck skirt hung across
+  the lanes.
+- **The trees keep their numbers.** The first cut of the fix left the trees in the new cut out of `keepTree` before
+  `n++`, which renumbered every later tree in the city and re-dealt its look (2.97% of a parity pose a kilometre away).
+  Now a tree only the NEW cut takes keeps its slot and is stood 40 m under the ground (`TREE_HIDE_Y`, `treeInv.hid`,
+  skipped by the tap loops and `bankCheck`); the Round 225 corridor is kept as `VINE_CUT_225` to tell the two apart.
+  The rule this states: never leave a tree out of `keepTree` for a new reason; hide it.
+- The traffic: `trafficBridge` lays a run along each sunken chain between the network's dead ends (eleven runs, 729 m,
+  made at run time: traffic.b64 is untouched, so `people_walk.b64` needs no re-bake), `trafficRunUnder` hides a car in
+  a tunnel (and its lamps and its pool on the street above), and a bus on a sunken run rides down in its cut. Over a
+  12 s run with 30 to 50 expressway cars in the box none stood above the cut and none showed under the lawn.
+- `hitNote` is not called: the flight's floor is 2.5 m over the DEM, so it never enters the cut, and the headwall
+  stands 1.2 m over the lawn like the cut's parapets.
+
+**The survey Mike has asked for before** ("verify this is not happening anywhere"): every covered run's two ends.
+The Parkway tunnel's four mouths were bare and now have portals. The I-76 pair under 30th Street Station (622 m) and
+its two links meet the drawn roadway or pass under a deck at both ends by the captures, and are left as Round 85 made
+them. Four short ramp underpasses the model cannot dig (near x -3913, z 2616 and x -2607, z 5008, by the arena) had
+their road removed for 50 to 70 m with both ends on the lawn: they are flagged `g` and the packed road is drawn through
+at grade. The 39 m stub at 10th Street, the cut's east end, is left as it was.
+
+**Verified.** Mike's pose and its reverse, by day and at 21:30; a low view into each mouth; top views; driver height in
+the cut. With the people's flag off the build against Round 227's page at ten parity poses: seven at 0.01% of pixels or
+under, the entry orbit's east view 0.07% (the cut is in it), the 30th Street pose 0.11%, and 1.04% at the Walnut
+top-down pose, all of it one grove whose late-landing art differs between two renders of the same page (Round 227's
+flag-off build showed the same block against main). The phone path at tier 1 and tier 2 renders with no console error or failed step.
+`riverCheck` and `bankCheck` read as before.
+
+**Known, not fixed.** From the lowest eye the flight allows, the world's underside still shows in slivers beside the
+far ends of the two approach cuts west of the tunnel (x -2600 to -2510): a walk of 411 low frames along both
+carriageways and round both mouths found 107 frames showing it before the second pass and 49 after, the mouths and the
+exit ramp closed, the approach tails' far ends worse in a few frames and new in two. The cause there was not found.
+At night nothing lights the mouths. A square jog shows where each 12 m approach roadway meets the 16 m packed motorway.
+
