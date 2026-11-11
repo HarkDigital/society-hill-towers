@@ -14023,3 +14023,52 @@ Claude's suggestions, written on the page beside each pick: hold the shade until
 build; keep the matte roofs; leave the far-map switch; the veil is his call (if yes, draw it from the first view's
 camera). His picks land in the page's database, `picks/<look id>`, and are read back with the ArtifactData tool.
 
+
+## Round 233 — parked cars lighter, every car at 88% (Nov 11, on branch `parked-cars`, waiting on Mike's pick)
+
+Mike: "There are parked cars clogging up many streets. We need to figure out a better plan for this, and I believe cars
+need to be scaled down in size a bit. They look disproportionally large."
+
+Measured on main (fe3726c), with a new probe, `__dbg.parkedAt(x, z, r)`, and eighteen captures at six streets (eye
+level, 12 m and 70 m straight down):
+- Every traffic run of class 2 to 5 with room parked both kerbs at a 6.1 m pitch, a slot filled 86% by day and 93% by
+  night on a residential street, 80 / 86% on a tertiary, 70% on an arterial (50% in the small hours), each slot drawn
+  on its own, so a block read as a solid row.
+- `PARK_CLEAR` (1.12 + 2.05) put a moving van's centre exactly one van width from a parked van's: no air at all. On
+  Spruce Street at 2nd (two-way, class 3) a moving SUV beside a parked one read as double parked.
+- The kilometres that park, by class / one-way / kerbs: one-way residential, both kerbs, 1,629 km (drawn 7 m, three
+  cars abreast); two-way tertiary 561; two-way primary 318; two-way secondary 284; one-way primary 229; one-way
+  tertiary 168; one-way secondary 133. Two-way residential (1,595 km) parks nothing, as before.
+- The cars were their real sizes (a sedan 4.65 by 1.82 m) on streets drawn at the class widths.
+
+What the branch does (JavaScript only; no shader text, no data):
+- `CAR_K` 0.88 under REAL scales the `CAR_MODELS` table once (`real` keeps the true numbers), so the lofted bodies,
+  the lamps (`carLampPut`'s heights by the real height), the shades, the following gaps and the clearances all follow;
+  the box cars of `?vart=0` are built real and scaled. `?carscale=<k>`; `?carscale=1` the real sizes.
+- PARK2 (`?parked=old` keeps Round 188's rules exactly; the suite proves it by running Round 188's checks under
+  `?parked=old&carscale=1`): each parked car stands its own flank `PARK_KERB` 0.18 m off the kerb; a kerb parks only
+  where a moving van passes the widest parked one with `PARK_AIR` 0.3 m (`PARK_CLEAR` 3.186 at CAR_K 0.88, the old
+  3.17 to within 2 cm, so no street loses a kerb to the rule: the test sweeps every class, one-way or two, 2 to 9 m);
+  a narrow one-lane one-way street (under `PARK_ROOMY` 4 m to the kerb) parks both kerbs on `PARK_BOTH` 0.6 of its
+  blocks and one kerb on the rest, its moving lane on the open half (`parkedShift`, unchanged); each block side draws
+  its own fill about its class's mean (`PARK_FILL`: residential 0.70 by day and 0.80 at night with a 0.36 spread,
+  tertiary 0.60 / 0.66, arterial 0.48 / 0.32 in the small hours), the draw riding the slot's occupancy word as its
+  fraction; a 6.5 m pitch with a metre of jitter; junction trims 15 / 12 m (were 13 / 10).
+- A first cut (residential 0.62 with a 0.5 spread, half the narrow blocks on one kerb) left a South Philadelphia block
+  next to empty: one kerb at 37%. The spread was tightened to 52 to 88% and the both-kerb share raised to 0.6.
+- Counts within 440 m of the Spruce Street pose: 1,399 parked today, 871 under the plan, 1,144 under the fuller
+  variant (`?parkboth=1&parkfill=1.25`). The harness measures a residential side 51 to 90% full (mean 0.69), a two-way
+  tertiary 0.59, 10 of 20 narrow blocks on both kerbs, every car its own flank off the kerb.
+- A pose can sit in a block's gap: at Queen Village's eye pose the nearest car ahead is 14 m off. Projecting the
+  instances (`Vector3.project` on `__dbg.camera`) put that car exactly on the frame's white sedan, which a by-eye
+  estimate from the frame had put at 33 m. Not a bug: project the instances before believing a missing car.
+
+Mike's side-by-side page (private): https://claude.ai/artifact/Ubu7Mfhyobf1cTi4McvbBy . Today, the plan and the fuller
+variant at ten views, same build and clock (Oct 12, 13:00), only the switch changed; the moving traffic is spawned live
+and differs between columns. His pick is kept in `picks/parking`: `plan` (new, fuller, today), `size` (right, smaller,
+bigger), `note`, `at`.
+
+Suite: 1,494 tests, OK (one skip, one expected failure, both as before). Not done, left for his pick: the defaults
+(the plan as shown is the branch's default), the merge, the build and the deploy. Not touched: the moving traffic's
+queues (Graduate Hospital's cross street showed four rows at 70 m, two of them moving cars stacked at the junction),
+and the buses, trolleys and trains, which keep their real sizes.
