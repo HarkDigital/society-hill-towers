@@ -7,16 +7,19 @@
    "total": 111073,
    "measured": 107058,
    "protected": 422,
-   "unmeasured": 3593,
+   "unmeasured": 3095,
    "skipped": 5,
-   "spike_released": 29
+   "roof_pass": 497,
+   "spike_released": 29,
+   "roof_pass_protected": 1
   },
   "south": {
    "total": 6369,
    "measured": 4897,
    "protected": 7,
-   "unmeasured": 1465,
-   "skipped": 5
+   "unmeasured": 1382,
+   "skipped": 5,
+   "roof_pass": 83
   },
   "core_join": {
    "total": 2831,
@@ -29,6 +32,13 @@
    "measured": 424652,
    "unmeasured": 57311
   }
+ },
+ "east_roof_pass": {
+  "ways": 3799,
+  "heights": 580,
+  "held": 5,
+  "changed": 576,
+  "over_20m": 16
  },
  "top_deltas": [
   [
@@ -48,6 +58,15 @@
    -762,
    125.1,
    44.5
+  ],
+  [
+   41.2,
+   "wide",
+   null,
+   1284,
+   140,
+   13,
+   54.2
   ],
   [
    41.0,
@@ -97,11 +116,29 @@
   [
    26.0,
    "wide",
+   "Triad1828 Centre",
+   1253,
+   -307,
+   60.9,
+   86.9
+  ],
+  [
+   26.0,
+   "wide",
    null,
    -1685,
    -3094,
    42.2,
    16.2
+  ],
+  [
+   25.7,
+   "wide",
+   "Riverview Towers",
+   1545,
+   357,
+   15,
+   40.7
   ],
   [
    23.8,
@@ -147,6 +184,15 @@
    -621,
    39.2,
    18.4
+  ],
+  [
+   20.2,
+   "south",
+   null,
+   1794,
+   3585,
+   13,
+   33.2
   ],
   [
    19.7,
@@ -203,6 +249,24 @@
    10.3
   ],
   [
+   17.9,
+   "wide",
+   "330",
+   1886,
+   -162,
+   21.3,
+   39.2
+  ],
+  [
+   17.9,
+   "wide",
+   "Camden County Correctional Facility",
+   1821,
+   219,
+   13,
+   30.9
+  ],
+  [
    17.1,
    "wide",
    null,
@@ -219,6 +283,15 @@
    -1814,
    25.0,
    8.8
+  ],
+  [
+   15.5,
+   "wide",
+   "Camden County Hall of Justice",
+   1907,
+   264,
+   13,
+   28.5
   ],
   [
    15.2,
@@ -241,6 +314,15 @@
   [
    14.2,
    "wide",
+   "Camden Board of Education Administration Building",
+   1563,
+   -307,
+   29.8,
+   44.0
+  ],
+  [
+   14.2,
+   "wide",
    "Philadelphia Theatrical Supply",
    -1184,
    -1224,
@@ -257,229 +339,157 @@
    7.3
   ],
   [
-   6.3,
-   "wide",
-   "Reading Terminal Market",
-   -1206,
-   -871,
-   46.1,
-   39.8
-  ],
-  [
-   2.1,
+   12.0,
    "wide",
    null,
-   -2226,
-   -644,
-   29.3,
-   27.2
+   1863,
+   1926,
+   6,
+   18.0
   ],
   [
-   2.0,
-   "wide",
-   "John F. Kennedy Behavioral Health Center",
-   -1600,
-   -1050,
-   61.0,
-   59.0
-  ],
-  [
-   1.7,
-   "wide",
-   "The Art Institute of Philadelphia",
-   -1996,
-   -623,
-   44.7,
-   43.0
-  ],
-  [
-   1.7,
+   11.8,
    "wide",
    null,
-   -1352,
-   -1472,
-   14.3,
-   12.6
+   1625,
+   331,
+   13,
+   24.8
   ],
   [
-   1.6,
+   11.6,
    "wide",
    null,
-   -1152,
-   -550,
-   38.8,
-   37.2
-  ],
-  [
-   1.5,
-   "wide",
-   null,
-   -1034,
-   -982,
-   36.0,
-   34.5
-  ],
-  [
-   1.4,
-   "wide",
-   null,
-   -1431,
-   -540,
-   29.8,
-   28.4
-  ],
-  [
-   1.3,
-   "wide",
-   "Jefferson Tower",
-   -1185,
-   -729,
-   144.2,
-   142.9
-  ],
-  [
-   1.2,
-   "wide",
-   null,
-   -1285,
-   -768,
-   38.0,
-   36.8
-  ],
-  [
-   0.5,
-   "wide",
-   null,
-   -2253,
-   -651,
-   24.3,
-   23.8
-  ],
-  [
-   0.5,
-   "wide",
-   "Police and Fire Federal Credit Union",
-   -860,
-   -907,
-   30.4,
-   29.9
-  ],
-  [
-   0.5,
-   "wide",
-   "Friends Senior Care Center",
-   -872,
-   -908,
-   29.0,
-   28.5
-  ],
-  [
-   0.4,
-   "wide",
-   "1900 Arch Street",
-   -2303,
-   -1065,
-   92.1,
-   91.7
-  ],
-  [
-   0.3,
-   "wide",
-   null,
-   -1441,
-   -518,
-   17.9,
+   1153,
+   -143,
+   6,
    17.6
   ],
   [
-   0.3,
+   11.4,
    "wide",
    null,
-   -1686,
-   -3127,
-   29.7,
-   29.4
+   1951,
+   -76,
+   13,
+   24.4
   ],
   [
-   0.1,
+   10.9,
    "wide",
-   "Thomas F. Donatucci, Sr. Library",
-   -3019,
-   2860,
-   10.8,
-   10.8
+   "New Jersey American Water",
+   1192,
+   -372,
+   18.0,
+   28.9
   ],
   [
-   0.1,
+   9.0,
    "wide",
-   null,
-   -3207,
-   2882,
-   8.8,
-   8.8
+   "Riverfront Supermarket",
+   1536,
+   335,
+   13,
+   4.0
   ],
   [
-   0.1,
-   "wide",
-   null,
-   -2683,
-   2830,
-   9.2,
-   9.2
-  ],
-  [
-   0.1,
+   8.9,
    "wide",
    null,
-   -2694,
-   2080,
-   8.2,
-   8.2
+   1216,
+   134,
+   13,
+   4.1
   ],
   [
-   0.1,
+   8.6,
    "wide",
-   null,
-   -3005,
-   2447,
-   8.2,
-   8.2
+   "Camden Tool Inc.",
+   1816,
+   -1054,
+   13,
+   4.4
   ],
   [
-   0.1,
+   8.5,
    "wide",
    null,
-   -2714,
-   2568,
-   9.2,
-   9.2
+   1606,
+   692,
+   15,
+   6.5
   ],
   [
-   0.1,
+   8.5,
    "wide",
-   null,
-   -3112,
-   2319,
-   8.8,
-   8.8
+   "Govener James J. Florio Center for Public Service",
+   1552,
+   146,
+   18.0,
+   26.5
   ],
   [
-   0.1,
+   8.4,
    "wide",
    null,
-   -2561,
-   2294,
-   10.8,
-   10.8
+   1778,
+   2609,
+   13,
+   4.6
   ],
   [
-   0.1,
+   8.4,
    "wide",
    null,
-   -2387,
-   2067,
-   12.2,
-   12.2
+   1819,
+   -108,
+   13,
+   21.4
+  ],
+  [
+   8.4,
+   "wide",
+   "Zucker Steinberg & Wixted",
+   1913,
+   118,
+   13,
+   4.6
+  ],
+  [
+   8.4,
+   "wide",
+   null,
+   1749,
+   -1312,
+   13,
+   4.6
+  ],
+  [
+   8.3,
+   "wide",
+   null,
+   2022,
+   2230,
+   13,
+   4.7
+  ],
+  [
+   8.3,
+   "wide",
+   null,
+   1801,
+   2600,
+   13,
+   4.7
+  ],
+  [
+   8.3,
+   "wide",
+   "Fresh Oil Missionary Baptist Church",
+   1664,
+   1798,
+   14,
+   5.7
   ]
  ],
  "spike_released": [

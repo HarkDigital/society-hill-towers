@@ -63,7 +63,15 @@ along the tangent (-nz, nx) in dm, the laid width in dm (0 hidden), out and in i
 unknown), the family, the hours' index (-1 unknown), the span's end bits (bit 0 its left end at its edge's end, bit 1 its
 right) plus the host's height in dm shifted left by 2, and the panel's turn to its wall (the lean, a slope in
 ten-thousandths). The tags come from fetch_shops.businesses over the same cached tiles, checked row for row against
-shops_raw.json."""
+shops_raw.json.
+
+Round 231 (Camden at its measured heights): --host-heights does one thing and bakes nothing. A heights-only repack of
+wide.b64 moves hosts under panels this bake hung when they stood at their defaults, and the page clamps a panel, its
+awning and its blade sign to the host's height from the sidecar (hostH), not to the wall it draws: after the repack
+Buster's Liquor's 3.6 m panel hung on a 3.2 m wall and Friend's Cafe's 3.75 m on 3.3. The whole bake cannot be rerun
+for it (its inputs have moved since Round 189 and it refuses, rightly, to rewrite storefronts.b64), so the flag takes
+the hosts lidar_join.py's lidar_east_heights.json moved and rewrites the host-height bits of their records in
+storefront_info.json, and nothing else in either file: see host_heights."""
 import base64, hashlib, json, math, os, re, struct, sys, unicodedata
 from collections import Counter
 from shapely.geometry import Polygon, LineString, Point, box as sbox
@@ -105,6 +113,90 @@ def area2(poly):
         x0, z0 = poly[i]; x1, z1 = poly[(i + 1) % len(poly)]
         a += x0 * z1 - x1 * z0
     return a
+
+
+def host_heights(body, rec, stride, rows, scenes):
+    """Round 231: the sidecar's host heights after a heights-only repack. body: storefronts.b64's int16 body (8 a
+    record); rec: the sidecar's int16 records (`stride` a record), not modified; rows: lidar_east_heights.json's rows
+    [set, building, way, form, old, new, ...]; scenes: {'wide': buildings, 'south': buildings}. Returns (the new
+    records, changed, problems), changed one [record, old dm, new dm, set, building] per record rewritten.
+    The sidecar does not name a record's host, so it is found again: the one moved building holding the points 0.5, 1
+    and 2 m behind the record's wall, at the record's own point and at its laid centre. A record is rewritten only when
+    the height it carries is exactly its host's OLD height, which is what proves the host is the one the bake hung it
+    on; one already at the new height is left (a rerun changes nothing); anything else is a problem, and the caller
+    writes nothing. Only field 7's height bits move: the end bits under them and every other field stay."""
+    def inside(x, z, ring):
+        hit, j = False, len(ring) - 1
+        for i in range(len(ring)):
+            xi, zi, xj, zj = ring[i][0], ring[i][1], ring[j][0], ring[j][1]
+            if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi) + xi:
+                hit = not hit
+            j = i
+        return hit
+    dm = lambda h: max(0, min(8000, int(round(h * 10))))     # the sidecar's own rounding (hdm)
+    hosts = []
+    for r in rows:
+        if dm(r[4]) != dm(r[5]):
+            poly = scenes[r[0]][r[1]]['poly']
+            hosts.append((min(q[0] for q in poly), max(q[0] for q in poly), min(q[1] for q in poly), max(q[1] for q in poly), poly, r))
+    out, changed, problems = list(rec), [], []
+    for i in range(len(body) // 8):
+        o, q = i * 8, i * stride
+        x, z, ang = body[o] * S, body[o + 1] * S, body[o + 2] / 1000
+        nx, nz = math.cos(ang), math.sin(ang)
+        sh = rec[q] / 10
+        found = {}
+        for px, pz in ((x, z), (x - nz * sh, z + nx * sh)):
+            for d in (0.5, 1.0, 2.0):
+                ix, iz = px - nx * d, pz - nz * d
+                for x0, x1, z0, z1, poly, r in hosts:
+                    if x0 <= ix <= x1 and z0 <= iz <= z1 and inside(ix, iz, poly):
+                        found[(r[0], r[1])] = r
+        if not found:
+            continue
+        if len(found) > 1:
+            problems.append('record %d at (%.0f, %.0f): %d moved buildings behind its wall, %r' % (i, x, z, len(found), sorted(found)))
+            continue
+        r = next(iter(found.values()))
+        have, old, new = rec[q + 7] >> 2, dm(r[4]), dm(r[5])
+        if have == new:
+            continue
+        if have != old:
+            problems.append('record %d at (%.0f, %.0f): it carries a host of %.1f m, and the %s building %d behind its wall stood '
+                            'at %.1f m and stands at %.1f: not the host the bake hung it on' % (i, x, z, have / 10, r[0], r[1], r[4], r[5]))
+            continue
+        out[q + 7] = (rec[q + 7] & 3) | (new << 2)
+        changed.append([i, old, new, r[0], r[1]])
+    return out, changed, problems
+
+
+if '--host-heights' in sys.argv:
+    _txt = open('storefront_info.json', encoding='utf-8').read()
+    _info = json.loads(_txt)
+    if json.dumps(_info, separators=(',', ':'), ensure_ascii=False) != _txt:
+        sys.exit('ERROR: storefront_info.json does not come back byte for byte from a plain load and dump; nothing written')
+    _raw = base64.b64decode(open(OUT_B64).read())
+    if _info.get('b64sha') != hashlib.sha256(open(OUT_B64).read().encode('ascii')).hexdigest() or _info.get('stride') != 9:
+        sys.exit('ERROR: storefront_info.json was not baked against this storefronts.b64 (or is not the 9-word layout); nothing written')
+    _body = struct.unpack('<%dh' % ((len(_raw) - 16) // 2), _raw[16:])
+    _r = base64.b64decode(_info['rec'])
+    _rec = struct.unpack('<%dh' % (len(_r) // 2), _r)
+    _scenes = {'wide': json.load(open('scene_wide.json'))['buildings'], 'south': json.load(open('scene_south.json'))['buildings']}
+    _new, _changed, _problems = host_heights(_body, _rec, _info['stride'], json.load(open('lidar_east_heights.json'))['rows'], _scenes)
+    if _problems:
+        print('\n'.join('   ' + q for q in _problems[:20]), file=sys.stderr)
+        sys.exit(f'ERROR: --host-heights: {len(_problems)} record(s) do not line up with the hosts lidar_east_heights.json moved; nothing written')
+    for v in _new:
+        if v > 32767 or v < -32768:
+            sys.exit(f'ERROR: --host-heights: a value {v} does not fit an int16; nothing written')
+    if _changed:
+        _info['rec'] = base64.b64encode(struct.pack('<%dh' % len(_new), *_new)).decode('ascii')
+        with open('storefront_info.json', 'w', encoding='utf-8') as _f:
+            json.dump(_info, _f, separators=(',', ':'), ensure_ascii=False)
+    for _c in _changed:
+        print(f'   record {_c[0]} ({_info["names"][_c[0]] or "unnamed"}): host {_c[1] / 10} m -> {_c[2] / 10} m ({_c[3]} building {_c[4]})')
+    print(f'--host-heights: {len(_changed)} record(s) took their host\'s new height in storefront_info.json; storefronts.b64 untouched', flush=True)
+    sys.exit(0)
 
 
 # ---- footprints: the drawn set

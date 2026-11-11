@@ -5,8 +5,13 @@ and pack_outskirts.py too, so no tier draws two walls on one plane facing the sa
 (Mike, Sep 16: a tower at East Falls still flickered; the far ring had no guard at all).
 
 Records are tuples (cx, cz, area, h, minH, fields) with fields[1] the ring, a list of
-(x, z); nudge_coplanar insets rings in place. Stdlib only."""
+(x, z); nudge_coplanar insets rings in place. Stdlib only.
+
+repack_diff (Round 231) is the guard for a repack that is meant to move heights and nothing
+else: it walks two packed tiers record by record and names every difference that is not a
+height word (or the storey pitch the attribute word derives from it)."""
 import math
+import struct
 
 # Stacked building:part ways on one footprint (OSM models several towers as a pile of
 # coincident prisms of different heights: the Comcast Technology Center has nine) draw
@@ -96,3 +101,65 @@ def nudge_coplanar(items, d=0.4):
     for idx, d in insets.items():
         items[idx][5][1] = inset_ring(items[idx][5][1], d)
     return len(insets)
+
+# A repack that is meant to change heights only (Round 160's 43 confirmed spikes, Round 231's measured Camden) must
+# change NOTHING else: the page seeds every record's wall colour, style, roof lottery and reservoir draw from its
+# record number, and wide_walls.b64 rides the same order, so one record more, fewer or out of place re-deals the look of
+# every building after it. This walks an old and a new blob together and sorts every difference into `changes` (a
+# height word, with the storey pitch pack_wide's attr_word derives from it) or `problems` (anything else at all).
+PITCH_BITS = 31 << 10      # the attribute word's floorH field, u(3)|mat(3)|era(4)|floorH(5): the one part of it a height moves
+
+def walk_packed(buf):
+    """bytes of a decoded wide.b64 / city.b64 in the attribute layout (building: n, h*5, minH*5, type, attr, roof,
+    n x (x, z)) -> (header, body, offs): the Int32[4] header, the int16 body as a tuple, and the body offset of every
+    building record plus one past the last (so body[offs[-1]:] is the roads and areas)."""
+    hdr = struct.unpack_from('<4i', buf, 0)
+    body = struct.unpack_from('<%dh' % ((len(buf) - 16) // 2), buf, 16)
+    offs, k = [], 0
+    for _ in range(hdr[1]):
+        offs.append(k)
+        k += 6 + 2 * body[k]
+    offs.append(k)
+    return hdr, body, offs
+
+def repack_diff(old, new, unit=0.2):
+    """old, new: the decoded bytes of two packs of one tier. Returns (changes, problems). changes: one
+    [record, cx, cz, old h word, new h word, old attr word, new attr word] per building record whose height word (and
+    with it, at most, the storey pitch bits of its attribute word) differs, cx, cz the ring's vertex mean in metres.
+    problems: a line for every other difference (the header's counts, a ring, a type, a minimum height, a roof word,
+    an attribute bit outside the pitch, a pitch that moved on a record whose height did not, the roads and areas).
+    An empty `problems` means: same records, same order, same geometry, heights apart."""
+    problems, changes = [], []
+    try:
+        ho, bo, oo = walk_packed(old)
+        hn, bn, on = walk_packed(new)
+    except (struct.error, IndexError) as e:
+        return [], ['a blob does not walk as a packed tier: %r' % (e,)]
+    if ho != hn:
+        problems.append('header differs: %r -> %r (magic, buildings, roads, areas)' % (ho, hn))
+    if len(old) != len(new):
+        problems.append('length differs: %d -> %d bytes' % (len(old), len(new)))
+    for i in range(min(ho[1], hn[1])):
+        a, b = oo[i], on[i]
+        n = bo[a]
+        if a != b or bn[b] != n or bo[a + 6:a + 6 + 2 * n] != bn[b + 6:b + 6 + 2 * n]:
+            problems.append('record %d: the ring differs (%d -> %d vertices): a record was added, dropped, reordered or '
+                            'reshaped at or before here' % (i, n, bn[b]))
+            break          # past the first misaligned record every later comparison is noise
+        for w, what in ((2, 'minimum height'), (3, 'type'), (5, 'roof word')):
+            if bo[a + w] != bn[b + w]:
+                problems.append('record %d: %s differs (%d -> %d)' % (i, what, bo[a + w], bn[b + w]))
+        ao, an = bo[a + 4], bn[b + 4]
+        same_h = bo[a + 1] == bn[b + 1]
+        if ao != an:
+            if ao < 0 or an < 0 or (ao ^ an) & ~PITCH_BITS:
+                problems.append('record %d: the attribute word differs outside the storey pitch (%d -> %d)' % (i, ao, an))
+            elif same_h:
+                problems.append('record %d: the storey pitch moved (%d -> %d) though the height did not' % (i, ao, an))
+        if not same_h:
+            changes.append([i, round(sum(bo[a + 6:a + 6 + 2 * n:2]) * unit / n, 1), round(sum(bo[a + 7:a + 6 + 2 * n:2]) * unit / n, 1),
+                            bo[a + 1], bn[b + 1], ao, an])
+    else:
+        if bo[oo[-1]:] != bn[on[-1]:]:
+            problems.append('the roads and areas after the building records differ')
+    return changes, problems
