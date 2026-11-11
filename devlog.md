@@ -13423,3 +13423,19 @@ carriageways and round both mouths found 107 frames showing it before the second
 exit ramp closed, the approach tails' far ends worse in a few frames and new in two. The cause there was not found.
 At night nothing lights the mouths. A square jog shows where each 12 m approach roadway meets the 16 m packed motorway.
 
+## Nov 10 coda — `PLAN.md`, and Round 229 held
+
+Mike, Nov 10: "Make sure all MD files are updated and the plan for what we are working on now has it's own MD that opus
+can reference." `PLAN.md` at the repo's root is that file: the ask and his Nov 9 decisions, the plan's rules, the six
+stages with their status, what shipped in Rounds 225 to 228, what is in flight, the people's state and next pass, the
+realism picks, what waits on him, the declined list and the verification commands. It points at the research record in
+the ignored `.audit/2026-11-10-performance-and-realism/` folder, which stays out of git. CLAUDE.md points at it and its
+size figures are corrected (app.js about 54,000 lines; the page 34.1 MB raw, 14.37 MB gzip; 785 art files, 44.0 MB).
+The capture skill gained two lessons from the day (take a main-against-main floor before believing a parity number; a
+broken `art` link reads as a regression).
+
+Round 229 (Stage 1's second batch) is NOT in this commit. It is merged on branch `round229` and held: its build draws
+Center City's glass towers dark at the entry orbit by day where main draws them sky-blue (6.3% of the `orbit-e` parity
+pose, repeatable, present in the batch's own first-frame branch), and one of its tests fails against Round 227's line
+in `frame()`. `PLAN.md` has the detail under "In flight"; its notes wait in `.audit/.../round229/`.
+

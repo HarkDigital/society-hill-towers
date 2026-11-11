@@ -226,6 +226,14 @@ share of pixels over 24 levels from A next to the second A's. What made the nois
 - **People.** The walkers (Round 227) are off unless the page is opened with `?people=1`; under it they move by the
   real second, so `__dbg.people(false)` takes them out of a parity pose and `__dbg.peopleAt(t)` pins their second for a
   capture that must repeat (`__dbg.peopleAt(null)` lets it go).
+- **Take the floor before believing a number.** Render main twice and compare main against main first (Round 228). On
+  Nov 10 most poses came back at 0.000% but two did not: `r-walnut-topdown` differs by about 1% between two renders of
+  the SAME page (one grove whose art lands late; the top block is at (256, 256)), and `x-30th-st` by about 6% some runs.
+  Judge those by their masks. A number well above the floor in tree pixels far from your change means you renumbered
+  the trees (left one out of `keepTree` before `n++`): hide it in its slot instead.
+- **A broken `art` link looks like a regression.** A capture folder whose `art` symlink points at a removed worktree
+  renders with no generated fronts or trees and one failed step ("Glazing the towers"). Check the summary's `failed`
+  before comparing anything.
 - **Ships.** Blocking `ais.json` through Chrome's `setBlockedURLs` is not enough: ships still arrive over the aisstream
   WebSocket. Click `btnShips` off in the pose instead.
 - **Flights.** Live aircraft and their pins come and go between runs (every top difference block of Round 192's second

@@ -10,6 +10,8 @@ The page, and the generated art it loads by relative path (Round 184), but only 
 app the page always takes the phone path, where `artSrc` answers a record's half copy wherever it has one, so a full-size
 file with a half copy is never read there. The copy leaves those out: on Nov 10, 365 of the 782 files and 33.4 of the
 43.6 MB, which takes `www` from 77.4 to 44.0 MB (the page is 33.8 of it). It prints both totals on every run.
+Since Round 227 a file named `-sharp` (the walking people's computer-only atlas) is always left out too, whatever its
+kind: no phone asks for one.
 
 - The list is read from the page being copied (every art path it names), split by `scripts/art-touch.mjs`: a file is left
   out when its `-half` twin is named too. Every named file is checked before anything is written; a missing or empty one

@@ -5,8 +5,8 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
-`app.js` (~52,700 lines, one IIFE) is the application and `rebuilds/` the landmark rebuilds (seven in Round 161, nine files now),
-`build.py` inlines them with the data into `society-hill-towers.html` (33.8 MB raw / 14.26 MB gzip, measured live on Nov 10, 2026; the generated art, 782 files and 43.6 MB, is files under `art/` since Round 184). The old claude.ai
+`app.js` (~54,000 lines, one IIFE) is the application and `rebuilds/` the landmark rebuilds (seven in Round 161, nine files now),
+`build.py` inlines them with the data into `society-hill-towers.html` (34.1 MB raw / 14.37 MB gzip at Round 228, Nov 10, 2026; the generated art, 785 files and 44.0 MB, is files under `art/` since Round 184). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -369,10 +369,13 @@ files. The rules that keep it standing:
 
 ## The staged plan (Round 225 on)
 
+**`PLAN.md` at the repo's root is the working plan: what has shipped, what is in flight, each stage's items, the
+people's next pass and what is waiting on Mike. Read it before starting a round and update it when one ships.**
+
 Mike approved a six-stage performance and realism plan on Nov 10, 2026 (his ask, Nov 9: improve the performance and loading,
 and make it more realistic looking). The plan and its whole record are in the checkout's ignored folder
-`.audit/2026-11-10-performance-and-realism/`: `PLAN.md` (read it first: the beacons' table, the stages, what still needs
-Mike), eleven `lens-*.md` files (79 proposals, each with two verifiers' verdicts), `synthesis-performance.md`,
+`.audit/2026-11-10-performance-and-realism/`: its own `PLAN.md` (the plan as approved on Nov 10: the beacons' table, the
+stages, what still needs Mike; the root `PLAN.md` is the one kept current), eleven `lens-*.md` files (79 proposals, each with two verifiers' verdicts), `synthesis-performance.md`,
 `synthesis-realism.md`, `critique.md`. Devlog Round 225 has what shipped and what is left of Stage 1. Its rules:
 - One shader train. A change to shared shader text makes every device compile those programs again once (30 to 57 s on a
   cold public PC): Stage 1 changes no shader text, and every shader edit after it ships in one batched deploy, new looks
