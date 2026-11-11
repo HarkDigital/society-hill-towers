@@ -13287,3 +13287,81 @@ the screen (Round 190), the ships' and the events' pins keep their mile, flights
 for the half mile before Round 204 and were never lowered. `tests/test_near.py` pins the new value and refuses the old.
 No shader text changed.
 
+## Round 227 — people on the sidewalks, a first look behind `?people=1` (Nov 10)
+
+Mike, Nov 9: "Yes, walking". Nov 10: "People next". The plan's own gate (STREET-1 in the Nov 10 research record,
+`.audit/2026-11-10-performance-and-realism/lens-street.md`): three figures seen MOVING in the model before the full set
+is generated. So this round ships the whole mechanism with three test figures, OFF by default: `?people=1`, and
+`?people=sharp` for the computer's sharper atlas. Nothing is drawn, made, compiled or loaded without the flag; the
+flag is refused at tier 2, which has no traffic runs (its standers come later).
+
+**What the measurements changed (MEASURED on the real graph and blobs).**
+- The traffic graph's `conn` does not give street blocks: 6,818 places where two runs cross mid-run are not joined
+  (the linker cuts a run only where another run's END meets it), so a face walk over `conn` gives 7,421 faces with
+  73% of the kerb on faces over 1,200 m round, and a walker would run straight across every such crossing. The
+  walkers have their own nodes (`peopleCross`): 59,781 pieces, every face closes, 18,819 faces, median perimeter 438 m.
+- A bake cannot reproduce the page's run order (dead water, cap sites, deck heights and the linker's height test read
+  built terrain: 46,145 runs on flat ground, 46,132 in a real load), so the walk-line blob is keyed by way index and
+  distance along the way, and the traffic step tags each run with both (`wi`, `ws`) only under the flag.
+- Room on the sidewalk: by the DRAWN street widths 13% of the core's kerb, 10% of the wide box's and 2% of the far
+  ring's has under 1.4 m between kerb and wall, but locally it is far worse on rowhouse grids (55% of the kerb within
+  150 m of the Snyder pose has under 0.6 m: streets drawn 7 m wide between rows 8 to 9 m apart). Those streets carry
+  nobody. Whether to draw them narrower or let people use the road's edge is Mike's call, not built.
+
+**The data.** `bake_people_walk.py` writes `people_walk.b64` (91,952 bytes raw): for every way of traffic.b64, cut at
+the walkers' crossings, the 5th percentile of the centreline-to-wall distance on each side in 6-bit codes (walls: the
+core's buildings, wide.b64, city.b64, outskirts.b64). The page subtracts its own drawn half width. The mapping is proven
+by test on two grounds (every run's ends lie on its tagged way within 5 cm; the page's code for every run side equals
+the bake's). It is inlined on every visit: the page's gzip grows 91.5 KB (14,262,696 to 14,354,210 bytes), most of it
+this blob. That is the flag's standing cost while it is off.
+
+**The core** (app.js, `// ---- people on the sidewalks`, pure logic, inert without the flag). The walk line is the drawn
+half width plus a setback of the room less 0.8 m, held to 0.7 to 2.0 m, nobody under 1.4 m of room; never on class 0 or
+1, a deck or a closed run; a side that lies in another drawn street is refused (`streetInside`), and so is one with
+another street close behind it and no wall between (a long boulevard's median is a face over the cap, which the 8 m
+face test never sees). A face under the cap (1,600 m or 64 pieces) is a loop; over it each piece is an out-and-back
+trail; corners are joined where the two walk lines meet. Heights are the drawn ground at the walker's own line
+(`furnY`). Whole network: 82.7% of class 2 to 5 kerb walked, 7,278 loops and 25,818 out-and-back trails, 241,132 slots.
+Slots, not agents: slot k stands at s = (s0 + v t) mod P from an integer hash, present by the model clock's hour,
+weekday and rain, a presence flipping only off screen. `peopleFill` writes the walkers within 150 m (80 m on a phone,
+none above 60 m of eye height) into the caller's array: 0.1 ms for about 530 under Node, no allocation.
+
+**The art.** `fetch_people_art.py` / `bake_people_art.py`: one sheet a figure from OpenAI's image API on transparency,
+six poses of one person (front, back, side; a stride and a standing pose each), sliced by alpha, normalised to one
+scale, feet on one line. Eleven generations: eight at medium quality all rejected (the person changed between poses),
+three at high all kept, so the script's default is high (about four times the price a sheet; not checked against the
+bill). `people_art.json`, `art/people/`: 864 by 816 (3.76 MB on the GPU), a phone's half (0.94 MB), and a sharp copy
+twice the size (15.04 MB) that a phone and the app never ask for (`art-touch.mjs` leaves any `-sharp` file out).
+
+**The drawing** (`// ---- people on the sidewalks: the drawing`). Three instanced meshes on one instance stream, all
+Float32: the card (`people-card`, turned about its own vertical to the eye, the view by heading against the eye with a
+6 degree dithered hand-over, stride and stand twice a gait cycle, a 3 cm stretch for the bob, the sun's shadow received
+on a computer, the lamp pools at 0.42), the figure's own silhouette as a sun shadow (`people-shade`, through the
+vehicles' stencil), and the vehicles' own contact blob (no program). Never in the depth pass, the mirror or the pins'
+capture. Both programs are made and warmed between Ready and Enter (about 60 ms warm; 1 s once on a cold cache) and the
+atlas loads the first time a fill returns anyone. The card stands 0.24 m up on a sidewalk and 0.05 m on bare ground: a
+bias, since nothing answers the drawn sidewalk's own height.
+
+**No shader text moved.** The compiled programs' sources with the flag off are the same set as main's (177 distinct);
+with it on, that set plus `people-card` and `people-shade`. With the flag off the build is pixel-identical to main at
+eight of ten parity poses (the other two differ where two renders of main differ: a tree cluster whose art lands late,
+and the 30th Street pose). Flag on: no console error or failed step on the computer path, a phone at tier 1, and tier 2
+(where nothing is drawn). Tier 1 GPU bytes through the memory tool: 844 MB without, 845 MB with, after a street visit.
+Frame cost at Walnut with 101 walkers could not be told from noise on a loaded machine (3 draw calls, 6 triangles a
+walker).
+
+**Known, and why it is a first look** (the helpers' own judgement from captures and filmstrips; nobody has watched it
+on a real phone): the walk is a two-pose flip-book inside about 10 m; figures walking toward the eye look into the
+lens; three figures means twins; the 150 m reach shows from 25 to 55 m up (people stop at the first crossing while cars
+run on); walkers pass through each other (6.9% within 0.45 m at any instant), through low tree crowns and poles, and
+turn round in one frame at a trail's end; some feet float 10 to 17 cm; at `people=1` a figure inside 5 m is soft on a
+Retina screen. Not built: standers, crossings, wardrobes by season, the storefront density hook (`PEOPLE.boost`), an
+About line saying the people are invented, a layer switch.
+
+Probes: `__dbg.people()`, `__dbg.people(false)`, `__dbg.peopleAt(t)`, `__dbg.peopleProbe(x, y, z, R, cap)`,
+`__dbg.peopleTune({...})`. Tests: `test_people.py`, `test_people_walk.py`, `test_people_art.py`, `test_people_draw.py`.
+
+A note for the next worktree round: two commits made back to back from a worktree set off two of git's automatic
+repacks at once in the Dropbox-hosted object store and left an orphan pack index (nothing lost). Commit from worktrees
+with `git -c gc.auto=0 -c maintenance.auto=false`.
+

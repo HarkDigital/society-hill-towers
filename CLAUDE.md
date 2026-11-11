@@ -302,6 +302,7 @@ The realism round two (Round 223) adds, each on by default under REAL: `?roofs16
 `?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
 broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
 `?rkcheck=0` leaves out the `?dev` roof-mask self-check for a timing run (Round 225; see The staged plan).
+`?people=1` draws the walking people (Round 227, a first look, OFF by default and refused at tier 2); `?people=sharp` the same with a computer's sharper atlas; `__dbg.people()`, `__dbg.people(false)`, `__dbg.peopleAt(t)`, `__dbg.peopleTune({...})`.
 
 ## The landmark rounds (Rounds 195 to 200)
 
@@ -401,6 +402,21 @@ What Round 225 added (Stage 1's first batch: JavaScript and data only, nothing d
 - The app copies only what a touch device can ask for, keyed by kind (`app/scripts/art-touch.mjs`, `KEEP_FULL`): load art
   only as `artImage(artSrc(rec.x, rec.xHalf))` (`tests/test_app_art.py`).
 - The new tests carry wall-clock assertions, and the deploy refuses on any failing test: rerun one alone before believing it.
+
+## The people (Round 227, behind `?people=1`)
+
+Mike asked for people walking; this is the first look, three test figures, and nothing is on by default until he says.
+Devlog Round 227 has the measurements and what is not built. Its rules:
+- With the flag off nothing exists: no mesh, material, program, texture or per-frame work (`tests/test_people_draw.py`),
+  and no existing program's text may change for it.
+- Walkers are slots on their own block graph (`peopleCross`, not the traffic's `conn`, which lets a walker cross 6,818
+  intersections), placed by `people_walk.b64` (`bake_people_walk.py`, keyed by way index and distance along the way: the
+  page's run order cannot be baked). Re-bake it after any change to traffic.b64 or the packed footprints; it stores
+  centreline-to-wall, and the page subtracts its own drawn half width.
+- Art is one sheet a figure at quality high (`fetch_people_art.py`, `bake_people_art.py`); the `-sharp` atlas is never in
+  the app or asked for by a phone.
+- Nothing that moves casts into the depth pass; the cards are left out of the mirror (`userData.reflK = 0`) and the pins'
+  capture, and take Float32 streams only.
 
 ## Where things are
 
