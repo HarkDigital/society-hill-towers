@@ -417,8 +417,9 @@ comments say Round 226. The rules it leaves:
 - A covered run with mouths gets portals (`por`); an underpass the model cannot dig is flagged `g` and its packed road
   drawn through at grade. A road must never end at a bare edge on the lawn.
 - The traffic's tunnels are bridged at run time (`trafficBridge`); traffic.b64 is untouched.
-- Known: slivers of the world's underside beside the far ends of the two approach cuts, from a very low eye (devlog
-  Round 228).
+- The lawn put back over opened ground has no ground mesh under it: anything that trims it must leave a floor and
+  risers (`lawnUnder`, Round 230). Known: a few specks under the north frontage road's sidewalk east of the east mouth,
+  from a very low eye (devlog Round 230).
 
 ## The people (Round 227, behind `?people=1`)
 

@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 10, 2026, after Round 228. Round 229 is built and merged on a branch but held (see "In flight").
+Last updated: Nov 10, 2026, after Round 230. Round 229 is built and merged on a branch but held (see "In flight").
 
 ## The ask
 
@@ -82,6 +82,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   `?people=sharp` on a computer. See "The people" below.
 - **Round 228**: the Vine Street Expressway's cut carried to the tunnel under 20th Street and the Parkway, a portal at
   each mouth (Mike's bug report; not part of the plan).
+- **Round 230**: the last see-through slivers beside the expressway's west approach cuts closed (a floor and risers
+  under the lawn laid over opened ground, `lawnUnder`; a pier at each end of each headwall).
+
 ## In flight (finish these first)
 
 0. **Round 229 (Stage 1, batch two) is HELD, not shipped.** Branch `round229` holds main at Round 228 plus the batch:
@@ -102,9 +105,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
      summary). They describe the batch as shipped; apply them when it is.
    - Camden has no flag: it ships with this deploy, so show Mike the before and after from Penn's Landing first if he
      wants a say.
-1. **Slivers at the Vine cut's west approaches.** From the lowest eye, the world's underside shows beside the far ends
-   of the two approach cuts west of the tunnel (x -2600 to -2510). Branch `fix/vine-slivers`. A 411-frame walk with a
-   magenta sheet under the ground is the test (devlog Round 228); the target is zero frames firing.
+1. (Done in Round 230: the slivers at the Vine cut's west approaches.)
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.

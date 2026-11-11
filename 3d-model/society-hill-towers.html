@@ -11454,6 +11454,184 @@ RB.add({
     TERRAIN_PATCH_STATS.triangles+=out.length/9;
     return result;
   }
+  // Round 226, the slivers (the world's underside seen from the lowest eye beside the Vine Street approaches' far ends).
+  // trimTerrainPatch takes a road's triangle out of the lawn wherever the lawn is not clear under it, and leaves nothing
+  // in its place. So the lawn put back over opened ground cells (lawnLay in 'Raising the overpasses'), which has no
+  // ground mesh under it, was open in two ways the overhead view never shows: (1) at every cut edge where the lawn stands
+  // over what cut it (a street laid flat across the old cut's valley 0.5 m under the lawn beside it; an approach's wall,
+  // whose top is a chord between stations 13 m apart while the lawn is a 5 m lattice with a bench in it, 0.3 m under the
+  // lawn's edge between two stations), a step with no riser, the void behind it; and (2) under a street's sheet where
+  // the lawn was cut away (a motorway's sheet lies 0.6 m over its ground and the lawn rises to the drawn mesh at the
+  // opened cells' rim), a pocket with no floor, seen in from under the sheet's far edge.
+  // lawnUnder gives the trimmed lawn what the ground mesh has everywhere else, an unbroken surface: for a lawn laid as
+  // triangles (pos, nine numbers each, as lawnLay lays them) it returns the triangles of
+  //   the floor    the lawn that trimTerrainPatch cuts away (by a surface no more than LAWN_STEP under it: a street's
+  //                sheet, an approach where its cut has nearly run out; a deeper cut has its own walls and floor),
+  //                pushed down under what cut it instead: each lawn triangle's
+  //                own plane less a drop d that is one number a lattice point (the most any triangle round the point
+  //                needs to lie LAWN_DROP under every surface that cuts it), so the floor is continuous from triangle to
+  //                triangle and lies under every cutter;
+  //   the risers   under every edge of every piece the trim keeps, from the lawn down past the floor (LAWN_DEEP), set
+  //                LAWN_INSET inside the piece so none lies in a wall's own plane (the corridor's walls stand on the
+  //                cut's line), with a sill at the floor's height from the riser out to the edge; only where d is
+  //                over nothing, so a lawn no road touches gets none;
+  //   the rim      from the floor up to the lawn along a cell side whose neighbour is drawn ground (rimE: a bit an
+  //                edge, 1 the first to the second point, 2 the second to the third, 4 the third to the first). Never
+  //                toward an opened cell with no lawn in it: that is the cut itself, and a riser there stood across it.
+  // zones, where given, are what is built under the lawn already: [a convex ring in plan, a height]. Inside a ring
+  // nothing of the under-lawn goes below the height (a tunnel's roof: without it a riser hung from the lawn over the
+  // tunnel across its mouth, down to the cut's floor), and nothing is laid at all where the height is Infinity (a
+  // headwall's own footprint). Every riser and floor part is cut on a ring's line, so none slopes across it.
+  // The kept pieces are computed with trimTerrainPatch's own steps in its own order, so they are the pieces it draws;
+  // nothing here changes one of them. Every point of the lawn's cells then has lawn or floor over it and every step
+  // between the two has a riser, which is what an eye above the ground needs to see no underside
+  // (tests/test_vine_portals.py runs this text under Node on a lawn with a road through it)
+  const LAWN_DROP = 0.12, LAWN_DEEP = 0.3, LAWN_INSET = 0.03, LAWN_STEP = 3;
+  // the stretch p0 to p1 by zone: [from, to, the zone's height] along it, -Infinity where it lies in no zone
+  function zoneSpans(zones, p0, p1) {
+    let parts = [[0, 1, -Infinity]];
+    for (const [ring, zy] of zones || []) {
+      const turn = signedArea(ring) > 0 ? 1 : -1, dx = p1[0] - p0[0], dz = p1[1] - p0[1];
+      let t0 = 0, t1 = 1;
+      for (let f = 0; f < ring.length && t0 <= t1; f++) {
+        const c = ring[f], d = ring[(f + 1) % ring.length], ex = d[0] - c[0], ez = d[1] - c[1];
+        const fa = (-ez * (p0[0] - c[0]) + ex * (p0[1] - c[1])) * turn, fd = (-ez * dx + ex * dz) * turn;
+        if (Math.abs(fd) < 1e-12) { if (fa < 0) t0 = 2; continue; }
+        const tc = -fa / fd;
+        if (fd > 0) { if (tc > t0) t0 = tc; } else if (tc < t1) t1 = tc;
+      }
+      if (t1 - t0 <= 1e-9) continue;
+      const next = [];
+      for (const sp of parts) {
+        if (sp[2] !== -Infinity || sp[1] <= t0 || sp[0] >= t1) { next.push(sp); continue; }
+        if (sp[0] < t0) next.push([sp[0], t0, -Infinity]);
+        next.push([Math.max(sp[0], t0), Math.min(sp[1], t1), zy]);
+        if (sp[1] > t1) next.push([t1, sp[1], -Infinity]);
+      }
+      parts = next;
+    }
+    return parts;
+  }
+  function lawnUnder(pos, rimE, zones) {
+    const st = { floor: 0, riser: 0, rim: 0, cut: 0, drop: 0 }, out = [];
+    if (!terrainRoadGrid) return { pos: out, st };
+    const T = [], dV = new Map(), vk = (q) => Math.round(q[0] * 50) + ':' + Math.round(q[1] * 50);   // 2 cm: the lattice's points stand metres apart
+    for (let k = 0; k + 8 < pos.length; k += 9) {
+      const tri = [[pos[k], pos[k + 2], pos[k + 1]], [pos[k + 3], pos[k + 5], pos[k + 4]], [pos[k + 6], pos[k + 8], pos[k + 7]]];   // [x, z, y], as the trim reads it
+      if (Math.abs(signedArea(tri)) < 1e-7) { T.push(null); continue; }
+      const bounds = streetBounds(tri), height = triangleGrade(...tri), cand = new Set(), cut = [], low = [], deep = [];
+      terrainPatchCells(bounds, (key) => { for (const id of terrainRoadGrid.get(key) || []) if (trsOverlap(bounds, id)) cand.add(id); });
+      let d = 0;
+      for (const id of cand) {
+        const sPoly = trsPoly(id), sHeight = triangleGrade(...sPoly), overlap = streetIntersection(tri, sPoly);
+        if (overlap.length < 3 || Math.abs(signedArea(overlap)) < 1e-7) continue;
+        if (overlap.every((q) => height(...q) < sHeight(...q) - TERRAIN_PATCH_CLEARANCE)) continue;
+        cut.push(sPoly);
+        // a cut the lawn stands more than LAWN_STEP over is the expressway's own (the corridor, an approach near its
+        // mouth): its walls and their parapets close it, and nothing is laid under it or hung beside it (a floor under a
+        // bridge's deck or a riser in the cut's own air would show)
+        let step = -Infinity;
+        for (const q of overlap) step = Math.max(step, height(...q) - sHeight(...q));
+        if (step > LAWN_STEP) { deep.push(sPoly); continue; }
+        low.push(sPoly);
+        d = Math.max(d, step + LAWN_DROP);
+      }
+      T.push({ tri, height, cut, low, deep });
+      if (low.length) { st.cut++; if (d > st.drop) st.drop = d; for (const q of tri) { const key = vk(q); if (!(dV.get(key) >= d)) dV.set(key, d); } }
+    }
+    const wall = (a, b, ya0, yb0, ya1, yb1) => out.push(a[0], ya0, a[1], b[0], yb0, b[1], b[0], yb1, b[1], a[0], ya0, a[1], b[0], yb1, b[1], a[0], ya1, a[1]);
+    for (let n = 0; n < T.length; n++) {
+      const t = T[n];
+      if (!t) continue;
+      const dv = t.tri.map((q) => dV.get(vk(q)) || 0);
+      if (!(dv[0] > 0 || dv[1] > 0 || dv[2] > 0)) continue;
+      const lawn = t.height, drop = triangleGrade([t.tri[0][0], t.tri[0][1], dv[0]], [t.tri[1][0], t.tri[1][1], dv[1]], [t.tri[2][0], t.tri[2][1], dv[2]]);
+      const under = (x, z, zy) => { const y = lawn(x, z); return Math.min(y, Math.max(y - Math.max(0, drop(x, z)), zy)); };   // zy: the zone's height there, -Infinity outside every zone
+      const foot = (x, z, zy) => { const u = under(x, z, zy); return Math.max(u - LAWN_DEEP, Math.min(u, zy)); };
+      // the pieces the trim keeps, by its own steps: a riser under each one's edges
+      let pieces = [t.tri];
+      for (const sPoly of t.cut) { pieces = pieces.flatMap((piece) => outsideConvex(piece, sPoly)); if (!pieces.length) break; }
+      for (let piece of pieces) {
+        piece = tidyRing(piece); if (!piece) continue;
+        const turn = signedArea(piece) > 0 ? 1 : -1, m = piece.length;
+        for (let e = 0; e < m; e++) {
+          const a = piece[e], b = piece[(e + 1) % m], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-6) continue;
+          const nx = -(b[1] - a[1]) / L * turn, nz = (b[0] - a[0]) / L * turn;   // into the piece
+          // the edge's line LAWN_INSET inside the piece, cut to the piece: two pieces along one cut then end their
+          // risers at one point on the edge they share, and a piece's own risers cross at its corners
+          let p0 = null, p1 = null, q0 = null, q1 = null;
+          for (const s of [LAWN_INSET, LAWN_INSET / 4, 0]) {
+            const ax = a[0] + nx * s, az = a[1] + nz * s, dx = b[0] - a[0], dz = b[1] - a[1];
+            let t0 = 0, t1 = 1;
+            for (let f = 0; f < m && t0 <= t1; f++) {
+              if (f === e) continue;
+              const c = piece[f], d2 = piece[(f + 1) % m], ex = d2[0] - c[0], ez = d2[1] - c[1];
+              const fa = ((-ez) * (ax - c[0]) + ex * (az - c[1])) * turn, fd = ((-ez) * dx + ex * dz) * turn;   // how far inside edge f: at the start, and gained along the riser
+              if (Math.abs(fd) < 1e-12) { if (fa < -1e-9) t0 = 2; continue; }
+              const tc = -fa / fd;
+              if (fd > 0) { if (tc > t0) t0 = tc; } else if (tc < t1) t1 = tc;
+            }
+            if (t1 - t0 > 1e-6) { p0 = [ax + dx * t0, az + dz * t0]; p1 = [ax + dx * t1, az + dz * t1]; q0 = [a[0] + dx * t0, a[1] + dz * t0]; q1 = [a[0] + dx * t1, a[1] + dz * t1]; break; }
+          }
+          if (!p0) continue;
+          if (drop(p0[0], p0[1]) < 1e-3 && drop(p1[0], p1[1]) < 1e-3) continue;
+          for (const [ta, tb, zy] of zoneSpans(zones, p0, p1)) {
+            if (zy === Infinity) continue;
+            const A = [lerp(p0[0], p1[0], ta), lerp(p0[1], p1[1], ta)], B = [lerp(p0[0], p1[0], tb), lerp(p0[1], p1[1], tb)], QA = [lerp(q0[0], q1[0], ta), lerp(q0[1], q1[1], ta)], QB = [lerp(q0[0], q1[0], tb), lerp(q0[1], q1[1], tb)];
+            wall(A, B, lawn(A[0], A[1]), lawn(B[0], B[1]), foot(A[0], A[1], zy), foot(B[0], B[1], zy)); st.riser++;
+            // and a sill at the floor's height from the riser out to the edge itself, so the floor beyond the edge meets the riser
+            const sA = under(A[0], A[1], zy), sB = under(B[0], B[1], zy), eA = under(QA[0], QA[1], zy), eB = under(QB[0], QB[1], zy);
+            out.push(QA[0], eA, QA[1], QB[0], eB, QB[1], B[0], sB, B[1], QA[0], eA, QA[1], B[0], sB, B[1], A[0], sA, A[1]);
+          }
+        }
+      }
+      // the floor: what every cutter takes of this triangle, each part once
+      if (!t.low.length) continue;
+      const edges = [[t.tri[0], t.tri[1]], [t.tri[1], t.tri[2]], [t.tri[2], t.tri[0]]], bits = rimE ? rimE[n] | 0 : 0;
+      const onEdge = (q, e) => { const a = e[0], b = e[1], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1; return Math.abs((b[0] - a[0]) * (q[1] - a[1]) - (b[1] - a[1]) * (q[0] - a[0])) / L < 1e-4; };
+      let rem = [t.tri];
+      for (const sPoly of t.deep) rem = rem.flatMap((part) => outsideConvex(part, sPoly));   // never under a deep cut
+      for (const sPoly of t.low) {
+        const next = [];
+        for (const part of rem) {
+          let inner = streetIntersection(part, sPoly);
+          if (inner.length < 3 || Math.abs(signedArea(inner)) < 1e-7) { next.push(part); continue; }
+          for (const rest of outsideConvex(part, sPoly)) next.push(rest);
+          let parts = [[inner, -Infinity]];
+          for (const [ring, zy] of zones || []) {
+            const nextParts = [];
+            for (const pz of parts) {
+              if (pz[1] !== -Infinity) { nextParts.push(pz); continue; }
+              const inZone = streetIntersection(pz[0], ring);
+              if (inZone.length < 3 || Math.abs(signedArea(inZone)) < 1e-9) { nextParts.push(pz); continue; }
+              nextParts.push([inZone, zy]);
+              for (const rest of outsideConvex(pz[0], ring)) nextParts.push([rest, -Infinity]);
+            }
+            parts = nextParts;
+          }
+          for (let [poly, zy] of parts) {
+            if (zy === Infinity) continue;
+            poly = tidyRing(poly); if (!poly) continue;
+            if (signedArea(poly) > 0) poly.reverse();
+            for (let j = 1; j + 1 < poly.length; j++) {
+              const f = [poly[0], poly[j], poly[j + 1]];
+              if (Math.abs(signedArea(f)) < 1e-7) continue;
+              for (const q of f) out.push(q[0], under(q[0], q[1], zy), q[1]);
+              st.floor++;
+            }
+            if (bits) for (let e = 0; e < poly.length; e++) {
+              const a = poly[e], b = poly[(e + 1) % poly.length];
+              for (let k = 0; k < 3; k++) if ((bits >> k & 1) && onEdge(a, edges[k]) && onEdge(b, edges[k])) { wall(a, b, lawn(a[0], a[1]), lawn(b[0], b[1]), under(a[0], a[1], zy), under(b[0], b[1], zy)); st.rim++; }
+            }
+          }
+        }
+        rem = next;
+        if (!rem.length) break;
+      }
+    }
+    return { pos: out, st };
+  }
   function terrainRibbon(pts,width) {
     pts=densify(pts,8);
     const edges=routeOffsets(pts),out=[];
@@ -42118,19 +42296,35 @@ if (uOlLamp > 0.001) {
       if (!lawnCells.size) return;
       const tris = [], N = 5, RIM = [[0.01, 0], [-0.01, 0], [0, 0.01], [0, -0.01], [0.01, 0.01], [-0.01, 0.01], [0.01, -0.01], [-0.01, -0.01]];
       const rim = (x, z) => { for (const o of RIM) { const y = groundMeshY(x + o[0], z + o[1]); if (y !== null) return y; } return lawnY(x, z); };
+      const rimE = [];   // a lawn triangle's edges on a cell side with drawn ground beyond it (lawnUnder's rim)
       for (const [G, i, j] of lawnCells.values()) {
         const cw = (G.x1 - G.x0) / G.nx, ch = (G.z1 - G.z0) / G.nz, X = G.x0 + i * cw, Z = G.z0 + j * ch;
         const P = (a, b) => { const x = X + cw * a / N, z = Z + ch * b / N; return [x, a === 0 || a === N || b === 0 || b === N ? rim(x, z) : lawnY(x, z), z]; };
+        const gi = groundGrids.indexOf(G), bare = (di, dj) => !lawnCells.has(gi + ':' + (i + di) + ':' + (j + dj)) && groundMeshY(X + cw * (0.5 + di), Z + ch * (0.5 + dj)) !== null;   // drawn ground beyond that side (an opened cell with no lawn is the cut)
         for (let a = 0; a < N; a++) for (let b = 0; b < N; b++) {
           const p00 = P(a, b), p10 = P(a + 1, b), p11 = P(a + 1, b + 1), p01 = P(a, b + 1);
           tris.push(p00[0], p00[1], p00[2], p01[0], p01[1], p01[2], p11[0], p11[1], p11[2], p00[0], p00[1], p00[2], p11[0], p11[1], p11[2], p10[0], p10[1], p10[2]);
+          rimE.push((a === 0 && bare(-1, 0) ? 1 : 0) | (b + 1 === N && bare(0, 1) ? 2 : 0), (a + 1 === N && bare(1, 0) ? 2 : 0) | (b === 0 && bare(0, -1) ? 4 : 0));
         }
       }
       const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3)); g2.computeVertexNormals();
       collarParts.push({ geom: g2, color: new THREE.Color(COLORS.ground), style: 3 });
       PERF.lawnCells = lawnCells.size;
+      // Round 226, the slivers: the lawn has no ground under it, so what the trim below cuts out of it is put back
+      // under the road that cut it and every step is given a riser (lawnUnder, beside trimTerrainPatch). The collars'
+      // own material, on the collars' own mesh; noTrim, because the trim drops a triangle with no area in plan
+      // (under the lawn behind each mouth stand its headwall and its box: nothing is laid in the headwall's footprint, and
+      // nothing goes below the box's roof)
+      const zones = [];
+      for (const b of tunnelBox) {
+        const at = (u, v) => [b[0] + b[2] * u - b[3] * v, b[1] + b[3] * u + b[2] * v], rect = (u0, u1, hv) => [at(u0, -hv), at(u1, -hv), at(u1, hv), at(u0, hv)];
+        zones.push([rect(-0.8, 0.05, b[4] + 0.7), Infinity], [rect(0.05, b[6] + 0.5, b[5]), b[7]]);   // (the corridor's end line lies up to a degree off the headwall's: 0.33 m at the west mouth's sides)
+      }
+      const un = lawnUnder(g2.attributes.position.array, rimE, zones);
+      PERF.lawnUnder = un.st;
+      if (un.pos.length) { const g3 = new THREE.BufferGeometry(); g3.setAttribute('position', new THREE.BufferAttribute(new Float32Array(un.pos), 3)); g3.computeVertexNormals(); collarParts.push({ geom: g3, color: new THREE.Color(COLORS.ground), style: 3, noTrim: true }); }
     };
-    const portalStat = [];
+    const portalStat = [], tunnelBox = [];   // tunnelBox: each mouth's box under the lawn, [x, z, the way in (two numbers), the mouth's half width, the box's, its depth, just under its roof slab] (lawnLay)
     for (const m of OVP.por) {
       const mx = m[0], mz = m[1], my = m[2], dx = m[3], dz = m[4], hw = m[5], nx = -dz, nz = dx;
       const at = (u, v) => [mx + dx * u + nx * v, mz + dz * u + nz * v];   // u: into the tunnel, v: across the mouth
@@ -42142,6 +42336,11 @@ if (uOlLamp > 0.001) {
       boxAt(hc[0], hc[1], nx, nz, 2 * hw + 1.4, 1.0, head, top, tint(cWall, 1));                       // the headwall over the mouth
       boxAt(hc[0], hc[1], nx, nz, 2 * hw + 2.0, 1.25, top, top + 0.6, tint(cCope, 1));                 // its coping, the cut's own band
       if (hw > 12) boxAt(hc[0], hc[1], nx, nz, 1.5, 1.3, floor - 0.6, head + 0.05, tint(cWall, 0.96));   // the pier between the carriageways
+      // Round 226, the slivers: a pier at each end of the headwall, over the end of the cut's wall. The corridor's last
+      // stretch lies up to a degree off the way into the tunnel (0.94 at the west mouth), so on one side its wall stopped
+      // short of the headwall's face, by 0.33 m at the west mouth's north side, and an eye across the cut saw past the
+      // wall's end to the underside of the lawn behind it
+      for (const sg of [-1, 1]) { const pc = at(-0.2, sg * (hw + 0.33)); boxAt(pc[0], pc[1], dx, dz, 0.6, 0.7, floor - 0.6, top, tint(cWall, 1)); }
       const dark = [], shell = [];
       const quad = (arr, a, b, c2, d) => arr.push(a[0], a[1], a[2], b[0], b[1], b[2], c2[0], c2[1], c2[2], a[0], a[1], a[2], c2[0], c2[1], c2[2], d[0], d[1], d[2]);
       const P3 = (u, v, y) => { const q = at(u, v); return [q[0], y, q[1]]; };
@@ -42169,6 +42368,7 @@ if (uOlLamp > 0.001) {
         parts.push({ geom: g2, color: col, style: 3 });
       }
       groundSheet(at, 1.0, 46, -hw - 34, hw + 34);   // vineCut rounds the corridor's end, so a dropped cell can reach hw + 24 m behind the mouth
+      tunnelBox.push([mx, mz, dx, dz, hw, vo, u1, roof - 0.1]);
       portalStat.push({ at: [Math.round(mx), Math.round(mz)], road: my, head: +head.toFixed(2), top: +top.toFixed(2), ground: [+gLow.toFixed(2), +gTop.toFixed(2)], hw });
     }
     PERF.portals = portalStat;   // __dbg.PERF.portals: each mouth's road, head, the headwall's top and the ground across it
@@ -42296,7 +42496,7 @@ if (uOlLamp > 0.001) {
     }
     lawnLay();   // Round 226 coda: the one lawn over the opened cells the sheets named
     if (collarParts.length) {
-      for(const p of collarParts)p.geom=trimTerrainPatch(p.geom);
+      for(const p of collarParts)if(!p.noTrim)p.geom=trimTerrainPatch(p.geom);   // (noTrim: the lawn's floor and risers, made against the same roads already)
       const collarMat = groundSurfMat({ side: THREE.DoubleSide });
       const collar = new THREE.Mesh(mergeColored(collarParts), collarMat);
       collar.receiveShadow = true;

@@ -13439,3 +13439,40 @@ Center City's glass towers dark at the entry orbit by day where main draws them 
 pose, repeatable, present in the batch's own first-frame branch), and one of its tests fails against Round 227's line
 in `frame()`. `PLAN.md` has the detail under "In flight"; its notes wait in `.audit/.../round229/`.
 
+## Round 230 — the last slivers beside the expressway's west approaches (Nov 10)
+
+Round 228's known blemish: from the lowest eye the flight allows, the world's underside showed in slivers beside the far
+ends of the two approach cuts west of the Parkway tunnel.
+
+**The cause (measured).** A straight-down view with a magenta sheet under the ground showed no hole anywhere: every
+sliver was a VERTICAL gap, found by picking through the magenta pixels of 26 firing frames. The common root: the lawn
+laid over opened cells (`lawnLay`) has no ground mesh under it, and `trimTerrainPatch` cuts a road's triangle out of it
+and leaves nothing behind. So (a) at approach B's far end the packed motorway's sheet lies flat over the approach's last
+8 m, 1.25 m wider than the shoulder, with the lawn beside it half a metre higher and no wall (`wideRoadSnap`'s 7 m
+ownership test calls that piece the chain's, so the lawn gets no bench there, while the road loop draws it); (b) along
+B's north wall and A's south wall the wall top is a chord between stations 13 m apart while the lawn is a 5 m lattice
+with a bench in it, 0.2 to 0.33 m over the wall top; (c) at A's far end, the 22nd Street approach, the ramp and the
+median there are pockets under a street's sheet, which lies 0.6 m over its ground while the lawn rises to the drawn
+mesh, pokes above the sheet and is trimmed away; (d) at the west mouth's north corner the corridor's last stretch lies
+0.94 degrees off the portal's baked direction, so the cut's north wall ended 0.33 m short of the headwall's face.
+
+**The fix.** `lawnUnder(pos, rimE, zones)`, beside `trimTerrainPatch`, called from `lawnLay` on the collars' own mesh:
+a floor (the lawn the trim removes, pushed down under what cut it), a riser and a 3 cm sill under every edge of every
+piece the trim keeps wherever the lawn has been lowered nearby, and a rim riser where a cell side meets drawn ground. A
+cut more than 3 m under the lawn (`LAWN_STEP`) keeps its own walls; nothing is laid in a headwall's footprint or below a
+tunnel box's roof (an unlimited riser hung across the tunnel mouth in an early attempt; a rim riser toward an opened
+non-lawn cell stood across the cut; both are excluded and pinned by tests). The visible lawn is untouched. A concrete
+pier stands at each end of each headwall. About 8,800 triangles; no material, no shader text, no tree code.
+
+**Measured.** The 411-frame walk (both carriageways x -2600 to -1950 at two heights in two directions, rings round the
+mouths, approaches and ramp): 49 frames at 40 magenta pixels or more before, 2 after; 17,457 magenta pixels to 291; zero
+west of the tunnel. Parity against Round 228's page at the ten poses: seven at 0.0000%, the rest at 0.035% or under.
+Mike's own pose differs by 25 pixels of specks at distant intersections. 1,370 tests.
+
+**Left.** The two frames still firing (50 px each, one pose) look at a pocket under the north frontage road's sidewalk
+46 m east of the east mouth, over an opened cell the corridor's apron collar covers, not this lawn; fourteen more frames
+show 2 to 24 px along the same 18th Street to east mouth stretch. Closing them means giving the corridor's aprons the
+same floor and risers, which touches the whole corridor. The risers wear the lawn's material, so where one shows (a
+kerb face of about 0.5 m beside the packed motorway at B's end, a band up to 0.3 m over the flush approach walls) it
+reads as a dark green bank. The phone path was not captured for this round.
+
