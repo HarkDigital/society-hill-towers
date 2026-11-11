@@ -51648,6 +51648,11 @@ float pinOccGate() {
   // paint-shop reality, stored dark for the legacy-color lift; silver/white weighted
   const CAR_PAL = [0x7e8287, 0x9a9a96, 0x1d1f24, 0x54565b, 0x7e8287, 0x9a9a96, 0x1d1f24, 0x6e2b28, 0x2c4363, 0x6e6353, 0x2e4a38];
   // Real dimensions and distinct silhouettes, rather than scaled copies of one sedan.
+  // Round 233 (Mike, Nov 11: "cars need to be scaled down in size a bit. They look disproportionally large"): every car
+  // is drawn CAR_K of its real size (0.88 under REAL, ?carscale=<k> pins it, ?carscale=1 the real sizes, ?real=0 keeps
+  // them), the table scaled once here so the bodies, lamps, shades, gaps and the parked rows' clearances all follow; the
+  // real numbers stay on `real` for the box cars' and lamps' own proportions
+  const CAR_K = REAL ? clamp(+((location.search.match(/[?&]carscale=([0-9.]+)/) || [])[1]) || 0.88, 0.5, 1.2) : 1;
   const CAR_MODELS = [
     { name: 'Compact', l: 3.85, w: 1.72, h: 1.46, cabin: 2.0 },
     { name: 'Sedan', l: 4.65, w: 1.82, h: 1.43, cabin: 2.45 },
@@ -51655,7 +51660,7 @@ float pinOccGate() {
     { name: 'SUV', l: 4.85, w: 1.98, h: 1.86, cabin: 3.05 },
     { name: 'Pickup', l: 5.5, w: 2.02, h: 1.86, cabin: 2.25, bed: true },
     { name: 'Delivery Van', l: 5.65, w: 2.05, h: 2.48, cabin: 1.65, van: true },
-  ];
+  ].map((m) => Object.assign({}, m, { l: m.l * CAR_K, w: m.w * CAR_K, h: m.h * CAR_K, cabin: m.cabin * CAR_K, real: m }));
   const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, REAL ? 1.3 : 2.0, 1.6];   // REAL: the two-way tertiary lanes move in for the parked cars (PARKED: a 4.5 m half width parks both kerbs clear of them, the lanes 2.6 m apart)
   const CAR_VIEW = { near: isTouch ? 950 : 1500, far: isTouch ? 1550 : 2400, warm: isTouch ? 2200 : 3300 };
   const CAR_FADE_MS = 1400, CAR_MIN_LIFE = 16000;
@@ -51663,7 +51668,7 @@ float pinOccGate() {
   let trafficReady = false, trafficCars = 0, trafficSeeded = false, trafficNextId = 1;
   let trafficNextRecon = 0, trafficLastMin = -1, trafficLastDate = '', trafficFrame = 0;
   function carGeom(kind = 1) {
-    const m = CAR_MODELS[kind], parts = [], masks = [];
+    const m = CAR_MODELS[kind].real, parts = [], masks = [];   // built at the real size, then taken to CAR_K
     const part = (g, color, paint = false) => {
       const c = new THREE.Color(color), p = septaColored(g, c.r, c.g, c.b, 0);
       parts.push(p); masks.push(new Float32Array(p.attributes.position.count).fill(paint ? 1 : 0));
@@ -51707,12 +51712,12 @@ float pinOccGate() {
     }
     const out=septaMerge(parts),paint=new Float32Array(out.attributes.position.count);
     let i=0;for(const mask of masks){paint.set(mask,i);i+=mask.length;}out.setAttribute('aPaint',new THREE.BufferAttribute(paint,1));
-    parts.forEach(g=>g.dispose());out.computeBoundingBox();out.computeBoundingSphere();return out;
+    parts.forEach(g=>g.dispose());if(CAR_K!==1)out.scale(CAR_K,CAR_K,CAR_K);out.computeBoundingBox();out.computeBoundingSphere();return out;
   }
   function carLightGeom(kind = 1) {
-    const m=CAR_MODELS[kind],parts=[],y=(m.h>1.7?.73:.57)+.16;
+    const m=CAR_MODELS[kind].real,parts=[],y=(m.h>1.7?.73:.57)+.16;
     for(const end of [-1,1])for(const z of [-1,1])parts.push(septaColored(new THREE.BoxGeometry(.10,.18,.35).translate(end*(m.l*.5+.09),y,z*m.w*.32),1,end>0?.94:.09,end>0?.78:.035,0));
-    return septaMerge(parts);
+    const g=septaMerge(parts);if(CAR_K!==1)g.scale(CAR_K,CAR_K,CAR_K);return g;
   }
   function carFadePatch(sh, paint) {
     // Screen-door coverage keeps solid depth/shadows and car dimensions intact.
@@ -52238,7 +52243,7 @@ float pinOccGate() {
   function carLampPut(car, fade) {
     if (CARLAMP.n + 4 > CARLAMP.cap || fade < 0.03) return;
     const m = CAR_MODELS[car.kind], c = Math.cos(car.heading), s = Math.sin(car.heading);
-    const yH = car.py + (m.h > 1.7 ? 0.84 : 0.68), b = 1 + (car.brk || 0);
+    const yH = car.py + (m.real.h > 1.7 ? 0.84 : 0.68) * CAR_K, b = 1 + (car.brk || 0);
     const P = CARLAMP.pos, A = CARLAMP.lamp;
     for (let k = 0; k < 4; k++) {
       const tail = k > 1, lx = tail ? -m.l * 0.5 - 0.04 : m.l * 0.5 + 0.04, lz = (k & 1 ? -1 : 1) * m.w * (tail ? 0.37 : 0.34);
@@ -52820,6 +52825,31 @@ float pinOccGate() {
   const parkHalfW = (r) => inCore(r.mx, r.mz) ? roadHalfW(r.mx, r.mz) : PARK_HW[r.cls];
   const PARK_KIND = [.2, .32, .08, .3, .07, .03];   // compact, sedan, wagon, SUV, pickup, van
   function parkedKind(roll) { let s = 0; for (let k = 0; k < PARK_KIND.length; k++) { s += PARK_KIND[k]; if (roll < s) return k; } return 1; }
+  // Round 233 (Mike, Nov 11: "There are parked cars clogging up many streets. We need to figure out a better plan for this").
+  // Measured on main: a moving van passed a parked van with no air at all (PARK_CLEAR was the van's own width, so a two-way
+  // street read as double parked), every street that had room was lined on both kerbs at a 6.1 m pitch, 86 to 93% full,
+  // and 1,629 km of one-way residential streets drawn 7 m wide carried three cars abreast. The plan (PARK2; ?parked=old
+  // keeps Round 188's rules, ?parked=0 none):
+  // - each car stands its own flank PARK_KERB off the kerb (a compact nearer it than a van), and a kerb parks only where a
+  //   moving van passes the widest parked one with PARK_AIR of air (with the cars at CAR_K that is the old threshold, so
+  //   no street loses its kerbs to it; the air comes from the smaller cars);
+  // - a narrow one-lane one-way street (under PARK_ROOMY to the kerb) can park both kerbs on PARK_BOTH of its blocks and one
+  //   kerb on the rest, its moving lane taking the other half (parkedShift), dealt per block by the block's own place;
+  // - each block side has its own fill about its class's mean (PARK_FILL), so a street reads as lived in, not as a car
+  //   park; a 6.5 m pitch with a metre of jitter, and 2 m more off a junction;
+  // Mike picked the side by side's fuller column (Nov 11): every narrow block on both kerbs (PARK_BOTH 1) and the means
+  // taken 1.25 times (PARK_FILL.k), a residential block 65 to 97% full by day; the plan's own column (0.6 and 1, 52 to
+  // 88%; a first cut from 37 to 87% with half the narrow blocks on one kerb left a South Philly block all but empty) is
+  // ?parkboth=0.6&parkfill=1. ?parkboth=<0..1> and ?parkfill=<k> stay the knobs, never saved
+  const PARK2 = PARKED.on && !/[?&]parked=old\b/.test(location.search);
+  const parkQ = (k, d) => { const m = location.search.match(new RegExp('[?&]' + k + '=([0-9.]+)')); return m && isFinite(+m[1]) ? +m[1] : d; };
+  const PARK_PITCH = PARK2 ? 6.5 : 6.1, PARK_JIT = PARK2 ? 1.0 : 0.7, PARK_TRIM = PARK2 ? [15, 12] : [13, 10];
+  const PARK_KERB = 0.18, PARK_AIR = 0.3, PARK_ROOMY = 4.0, PARK_BOTH = PARK2 ? clamp(parkQ('parkboth', 1), 0, 1) : 1;
+  // a parked car's centre in from the kerb: Round 188's 1.12 m for every kind, or its own flank PARK_KERB off it
+  const parkKerbIn = (kind) => PARK2 ? PARK_KERB + CAR_MODELS[kind].w / 2 : 1.12;
+  // a block side's fill by its class (residential, tertiary, arterial): [day, night (20:00 to 06:00), the small hours (02:00
+  // to 06:00)] and the spread of the blocks about it, all taken k times (1.25, Mike's pick) and held under 0.97
+  const PARK_FILL = { k: PARK2 ? clamp(parkQ('parkfill', 1.25), 0, 1.6) : 1, mean: [[0.7, 0.8, 0.8], [0.6, 0.66, 0.66], [0.48, 0.48, 0.32]], spread: [0.36, 0.3, 0.3] };
   function parkedInit() {
     if (!PARKED.on || !trafficRuns.length || !trafficFleet.length) return;
     const C = PARKED.cell, cells = new Map();
@@ -52888,8 +52918,9 @@ float pinOccGate() {
   }
   const _pkS = {};
   // a run's kerb slots, once: each into the 160 m cell it stands in, as [x, y, z, yaw, kind, roll, occupancy class] (the
-  // class: a residential street, a tertiary, an arterial); a lay then only reads the cells round the eye (a lay that
-  // worked every slot out again took 13 ms on a computer, a hitch every 30 m of a flight)
+  // class: a residential street, a tertiary, an arterial; under PARK2 its fraction is the block side's own draw, from which
+  // parkedLay takes its fill); a lay then only reads the cells round the eye (a lay that worked every slot out again took
+  // 13 ms on a computer, a hitch every 30 m of a flight)
   function parkedExpand(ri) {
     PARKED.expanded[ri] = 1;
     const r = trafficRuns[ri];
@@ -52897,22 +52928,24 @@ float pinOccGate() {
     const hw = parkHalfW(r), hy = runHydrants(r, ri);
     const sides = parkedSides(r, hw);
     if (!sides.length) return;
-    const u = hw - 1.12, oc = r.cls >= 5 ? 0 : r.cls === 4 ? 1 : 2, C = PARKED.cell;
-    const trim0 = r.conn && r.conn[0] && r.conn[0].length ? (r.cls <= 3 ? 13 : 10) : 3, trim1 = r.conn && r.conn[1] && r.conn[1].length ? (r.cls <= 3 ? 13 : 10) : 3;
+    const oc = r.cls >= 5 ? 0 : r.cls === 4 ? 1 : 2, C = PARKED.cell, P2 = PARK_PITCH / 2, tr = PARK_TRIM[r.cls <= 3 ? 0 : 1];
+    const trim0 = r.conn && r.conn[0] && r.conn[0].length ? tr : 3, trim1 = r.conn && r.conn[1] && r.conn[1].length ? tr : 3;
     for (const side of sides) {
       const dir = r.oneway ? 1 : side;
+      const blk = PARK2 ? Math.min(0.999, hash01(ri * 4.913 + (side > 0 ? 1.7 : 6.3))) : 0;   // the block side's own draw
       for (let k = 0; ; k++) {
         const roll = hash01(ri * 12.9898 + k * 78.233 + (side > 0 ? 0 : 37.719));
-        const sl = trim0 + 3.05 + k * 6.1 + (roll - 0.5) * 0.7;
-        if (sl > r.len - trim1 - 3.05) break;
+        const sl = trim0 + P2 + k * PARK_PITCH + (roll - 0.5) * PARK_JIT;
+        if (sl > r.len - trim1 - P2) break;
         let fire = false;
         for (let h = 0; h < hy.length && !fire; h += 2) fire = hy[h + 1] === side && Math.abs(hy[h] - sl) < 4.6;   // a hydrant's 15 feet
         if (fire) continue;
+        const kind = parkedKind(hash01(roll * 17.3)), u = hw - parkKerbIn(kind);
         carSample(r, sl, dir, r.oneway ? side * u : u, _pkS);
         if (parkedNearStop(_pkS.x, _pkS.z)) continue;
         const key = Math.floor(_pkS.x / C) * 100003 + Math.floor(_pkS.z / C);
         let a = PARKED.slots.get(key); if (!a) PARKED.slots.set(key, a = []);
-        a.push(_pkS.x, _pkS.y, _pkS.z, _pkS.yaw, parkedKind(hash01(roll * 17.3)), roll, oc);
+        a.push(_pkS.x, _pkS.y, _pkS.z, _pkS.yaw, kind, roll, oc + blk);
         PARKED.slotN++;
       }
     }
@@ -52921,13 +52954,16 @@ float pinOccGate() {
   // and must be PARK_CLEAR (the widest van's 2.05 m and the kerb's 1.12) clear of the outermost lane's centre, so a side
   // parks only where the half width is that lane's offset plus 3.17 m (review: a two-way tertiary at 4.5 m with its lanes
   // at 1.6 m put a passing SUV 0.1 to 0.27 m into the parked row, and the core's narrow arterials parked at any width).
-  // A one-lane one-way street too narrow for both kerbs parks one, chosen by the run's own place, and its moving lane
-  // keeps to the other half (parkedShift); a two-way street parks both kerbs or none
-  const PARK_CLEAR = 1.12 + 2.05;
+  // Under PARK2 the widest parked van stands its flank PARK_KERB off the kerb and a moving van passes it with PARK_AIR to
+  // spare: 3.19 m with the cars at CAR_K 0.88. A one-lane one-way street too narrow for both kerbs parks one, chosen by
+  // the run's own place, and its moving lane keeps to the other half (parkedShift); so does a narrow one that could park
+  // both, on all but PARK_BOTH of its blocks; a two-way street parks both kerbs or none
+  const PARK_CLEAR = PARK2 ? parkKerbIn(5) + CAR_MODELS[5].w + PARK_AIR : 1.12 + 2.05;
   function parkedSides(r, hw) {
     const outer = r.oneway ? (carLaneCount(r) - 1) * 1.6 : CAR_OFFW[r.cls];
-    if (hw >= outer + PARK_CLEAR) return [1, -1];
-    if (r.oneway && carLaneCount(r) === 1 && hw >= 2.6) return [hash01(r.mx * 0.731 + r.mz * 1.37) < 0.5 ? 1 : -1];
+    const one = r.oneway && carLaneCount(r) === 1;
+    if (hw >= outer + PARK_CLEAR && !(PARK2 && one && hw < PARK_ROOMY && hash01(r.mx * 0.917 + r.mz * 2.113) >= PARK_BOTH)) return [1, -1];
+    if (one && hw >= 2.6) return [hash01(r.mx * 0.731 + r.mz * 1.37) < 0.5 ? 1 : -1];
     return [];
   }
   // the moving lane's sideways shift on a one-lane one-way street that parks one kerb: to the middle of what the parked row
@@ -52969,10 +53005,12 @@ float pinOccGate() {
     };
     if (ey < R) {
       const rg = Math.sqrt(R * R - ey * ey), occOf = [night ? 0.93 : 0.86, night ? 0.86 : 0.8, small ? 0.5 : 0.7];
+      // PARK2: each block side's fill about its class's mean for the hour (the slot's occupancy word carries its draw)
+      const F = PARK_FILL, tw = small ? 2 : night ? 1 : 0, fillOf = (w) => { const c = w | 0; return clamp((F.mean[c][tw] + (w - c - 0.5) * F.spread[c]) * F.k, 0, 0.97); };
       for (let gx = Math.floor((ex - rg) / C); gx <= Math.floor((ex + rg) / C); gx++) for (let gz = Math.floor((ez - rg) / C); gz <= Math.floor((ez + rg) / C); gz++) {
         const rows = parkedCellSlots(gx * 100003 + gz);
         for (let i = 0; i < rows.length; i += 7) {
-          if (hash01(rows[i + 5] * 91.7) > occOf[rows[i + 6]]) continue;
+          if (hash01(rows[i + 5] * 91.7) > (PARK2 ? fillOf(rows[i + 6]) : occOf[rows[i + 6]])) continue;
           const dx = rows[i] - ex, dy = rows[i + 1] - ey, dz = rows[i + 2] - ez, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
           if (d > R) continue;
           put(rows[i], rows[i + 1], rows[i + 2], rows[i + 3], rows[i + 4], rows[i + 5], d);
@@ -53008,7 +53046,22 @@ float pinOccGate() {
     if (!PARKED.ready) { if (!trafficReady) return; parkedInit(); if (!PARKED.ready) { PARKED.on = false; return; } }
     if (window.__dbg && !window.__dbg.vehicles) window.__dbg.vehicles = () => Object.assign({ art: !!VART, artReady: !!(vartSets.cars && vartSets.cars.ready), shadows: VEH_SHADOWS.length, shadowA: +vehShadowU.uShadowA.value.toFixed(3), shadeOut: vehShadowU.uShadeOut.value, lod: trafficFleet.map((f) => [f.n, f.far ? f.far.n : 0]),
       furniture: FURN.ready ? Object.assign({ cells: FURN.cells, heads: FURN.heads.length / 5 }, FURN.n) : null, carPools: CARMAP.renders,
-      carLamps: CARLAMP.pts ? { drawn: CARLAMP.pts.geometry.drawRange.count, focal: Math.round(CARLAMP.u.uFocal.value), on: +CARLAMP.u.uNight.value.toFixed(3), first: Array.from(CARLAMP.lamp.slice(0, 8)).map((v) => +v.toFixed(2)) } : null }, VSTAT);
+      carLamps: CARLAMP.pts ? { drawn: CARLAMP.pts.geometry.drawRange.count, focal: Math.round(CARLAMP.u.uFocal.value), on: +CARLAMP.u.uNight.value.toFixed(3), first: Array.from(CARLAMP.lamp.slice(0, 8)).map((v) => +v.toFixed(2)) } : null,
+      carK: CAR_K, park2: PARK2 ? { both: PARK_BOTH, fill: PARK_FILL.k, pitch: PARK_PITCH, clear: +PARK_CLEAR.toFixed(3), trim: PARK_TRIM } : false }, VSTAT);
+    // the streets round a point and how each parks: class, one-way, lanes, drawn half width, the kerbs it parks, its
+    // length, midpoint and heading (yaw), nearest first
+    if (window.__dbg && !window.__dbg.parkedAt) window.__dbg.parkedAt = (x, z, rad = 120) => {
+      const out = [];
+      trafficRuns.forEach((r, ri) => {
+        let best = Infinity, bj = 0;
+        for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - x, r.zs[j] - z); if (d < best) { best = d; bj = j; } }
+        if (best > rad) return;
+        const j1 = Math.min(bj + 1, r.xs.length - 1), j0 = j1 - 1, hw = parkHalfW(r);
+        out.push({ ri, d: Math.round(best), cls: r.cls, oneway: !!r.oneway, lanes: carLaneCount(r), hw: +hw.toFixed(2), sides: r.closed || !parkedRunOK(r) ? [] : parkedSides(r, hw), len: Math.round(r.len),
+          at: [Math.round(r.xs[bj]), +r.ys[bj].toFixed(1), Math.round(r.zs[bj])], yaw: +Math.atan2(r.xs[j1] - r.xs[j0], -(r.zs[j1] - r.zs[j0])).toFixed(3), core: inCore(r.mx, r.mz) });
+      });
+      return out.sort((a, b) => a.d - b.d);
+    };
     const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + Math.floor(clock.minutes / 60) + ':' + SCORES.games.length;
     const moved = Math.hypot(camera.position.x - PARKED.lx, camera.position.y - PARKED.ly, camera.position.z - PARKED.lz);
     if (moved > PARKED.step || key !== PARKED.key) { PARKED.key = key; parkedLay(now); }

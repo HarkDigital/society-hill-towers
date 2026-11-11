@@ -14072,3 +14072,11 @@ Suite: 1,494 tests, OK (one skip, one expected failure, both as before). Not don
 (the plan as shown is the branch's default), the merge, the build and the deploy. Not touched: the moving traffic's
 queues (Graduate Hospital's cross street showed four rows at 70 m, two of them moving cars stacked at the junction),
 and the buses, trolleys and trains, which keep their real sizes.
+
+Mike's pick (Nov 11, in the chat): "Ship the fuller one", at 88%. The defaults became the fuller column exactly as
+rendered: `PARK_BOTH` 1 (every narrow one-way block on both kerbs) and `PARK_FILL.k` 1.25 over the plan's means (a
+residential block 65 to 97% full by day, the 0.97 cap holding the rest), so the shipped page reproduces the column he
+chose; `?parkboth=0.6&parkfill=1` is the lighter column. The harness at the new defaults: 20 of 20 narrow blocks on both
+kerbs, residential sides 62 to 100% full (mean 0.85; a short side can fill whole under the cap), two-way tertiaries
+0.74, the clearance sweep still 0 of 736 under 0.3 m and no kerb lost. Car size stays 0.88 (he did not ask for 0.82 or
+0.92).

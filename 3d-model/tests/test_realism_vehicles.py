@@ -22,8 +22,8 @@ off a deck or under a train; the moving traffic's far copies, and no empty mesh 
 Round 233 (Mike, Nov 11: "There are parked cars clogging up many streets ... cars need to be scaled down in size a bit"):
 every car drawn at CAR_K 0.88 of its real size (the box cars too); each parked car its own flank off the kerb; a moving van
 passing the widest parked one with 0.3 m of air on every class and width, and no two-way or multi-lane street losing a kerb
-it parked before; a narrow one-way street's blocks split between both kerbs and one; each block side its own fill about its
-class's mean. Round 188's checks still run, under ?parked=old&carscale=1, which must reproduce them exactly."""
+it parked before; each block side its own fill about its class's mean. Mike picked the fuller column of the side by side:
+every narrow block on both kerbs (?parkboth, 1) and the fills 1.25 times the plan's means (?parkfill). Round 188's checks still run, under ?parked=old&carscale=1, which must reproduce them exactly."""
 import json
 from pathlib import Path
 import shutil
@@ -146,12 +146,12 @@ class Runtime(unittest.TestCase):
         self.assertEqual(p['lost'], [])                     # no two-way or multi-lane street loses a kerb it parked
         self.assertTrue(p['kerbOk'])                        # every car its own flank off the kerb
         self.assertGreater(p['nOffs'], 300)
-        self.assertTrue(6 <= p['both'] <= 16, p['both'])    # of 20 narrow one-way blocks, about PARK_BOTH 0.6 on both kerbs
-        self.assertGreaterEqual(p['sideFillMin'], 0.4)      # a block side's fill: a residential block 52 to 88% by day
-        self.assertLessEqual(p['sideFillMax'], 0.97)
-        self.assertTrue(0.62 <= p['sideFillMean'] <= 0.78, p['sideFillMean'])
+        # Mike's pick, the side by side's fuller column: every narrow block on both kerbs, the fills taken 1.25 times
+        self.assertEqual(p['both'], 20)                     # of 20 narrow one-way blocks, all on both kerbs (PARK_BOTH 1)
+        self.assertGreaterEqual(p['sideFillMin'], 0.5)      # a block side's fill: a residential block 65 to 97% by day
+        self.assertTrue(0.78 <= p['sideFillMean'] <= 0.92, p['sideFillMean'])
         self.assertEqual(p['tertBoth'], 10)                 # a two-way tertiary still parks both kerbs
-        self.assertTrue(0.5 <= p['tertFill'] <= 0.7, p['tertFill'])
+        self.assertTrue(0.65 <= p['tertFill'] <= 0.82, p['tertFill'])
         self.assertEqual(p['knobs'], {'both': 0, 'fill': 1.25, 'k': 0.92})   # ?parkboth, ?parkfill and ?carscale are read
 
     def test_parking_escapes(self):
@@ -160,6 +160,9 @@ class Runtime(unittest.TestCase):
         # a parked car's slot keeps its kind before its kerb offset is taken, and the lamps' heights scale with the cars
         self.assertIn('const kind = parkedKind(hash01(roll * 17.3)), u = hw - parkKerbIn(kind);', SRC)
         self.assertIn('(m.real.h > 1.7 ? 0.84 : 0.68) * CAR_K', SRC)
+        # the defaults Mike picked (Nov 11): every narrow block on both kerbs, the fills 1.25 times the plan's means
+        self.assertIn("PARK_BOTH = PARK2 ? clamp(parkQ('parkboth', 1), 0, 1) : 1;", SRC)
+        self.assertIn("k: PARK2 ? clamp(parkQ('parkfill', 1.25), 0, 1.6) : 1,", SRC)
 
     def test_vehicle_lamp_share_lands(self):
         L = self.r['lampShare']

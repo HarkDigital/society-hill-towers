@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 232, the first side-by-side page and Round 233's parking page.
+Last updated: Nov 11, 2026, after Round 233 (parked cars and car size, shipped).
 
 ## The ask
 
@@ -96,6 +96,12 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 - **Round 232** (Mike's ask, outside the stages): the green berm on the Society Hill Towers' north lawn by Dock Street is
   no longer drawn; its spot still keeps the trees off, so no tree moved.
+- **Round 233** (Mike's ask, outside the stages: "parked cars clogging up many streets ... cars need to be scaled down
+  in size a bit"): every car drawn at 88% of its real size (`CAR_K`, `?carscale`), and the parking rules redone (PARK2,
+  `?parked=old` keeps Round 188's): each car its own flank off the kerb, a moving van always 0.3 m clear of a parked one,
+  a fill per block side, a 6.5 m pitch. Mike picked the fuller column of his side-by-side page
+  (https://claude.ai/artifact/Ubu7Mfhyobf1cTi4McvbBy): every narrow block on both kerbs and the fills 1.25 times the
+  plan's means, about 82% of the cars there were. JavaScript only; no shader text changed.
 
 ## In flight (finish these first)
 
@@ -109,18 +115,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
    (the sheen washes out South Philadelphia's roofs toward the sun), leave the far-map switch (no visible gain), and the
    veil is his call (it shows the city in about 5 s, then sits dim and still, and jumps at Ready). Also seen: a
    yellow-green haze toward a low sun at 16:10 in today's page, with every setting; not yet looked into.
-2. **Round 233, parked cars and car size, waits on Mike's pick** (Nov 11; his ask: "parked cars clogging up many
-   streets ... cars need to be scaled down in size a bit"). The code is on branch `parked-cars`, not on main and not
-   deployed: every car at `CAR_K` 0.88, and the PARK2 rules (each car its own flank off the kerb, 0.3 m of air for a
-   passing van, 60% of narrow one-way blocks on both kerbs, a fill per block side, a 6.5 m pitch). The page
-   https://claude.ai/artifact/Ubu7Mfhyobf1cTi4McvbBy shows today, the new plan and a fuller variant
-   (`?parkboth=1&parkfill=1.25`) at ten views; his pick lands in `picks/parking` (`plan`: new, fuller or today; `size`:
-   right, smaller or bigger; `note`, `at`). On his pick: set the defaults to it (or try 0.82 / 0.92 for size), merge
-   `parked-cars` into main, rebuild, run the suite and deploy. Devlog Round 233 has the measurements.
-3. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
+2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
-4. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
+3. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
    after Ready on cold loads, programs linked per flush, the link probe's ratio by engine, the memory crumbs after
    Enter on the phone.
 

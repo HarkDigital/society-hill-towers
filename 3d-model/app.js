@@ -45671,21 +45671,23 @@ float pinOccGate() {
   // - each car stands its own flank PARK_KERB off the kerb (a compact nearer it than a van), and a kerb parks only where a
   //   moving van passes the widest parked one with PARK_AIR of air (with the cars at CAR_K that is the old threshold, so
   //   no street loses its kerbs to it; the air comes from the smaller cars);
-  // - a narrow one-lane one-way street (under PARK_ROOMY to the kerb) parks both kerbs on PARK_BOTH of its blocks and one
+  // - a narrow one-lane one-way street (under PARK_ROOMY to the kerb) can park both kerbs on PARK_BOTH of its blocks and one
   //   kerb on the rest, its moving lane taking the other half (parkedShift), dealt per block by the block's own place;
-  // - each block side has its own fill about its class's mean (PARK_FILL: a residential block from 52 to 88% by day; a
-  //   first cut from 37 to 87% with half the narrow blocks on one kerb left a South Philly block all but empty),
-  //   so a street reads as lived in, not as a car park; a 6.5 m pitch with a metre of jitter, and 2 m more off a junction;
-  // ?parkboth=<0..1> and ?parkfill=<k> (the means' multiplier) are the knobs for the side by side, never saved
+  // - each block side has its own fill about its class's mean (PARK_FILL), so a street reads as lived in, not as a car
+  //   park; a 6.5 m pitch with a metre of jitter, and 2 m more off a junction;
+  // Mike picked the side by side's fuller column (Nov 11): every narrow block on both kerbs (PARK_BOTH 1) and the means
+  // taken 1.25 times (PARK_FILL.k), a residential block 65 to 97% full by day; the plan's own column (0.6 and 1, 52 to
+  // 88%; a first cut from 37 to 87% with half the narrow blocks on one kerb left a South Philly block all but empty) is
+  // ?parkboth=0.6&parkfill=1. ?parkboth=<0..1> and ?parkfill=<k> stay the knobs, never saved
   const PARK2 = PARKED.on && !/[?&]parked=old\b/.test(location.search);
   const parkQ = (k, d) => { const m = location.search.match(new RegExp('[?&]' + k + '=([0-9.]+)')); return m && isFinite(+m[1]) ? +m[1] : d; };
   const PARK_PITCH = PARK2 ? 6.5 : 6.1, PARK_JIT = PARK2 ? 1.0 : 0.7, PARK_TRIM = PARK2 ? [15, 12] : [13, 10];
-  const PARK_KERB = 0.18, PARK_AIR = 0.3, PARK_ROOMY = 4.0, PARK_BOTH = PARK2 ? clamp(parkQ('parkboth', 0.6), 0, 1) : 1;
+  const PARK_KERB = 0.18, PARK_AIR = 0.3, PARK_ROOMY = 4.0, PARK_BOTH = PARK2 ? clamp(parkQ('parkboth', 1), 0, 1) : 1;
   // a parked car's centre in from the kerb: Round 188's 1.12 m for every kind, or its own flank PARK_KERB off it
   const parkKerbIn = (kind) => PARK2 ? PARK_KERB + CAR_MODELS[kind].w / 2 : 1.12;
   // a block side's fill by its class (residential, tertiary, arterial): [day, night (20:00 to 06:00), the small hours (02:00
-  // to 06:00)] and the spread of the blocks about it
-  const PARK_FILL = { k: PARK2 ? clamp(parkQ('parkfill', 1), 0, 1.6) : 1, mean: [[0.7, 0.8, 0.8], [0.6, 0.66, 0.66], [0.48, 0.48, 0.32]], spread: [0.36, 0.3, 0.3] };
+  // to 06:00)] and the spread of the blocks about it, all taken k times (1.25, Mike's pick) and held under 0.97
+  const PARK_FILL = { k: PARK2 ? clamp(parkQ('parkfill', 1.25), 0, 1.6) : 1, mean: [[0.7, 0.8, 0.8], [0.6, 0.66, 0.66], [0.48, 0.48, 0.32]], spread: [0.36, 0.3, 0.3] };
   function parkedInit() {
     if (!PARKED.on || !trafficRuns.length || !trafficFleet.length) return;
     const C = PARKED.cell, cells = new Map();
