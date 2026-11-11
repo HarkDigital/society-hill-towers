@@ -1,4 +1,4 @@
-"""Round 226 (Stage 1 of the Nov 10 plan): ?veilcity=1, a computer's veil showing the city rising. Off by default.
+"""Round 229 (Stage 1 of the Nov 10 plan): ?veilcity=1, a computer's veil showing the city rising. Off by default.
 
 Under the desktop post pipeline a flush behind the veil draws into the float target and never presents, so a computer
 shows an empty veil for the whole build. With the flag each flush ends with one composite of its own picture onto the

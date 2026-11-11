@@ -150,7 +150,7 @@
     // fresh hit it describes); sw says the worker answered, whose sizes a browser may report differently. Round 220, the
     // delivery: tx, enc and dec, the page's transfer, encoded body and decoded body bytes; net, the response's end less the
     // request's start, ms; di, domInteractive, ms; fcp, first-contentful-paint, ms; each '' where the browser reports none.
-    // Round 226: ws, fs and rs, the navigation's workerStart, fetchStart and responseStart, ms ('' where the browser reports none; ws
+    // Round 229: ws, fs and rs, the navigation's workerStart, fetchStart and responseStart, ms ('' where the browser reports none; ws
     // is 0 with no worker): one validated reload took 16 s to reach app.js and the sizes could not say where.
     // rd, the render pixel ratio (dpr is the display's,
     // always 3.00 on an iPhone); pv, the step the last load's crumb names, which is where a dead load died. Nothing personal
@@ -164,7 +164,7 @@
       sa: safe(() => (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches ? 1 : 0), ''),
       nav: nav && nav.type ? String(nav.type)[0] : '', hc: nav && ((nav.transferSize > 0 && nav.transferSize < 2000 && nav.decodedBodySize > 100000) || (nav.transferSize === 0 && nav.decodedBodySize > 0)) ? 1 : 0, sw: nav && nav.workerStart > 0 ? 1 : 0,
       tx: nv('transferSize'), enc: nv('encodedBodySize'), dec: nv('decodedBodySize'), di: nv('domInteractive'),
-      ws: nv('workerStart'), fs: nv('fetchStart'), rs: nv('responseStart'),   // Round 226: under the service worker tx, enc and dec describe the worker's stream, not the wire, so the three times that bracket it
+      ws: nv('workerStart'), fs: nv('fetchStart'), rs: nv('responseStart'),   // Round 229: under the service worker tx, enc and dec describe the worker's stream, not the wire, so the three times that bracket it
       net: nav && typeof nav.responseEnd === 'number' && typeof nav.requestStart === 'number' ? Math.round(nav.responseEnd - nav.requestStart) : '',
       fcp: safe(() => { const p = performance.getEntriesByType('paint').find((e) => e.name === 'first-contentful-paint'); return p ? Math.round(p.startTime) : ''; }, ''),
       rd: safe(() => DPR.cur.toFixed(2), ''), pv: safe(() => (bootPrev && bootPrev.step ? String(bootPrev.step).slice(0, 24) : ''), ''),
@@ -172,8 +172,8 @@
       zc: safe(() => zcField(), ''),   // Round 192: the depth mode, its probe's answers and the blit that ran (zcField)
       ...safe(() => gpuMemField(), {}) };   // Round 220: the GPU bytes held (gb, gbp, gbw, gbm) on every checkpoint, a phone's and ?gpumem=1's
     if (st === 'ready') Object.assign(q, safe(() => readyFacts(safe), {}));   // Round 220: the build's facts ride the ready checkpoint (the call keeps its three fields, which a test pins)
-    Object.assign(q, safe(() => measFacts(st), {}));   // Round 226: measurement round two's facts, by checkpoint (measFacts; {} for most)
-    { const cs = safe(() => COLD.n, 0); if (cs) q.cs = cs; }   // Round 226: a load salted by ?cold=<n> says so on every checkpoint, so no summary counts it as a visitor's cold load (nothing on any other load)
+    Object.assign(q, safe(() => measFacts(st), {}));   // Round 229: measurement round two's facts, by checkpoint (measFacts; {} for most)
+    { const cs = safe(() => COLD.n, 0); if (cs) q.cs = cs; }   // Round 229: a load salted by ?cold=<n> says so on every checkpoint, so no summary counts it as a visitor's cold load (nothing on any other load)
     if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
     const url = BEACON + '?' + new URLSearchParams(q).toString();
     if (dry) return url;
@@ -202,7 +202,7 @@
     const lm = document.getElementById('loadmsg');
     if (document.hidden && !PERF.ready && lm) beacon('bail', { step: lm.textContent.slice(0, 40) });
   });
-  // Round 226 (measurement round two): how long the build ran hidden, and how often. A 'bail' is only the first hide before
+  // Round 229 (measurement round two): how long the build ran hidden, and how often. A 'bail' is only the first hide before
   // Ready, never an abandonment (8 bails against 12 Readys in the log said nothing), and the outer districts' loop ranged 6.2
   // to 29.2 s over three Windows loads of 12 and 16 cores, which reads like a background tab's throttling and could not be
   // told from a slow one. PERF.hid: n the hides before Ready (a page that starts hidden counts one), ms their summed time,
@@ -475,7 +475,7 @@
   // each call is client-side state in both engines. gb, gbp, gbw and gbm ride every beacon (gpuMemField), bootCtx's 5 s crumb
   // carries the last reading before a death (the next load's pc), and __dbg.PERF.gpuMem() reads it live (never __dbg.gpu,
   // which is the timer probe the capture skill reads).
-  // Round 226 (measurement round two): on for a computer too (?gpumem=0 turns it off; ?gpumem=1 is the default spelled out).
+  // Round 229 (measurement round two): on for a computer too (?gpumem=0 turns it off; ?gpumem=1 is the default spelled out).
   // No computer had ever reported its bytes, and every megabyte the plan gives a Windows PC was inferred. The wraps sit on
   // the calls that CREATE storage only: r149 updates a live buffer through bufferSubData and a live texture through
   // texSubImage2D, neither wrapped, so a computer pays one binding read an upload while it loads and nothing a frame. The
@@ -514,7 +514,7 @@
       return d.byteLength || 0;
     };
     const bsz = new WeakMap(), tsz = new WeakMap(), rsz = new WeakMap();
-    // Round 226: the size records of the textures a framebuffer has attached (the record, never the texture, so a context that
+    // Round 229: the size records of the textures a framebuffer has attached (the record, never the texture, so a context that
     // goes holds no GL object here either); G.att() sums them when a beacon asks, and deleteTexture lets a record go
     const atts = new Set();
     G.att = () => { let n = 0; for (const m of atts) for (const k in m) n += m[k]; return n; };
@@ -577,7 +577,7 @@
       };
       const dt = P.deleteTexture;
       P.deleteTexture = function (t) { const m = t && tsz.get(t); if (m) { for (const k in m) G.tex -= m[k]; tsz.delete(t); atts.delete(m); } return dt.apply(this, arguments); };
-      if (P.framebufferTexture2D) {   // Round 226: a texture attached to a framebuffer is a render target's (r149 attaches at a target's setup, and a cube target's face as it is drawn)
+      if (P.framebufferTexture2D) {   // Round 229: a texture attached to a framebuffer is a render target's (r149 attaches at a target's setup, and a cube target's face as it is drawn)
         const ft = P.framebufferTexture2D;
         P.framebufferTexture2D = function (target, attachment, textarget, t) { if (t) atts.add(texMap(t)); return ft.apply(this, arguments); };
       }
@@ -606,7 +606,7 @@
   if (GPUMEM.on) gpuMemInstall(GPUMEM, [window.WebGLRenderingContext, window.WebGL2RenderingContext], gpuMemWhere);
   // the beacon fields, spread into every beacon's base query: gb the bytes held now and gbp the peak, both in whole MB, gbw the
   // loading message under the peak, gbm the phone's reversed-Z target alone (its 4x RGBA8 and DEPTH32F_STENCIL8 renderbuffers,
-  // 12 bytes a sample, counted in gb too; '' where there is none). Round 226: gbs, the sum apart, whole MB joined by dots:
+  // 12 bytes a sample, counted in gb too; '' where there is none). Round 229: gbs, the sum apart, whole MB joined by dots:
   // buffers, textures, renderbuffers, and the part of the textures a framebuffer has attached (so the render targets are the
   // third and fourth together, and the art is the second less the fourth). Nothing when the accounting is off, and nothing before
   // GPUMEM's own line has run (the error beacon can fire that early: the TDZ)
@@ -622,9 +622,9 @@
     return { on: GPUMEM.on, buf: MB(GPUMEM.buf), tex: MB(GPUMEM.tex), rb: MB(GPUMEM.rb), total: MB(GPUMEM.buf + GPUMEM.tex + GPUMEM.rb), peak: MB(GPUMEM.peak), peakAt: GPUMEM.peakAt, zrev: MB(GPUMEM.zrev) };
   };
 
-  PERF.gpuAtt = () => Math.round(GPUMEM.att() / 104857.6) / 10;   // Round 226, __dbg.PERF.gpuAtt(): the MB of textures a framebuffer has attached (gbs's fourth number)
+  PERF.gpuAtt = () => Math.round(GPUMEM.att() / 104857.6) / 10;   // Round 229, __dbg.PERF.gpuAtt(): the MB of textures a framebuffer has attached (gbs's fourth number)
 
-  // ---- Round 226 (Stage 1 of the Nov 10 plan, measurement round two, part two): cold runs on demand, ?cold=<n>. A cold
+  // ---- Round 229 (Stage 1 of the Nov 10 plan, measurement round two, part two): cold runs on demand, ?cold=<n>. A cold
   // load is the plan's largest number (MEASURED from the beacons: the flush renders are 32 to 34 s cold on Apple devices and
   // 12 to 57 s on Windows PCs against 0.8 to 1.4 s warm) and until now it could be had only by a new deploy or a reinstall:
   // a brand-new Chrome profile leaves macOS's own Metal shader cache warm, and the capture skill's headless runs, which
@@ -823,7 +823,7 @@
     veil.style.display = 'none';
     return;
   }
-  // ---- Round 226, measurement round two (Stage 1 of the Nov 10 plan: the numbers Stages 3, 4 and 6 are decided on). Fields
+  // ---- Round 229, measurement round two (Stage 1 of the Nov 10 plan: the numbers Stages 3, 4 and 6 are decided on). Fields
   // and timers only: nothing here draws, and no shader text is touched. What the first measurement round (Round 220) could
   // not say, MEASURED from its own beacons: a cold flush is 32 to 34 s on Apple devices and 12 to 57 s on Windows PCs against
   // 0.8 to 1.4 s warm, and nothing times a compile, a link or names a program; 9 to 21 s of every Windows load sits between
@@ -1213,7 +1213,7 @@
     }
     return {};
   }
-  // ---- Round 226, measurement round two, part two: THE LINK PROBE (lpSteps; linkProbeAtReady on a cold load;
+  // ---- Round 229, measurement round two, part two: THE LINK PROBE (lpSteps; linkProbeAtReady on a cold load;
   // __dbg.PERF.linkProbe for tests/prelink_gpu.html). One question, and Stage 3 of the Nov 10 plan (linking ahead) is built
   // for an engine only where the answer is yes: on this engine, are several programs issued together and then waited for
   // faster than the same programs linked one at a time, and by how much (batched under half of serial)? r149 creates,
@@ -2522,7 +2522,7 @@
     renderer.setRenderTarget(null); renderer.render(postScene, postCam);
     gpuT(null);
   }
-  // ---- Round 226, ?veilcity=1 (off by default: it changes the loading screen, so Mike sees it first). The veil is
+  // ---- Round 229, ?veilcity=1 (off by default: it changes the loading screen, so Mike sees it first). The veil is
   // translucent and the camera is posed before the build so its renders behind the veil show the city, but under the post
   // pipeline a flush draws into the float target and never presents, so a computer shows an empty veil for the whole
   // build (66 to 103 s on the public Windows PCs' beacons). With the flag each flush ends with one composite of its own
@@ -11352,7 +11352,7 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // a real macrotask boundary that is NOT timer-clamped in hidden tabs
   // (setTimeout is held to 1 s+ there; 23 build steps of that was 23 s of sleep)
-  // Round 226 (measurement round two): it times itself (PERF.yld: the count, the summed and the longest wait, and the waits
+  // Round 229 (measurement round two): it times itself (PERF.yld: the count, the summed and the longest wait, and the waits
   // right after a flush render apart, af set by flushNote) and polls the flushes' fences as each wait ends (fencePoll): 9 to
   // 21 s of every Windows load sat in these waits with no timer on them
   const YLD = PERF.yld = { n: 0, ms: 0, max: 0, afN: 0, afMs: 0, af: false };
@@ -15053,7 +15053,7 @@ vec2 wRing(vec2 rc, float tt) {
   // and ?vdepth=<metres> sets the floor on any device (the A/B hatch); __dbg.vdepth() reports it, __dbg.vdepth(m, k) sets
   // it, 0 off.
   // A twin shares everything with its original: the hook is the original's own, called at compile time (so the weather
-  // laid over it is in it: wxHookAll, before the first flush since Round 226), every uniform object a hook sets is the same object, the program key is the
+  // laid over it is in it: wxHookAll, before the first flush since Round 229), every uniform object a hook sets is the same object, the program key is the
   // original's plus '|vdepth', and the material properties the frames write (the curtain wall's night emissive) are
   // copied across every frame. Each twin is made right after its original (vdepthTwin at cityMat, coreMat, City Hall's and
   // the curtain wall's creation): three orders the opaque draws by material id, so the far facades keep their place among
@@ -16055,7 +16055,7 @@ vec2 wRing(vec2 rc, float tt) {
     const kU = { value: kind };
     // a material with a hook of its own (a rebuild's lamp wash) keeps it, ahead of this one, under its own key; the weather
     // passes it by as before (its re-hook keys a wrapped hook by the wrapper's source, which would merge different hooks).
-    // Round 226: the weather's hooks are laid before each flush now (wxHookAll), so this must run before the material's first
+    // Round 229: the weather's hooks are laid before each flush now (wxHookAll), so this must run before the material's first
     // flush, as it does (a rebuild's meshes are detailed before they join the scene): a plain material the weather had
     // already hooked would read here as one with a hook of its own and lose its place in the weather's wrap
     const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
@@ -16193,7 +16193,7 @@ vec2 wRing(vec2 rc, float tt) {
     return new Promise((res) => {
       if (!src) { res(null); return; }
       let tries = 0;
-      const go = () => { const im = new Image(); im.decoding = 'async'; im.onload = () => res(im); im.onerror = () => { if (++tries < 2) setTimeout(go, 4000); else { MEAS.artNull++; res(null); } }; im.src = src; };   // Round 226: a load that ended in null is counted (an on the beacons: a file the app does not hold fails in silence)
+      const go = () => { const im = new Image(); im.decoding = 'async'; im.onload = () => res(im); im.onerror = () => { if (++tries < 2) setTimeout(go, 4000); else { MEAS.artNull++; res(null); } }; im.src = src; };   // Round 229: a load that ended in null is counted (an on the beacons: a file the app does not hold fails in silence)
       go();
     });
   }
@@ -27955,20 +27955,20 @@ if (uOlLamp > 0.001) {
     // after uploadRing's own flush, set off a whole-scene render in the towns loop at once, one more than the merged meshes took
     if (!pendingUpload.length || (!all && pendingUpload.reduce((n, m, i, a) => n + (m.userData.tileSet && i > 0 && a[i - 1].userData.tileSet === m.userData.tileSet ? 0 : 1), 0) < 12)) return;
     const F = PERF.flush, tf = performance.now();   // Round 220: this flush's count, ms and programs (fl, flms and flp on the ready beacon)
-    const fp = renderer.info.programs.length;   // Round 226: the programs before THIS flush, for its own line in fll (flushNote)
+    const fp = renderer.info.programs.length;   // Round 229: the programs before THIS flush, for its own line in fll (flushNote)
     if (F.p0 < 0) F.p0 = renderer.info.programs.length;
     packResident(groupCity);   // everything this render uploads goes up packed (see packResident)
-    wxHookAll();   // Round 226: the weather's hooks on whatever this render compiles first, so the first frame compiles none of it again
-    try { famWalk(false); } catch (e) { /* a count, never the flush */ }   // Round 226: every array's bytes noted before this render uploads and frees it (famWalk)
+    wxHookAll();   // Round 229: the weather's hooks on whatever this render compiles first, so the first frame compiles none of it again
+    try { famWalk(false); } catch (e) { /* a count, never the flush */ }   // Round 229: every array's bytes noted before this render uploads and frees it (famWalk)
     // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
     // into the float target so every program compiles once, in the variant the frames use
     if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
-    if (VEIL_CITY) veilCityShow();   // Round 226, ?veilcity=1: this flush's picture onto the canvas, behind the veil
+    if (VEIL_CITY) veilCityShow();   // Round 229, ?veilcity=1: this flush's picture onto the canvas, behind the veil
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
     F.n++; F.ms += performance.now() - tf; F.p1 = renderer.info.programs.length;
-    progNote();   // Round 226, ?dev: what this flush linked, for PERF.prog.lost
-    flushNote(tf, fp);   // Round 226: this flush's step, ms and programs for the ready beacon's fll, and the fence behind it
+    progNote();   // Round 229, ?dev: what this flush linked, for PERF.prog.lost
+    flushNote(tf, fp);   // Round 229: this flush's step, ms and programs for the ready beacon's fll, and the fence behind it
   };
   // Round 220 (the measurement round): the flushes behind the veil, n renders and their summed ms, with the programs before the
   // first and after the last (p0 and p1: what the flushes themselves compiled; -1 until one has run), and PERF.staged, what
@@ -30096,7 +30096,7 @@ if (uOlLamp > 0.001) {
           pennAt(new THREE.CylinderGeometry(0.42, 0.36, 0.5, 8), -pex * 1.15 + nex * 0.3, y0 + 7.0, -pez * 1.15 + nez * 0.3, cBronzeD);   // the cuff
           pennAt(new THREE.BoxGeometry(0.9, 1.1, 0.5).rotateY(Math.atan2(-nez, nex)), -pex * 1.1 + nex * 0.75, y0 + 6.6, -pez * 1.1 + nez * 0.75, cBronze);   // the charter scroll
         }
-        const hallMat=cityMat.clone(),hallFacade=wxOwnHook(cityMat);   // Round 226: the facade's own hook, under the weather's the first flush has laid by now (as it read before the hooks moved)
+        const hallMat=cityMat.clone(),hallFacade=wxOwnHook(cityMat);   // Round 229: the facade's own hook, under the weather's the first flush has laid by now (as it read before the hooks moved)
         if (VDEPTH_WANT) vdepthTwin(hallMat);   // Round 168: beside its original in the draw order
         hallMat.onBeforeCompile=(sh,r)=>{
           hallFacade(sh,r);
@@ -38373,7 +38373,7 @@ if (uOlLamp > 0.001) {
   let shareNoteT = 0;
   const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;   // Round 154: the app shares the site's links, never its own origin
   const shareQuery = () => {   // the app's query holds only what the page itself put there (the skyline theme, the crown bands)
-    if (!IN_APP) return location.search.replace(/[?&](?:cold|coldms|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's; Round 226: nor do ?cold= and ?probe= (a copied link must never salt another device's shaders), nor ?coldms= (the review: it would have the other device read cold and probe, and beacon both as a visitor's)
+    if (!IN_APP) return location.search.replace(/[?&](?:cold|coldms|probe)=[^&#]*/g, '').replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's; Round 229: nor do ?cold= and ?probe= (a copied link must never salt another device's shaders), nor ?coldms= (the review: it would have the other device read cold and probe, and beacon both as a visitor's)
     const u = new URLSearchParams(location.search), o = new URLSearchParams();
     for (const k of ['lights', 'bands']) if (u.has(k)) o.set(k, u.get(k));
     const t = o.toString(); return t ? '?' + t : '';
@@ -45916,7 +45916,7 @@ float pinOccGate() {
     const dkey=clock.y+'-'+clock.m+'-'+clock.d,dmin=Math.abs(clock.minutes-trafficLastMin);
     if(now>=trafficNextRecon||trafficLastDate!==dkey||(dmin>2&&dmin<1437)) {
       trafficNextRecon=now+1000;trafficLastMin=clock.minutes;trafficLastDate=dkey;
-      const tr0=performance.now();trafficReconcile(now);const trMs=performance.now()-tr0;if(trMs>MEAS.traf)MEAS.traf=trMs;   // Round 226: the reconcile's worst ms in the session (trm on the perf beacons; Round 225 left the figure for this round)
+      const tr0=performance.now();trafficReconcile(now);const trMs=performance.now()-tr0;if(trMs>MEAS.traf)MEAS.traf=trMs;   // Round 229: the reconcile's worst ms in the session (trm on the perf beacons; Round 225 left the figure for this round)
     }
     // Bound the integration after a suspended tab; a car cannot jump several blocks.
     trafficAdvance(now,Math.min(dt,.1));trafficDraw(clamp((lampUniform.value-.25)/.6,0,1));
@@ -50606,7 +50606,7 @@ float pinOccGate() {
     vegBudget(shader, forced ? 'ground' : paved ? 'paved' : 'surface');   // last: within the GPU's texture units, whatever the passes added
   }
   // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the weather's
-  // wrap (wxHookAll, before the flush that first draws it since Round 226, keys the wrapped program, gotcha 15)
+  // wrap (wxHookAll, before the flush that first draws it since Round 229, keys the wrapped program, gotcha 15)
   const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.userData.wxSurf = true; m.onBeforeCompile = surfTexPatch; return m; };
   // the realism pass: the sidewalks' material, surfMat with the walk classifier (concrete slabs, or herringbone where brick)
   const walkMat = (o) => { const m = surfMat(o); m.onBeforeCompile = (sh, r) => surfTexPatch(sh, 'walk'); m.customProgramCacheKey = () => 'walks'; return m; };
@@ -50849,7 +50849,7 @@ float pinOccGate() {
     if (ig !== -1 && wg !== -1 && ig < wg) fs = fs.replace('  wxGreen = ' + WX_GREEN_COL + ';', '  wxGreen = isGreen;');
     shader.fragmentShader = fs;
   }
-  // ---- Round 226 (Stage 1 of the Nov 10 plan): the weather's hooks, laid before the first compile. Until now they were
+  // ---- Round 229 (Stage 1 of the Nov 10 plan): the weather's hooks, laid before the first compile. Until now they were
   // laid in the block after build(): by then every material had compiled once without them in a flush (flushUploads draws
   // the whole scene behind the veil), so the block re-keyed and disposed the facade, the ground and street flats and every
   // plain lit material, and the first frame compiled all of them again with the weather, after Ready, with the button lit
@@ -52353,7 +52353,7 @@ float pinOccGate() {
       document.getElementById('loadProgress').value = 70 + 30 * builtSteps++ / buildSteps.length;
       setLoadingMessage(s.msg);
       bootMark(s.msg);
-      const yw = stepYield(builtSteps - 1);   // Round 226: the wait across this step's own yield (gw) and the yields inside it (gi)
+      const yw = stepYield(builtSteps - 1);   // Round 229: the wait across this step's own yield (gw) and the yields inside it (gi)
       await yieldNow();
       stepWaited(yw);
       const t0 = performance.now();
@@ -52364,11 +52364,11 @@ float pinOccGate() {
       if (isTouch || BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1], ...PERF.stepExtra(s.msg) });   // Round 220: the step's phases ride its beacon
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
-    wxHookAll(true);   // Round 226: and hooked for the weather before it (the last call: it also counts any hook laid over the weather's)
-    linkProbeAtReady();   // Round 226: a cold load's link probe (serial against batched links, each with a first draw), once a device and build (once a week in the app, which cannot tell its build); a warm load returns at its first test
+    wxHookAll(true);   // Round 229: and hooked for the weather before it (the last call: it also counts any hook laid over the weather's)
+    linkProbeAtReady();   // Round 229: a cold load's link probe (serial against batched links, each with a first draw), once a device and build (once a week in the app, which cannot tell its build); a warm load returns at its first test
     PERF.ready = Math.round(performance.now() - PERF.t0);
     bootMark('ready');
-    measReady();   // Round 226: the timers' sums at Ready for the ready beacon, and the crumb every second until the running crumb takes over
+    measReady();   // Round 229: the timers' sums at Ready for the ready beacon, and the crumb every second until the running crumb takes over
     // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived.
     // Round 154: after that the breadcrumb says 'running' while the page is in front, so a phone or the app killed for memory
     // DURING use also comes back lite; it is taken back whenever the page goes to the background or is left, so an app
@@ -52385,9 +52385,9 @@ float pinOccGate() {
       window.addEventListener('blur', bootClear);
     }, 20000);
     beacon('ready', { ms: PERF.ready, fail: failures, sf: SF.state });   // Round 219: whether the shopfronts were built, or why not
-    ENTER.fail = failures;   // Round 226: the Ready line, the button and the full bar wait for the first frame (enterLight)
+    ENTER.fail = failures;   // Round 229: the Ready line, the button and the full bar wait for the first frame (enterLight)
   }
-  // ---- Round 226 (Stage 1 of the Nov 10 plan): Enter lights only when a tap can be answered. The button used to light
+  // ---- Round 229 (Stage 1 of the Nov 10 plan): Enter lights only when a tap can be answered. The button used to light
   // here, as build() ended, with the first frame still to draw: that frame uploads the last fifth of the geometry and
   // compiles what the flushes never drew, and while it runs the page answers nothing. MEASURED on cold devices it froze
   // 8.5 to 9.1 s on Apple devices and 29 s on a Windows PC under a button that already read Explore the City. So the
@@ -52524,7 +52524,7 @@ float pinOccGate() {
         return;
       }
     }
-    // Round 226 (measurement round two): a computer's loss is beaconed too. It only ever showed 'Reload the page' and told
+    // Round 229 (measurement round two): a computer's loss is beaconed too. It only ever showed 'Reload the page' and told
     // nobody, so a GPU process that dies on a Windows PC was invisible, and a manual reload may be the one trace it left
     // (the 16 s reload in the log). f in front, d 1 a computer's (no reload is made), ar after Ready, ae after Enter
     if (!isTouch) beacon('ctxlost', { f: document.visibilityState === 'visible' && performance.now() - shownAt > 5000 ? 1 : 0, ms: Math.round(performance.now()), d: 1, ar: PERF.ready ? 1 : 0, ae: PERF.enterT ? 1 : 0 });
@@ -52903,7 +52903,7 @@ float pinOccGate() {
   // replaces the synchronous read into `buf` and its answer is returned (the pins' async read, Round 167). `noFlats`, the
   // pins' capture: the sheets on the drawn ground and the flat water hidden too (userData.occFlat, Round 168; see occFlatTiles)
   function occRender(rt, W, H, buf, noInstanced, cam = camera, read = null, noFlats = false) {
-    const r = renderer, hid = [], stood = [], tOcc = performance.now();   // Round 226: the capture's own CPU ms, for the pins' (capNote)
+    const r = renderer, hid = [], stood = [], tOcc = performance.now();   // Round 229: the capture's own CPU ms, for the pins' (capNote)
     pinOccMat();
     scene.traverse((o) => {
       if (!o.visible || o === scene) return;
@@ -52929,7 +52929,7 @@ float pinOccGate() {
     if (pinLab) gpuT(pinLab);
     try { r.render(scene, cam); } finally { if (noFlats) for (const m of OCC_ONLY) m.visible = false; }
     if (pinLab) gpuT(gprev);
-    if (pinLab) capNote(pinLab === 'pinsnear', performance.now() - tOcc, r.info && r.info.render);   // Round 226: its ms, triangles and calls (pt on the perf beacons)
+    if (pinLab) capNote(pinLab === 'pinsnear', performance.now() - tOcc, r.info && r.info.render);   // Round 229: its ms, triangles and calls (pt on the perf beacons)
     let out = false;
     const t0 = performance.now();
     if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
@@ -53316,8 +53316,8 @@ float pinOccGate() {
     frameNo++;
     gpuFrame();   // Round 220: the GPU timer's frame id and its sampled window, stamped before any pass of this frame queues GL work
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
-    const tj1 = performance.now();   // Round 226: the marks that split the JavaScript before the draw (measJs)
-    measFrame(rawMs, once);   // Round 226: the stalls after Enter, the gap after a pin landing, the eye's height bands (measFrame; no GL call)
+    const tj1 = performance.now();   // Round 229: the marks that split the JavaScript before the draw (measJs)
+    measFrame(rawMs, once);   // Round 229: the stalls after Enter, the gap after a pin landing, the eye's height bands (measFrame; no GL call)
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
     // of the city is answered in a quarter of a second, not two). Round 192: a frame of 250 ms or more is a slow frame and is
@@ -53483,16 +53483,16 @@ float pinOccGate() {
     if (ZREV.sub) zrevPresent();
     if (!once && DPR.live) {   // Round 168: where the frame's time goes on this device (the JS before the draw, the draw call's own CPU, the gap between drawn frames)
       const P = PACE, i = P.pi; P.pre[i] = tPre - tFrame; P.sub[i] = performance.now() - tPre; P.gap[i] = Math.min(rawMs, 999); P.pi = (i + 1) % 120; P.pn++;
-      measJs(tFrame, tj1, tj2, tj3, tj4, tPre);   // Round 226: where that JavaScript goes, in five parts
+      measJs(tFrame, tj1, tj2, tj3, tj4, tPre);   // Round 229: where that JavaScript goes, in five parts
     }
     // Round 167: what the steps staged after the last flushUploads (the trees and the tie runs, and the late tiles: the outer
     // districts' streets, the lots and yards, the overpass decks, the towns' roads and areas) was drawn unculled in this
     // frame, behind the veil, as the merged meshes they replace were: uploaded and freed now, and culled from here on
     if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
-    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 226: no wx program compiles in it a second time, wxHookAll; tier 2's ten first compiles still do, see there)
-    if (PERF.prog.f1 < 0) progLost();   // Round 226: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
-    if (LINK.on || !MEAS.lit) measLit();   // Round 226: a cold load's link timers come off here, before a tap can be answered (a warm load's went at Ready), and what this frame linked is kept for the enter beacon
-    if (!ENTER.lit) enterLight();   // Round 226: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
+    if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 229: no wx program compiles in it a second time, wxHookAll; tier 2's ten first compiles still do, see there)
+    if (PERF.prog.f1 < 0) progLost();   // Round 229: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
+    if (LINK.on || !MEAS.lit) measLit();   // Round 229: a cold load's link timers come off here, before a tap can be answered (a warm load's went at Ready), and what this frame linked is kept for the enter beacon
+    if (!ENTER.lit) enterLight();   // Round 229: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
   }
 
   setHint();
@@ -53528,12 +53528,12 @@ float pinOccGate() {
   // ms where there was one (cl: CLOUD3D.ms, '' on a phone or after a refused bake)
   beacon('boot', { ms: Math.round(performance.now() - PERF.t0), cl: (() => { try { return typeof CLOUD3D.ms === 'number' ? CLOUD3D.ms : ''; } catch (e) { return ''; } })() });
   build().then(() => {
-    // Round 226: the fallback that lights Enter is armed before anything else here (enterLight's notes). Its timer cannot
+    // Round 229: the fallback that lights Enter is armed before anything else here (enterLight's notes). Its timer cannot
     // run until this block has ended, so arming it first costs nothing, and a throw anywhere below (applyHashView on a
     // copied link is the one unguarded call outside ?dev: the review) still leaves a button that lights, as build()'s own
     // lighting did before this round, in place of a veil stuck on the last step's line
     enterArm();
-    // Round 226: the weather's hooks are no longer laid here. This block wrapped the facade, the flats and every plain lit
+    // Round 229: the weather's hooks are no longer laid here. This block wrapped the facade, the flats and every plain lit
     // material after Ready and disposed each one, so everything the flushes had compiled behind the veil compiled a second
     // time in the first frame, with the button already lit (wxHookAll, beside the weather's patches, lays them before each
     // flush's render and once as build() ends; nothing is disposed, since nothing was compiled without them)
@@ -53594,7 +53594,7 @@ float pinOccGate() {
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), bolts: (on) => { if (on !== undefined) BOLTS_OFF.on = !on; return !BOLTS_OFF.on; }, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
-    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's hooks (Round 226: build()'s last wxHookAll), so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
+    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's hooks (Round 229: build()'s last wxHookAll), so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f, ZPROBE.k], crumb: ZPROBE.crumb, android: ZPROBE.android, fail: ZREV.fail || '', real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
       logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus, tested: ZREV.tested || 0,
@@ -53607,7 +53607,7 @@ float pinOccGate() {
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
-    requestAnimationFrame(frame);   // Round 226: Enter lights at this frame's end (enterLight); enterArm, at this block's head, is the page's way in when no animation frame comes
+    requestAnimationFrame(frame);   // Round 229: Enter lights at this frame's end (enterLight); enterArm, at this block's head, is the page's way in when no animation frame comes
     if (window.__dbg && window.__dbg.facade) { const f0 = window.__dbg.facade; window.__dbg.facade = () => Object.assign(f0(), { pitched: PITCH_N }); }   // the realism pass: the packed tiers' pitched roofs beside the facade's state
   });
 })();

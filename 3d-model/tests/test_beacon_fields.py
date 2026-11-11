@@ -8,7 +8,7 @@ first frames' (enterFacts: frameNo, the first frame's ms, the tap's latency, the
 late beacons the ladder's first change and the pin images' causes (runFacts). Each function runs under Node against
 stubbed state, the way tests/test_recovery.py runs beacon() through the TDZ; the text of the wiring is pinned.
 
-Round 226 (measurement round two): every beacon also carries ws, fs and rs (the navigation's workerStart, fetchStart and
+Round 229 (measurement round two): every beacon also carries ws, fs and rs (the navigation's workerStart, fetchStart and
 responseStart: under the service worker the sizes describe the worker's stream, not the wire) and whatever measFacts(st)
 gives its checkpoint, spread in after readyFacts and before the call's own fields (tests/test_measure_two.py runs
 measFacts itself); the longest beacon is composed here whole, at its worst, against nginx's 8 KB request line."""
@@ -51,7 +51,7 @@ class BeaconFields(unittest.TestCase):
         self.assertEqual(s.count('function beacon(st, extra) {'), 1, 'the signature the other tests cut')
         # the recovery test still gets a beacon() that stands alone (readyFacts is read through safe)
         self.assertIn("if (st === 'ready') Object.assign(q, safe(() => readyFacts(safe), {}));", b)
-        # Round 226: and measurement round two's facts for the checkpoint, through safe too (measFacts is made far below)
+        # Round 229: and measurement round two's facts for the checkpoint, through safe too (measFacts is made far below)
         self.assertIn("\n    Object.assign(q, safe(() => measFacts(st), {}));", b)
 
     def test_the_delivery_fields_and_the_preview(self):
@@ -81,7 +81,7 @@ BOTH
   // the old test: no bytes over the wire (a fresh cache hit)
   NAV = { type: 'reload', transferSize: 0, decodedBodySize: 26000000, workerStart: 0 };
   beacon('c');
-  // Round 226: a reload the service worker answered, 16 s to the first byte
+  // Round 229: a reload the service worker answered, 16 s to the first byte
   NAV = { type: 'reload', transferSize: 300, encodedBodySize: 0, decodedBodySize: 30440000, requestStart: 30, responseEnd: 16400, domInteractive: 17000, workerStart: 12.4, fetchStart: 14.2, responseStart: 16012.7 };
   beacon('w');
   // no navigation entry at all
@@ -110,7 +110,7 @@ console.log(JSON.stringify({ out, sent: sent.map((u) => Object.fromEntries(new U
 '''.replace('BOTH', self.both)
         o = run_node(self, script)
         a, b, c, w, d = o['sent'][:5]
-        # Round 226: the three times that bracket the worker's stream, ms; 0 with no worker, '' where the browser reports none
+        # Round 229: the three times that bracket the worker's stream, ms; 0 with no worker, '' where the browser reports none
         self.assertEqual((a['ws'], a['fs'], a['rs']), ('0', '3', '42'))
         self.assertEqual((w['sw'], w['ws'], w['fs'], w['rs'], w['net']), ('1', '12', '14', '16013', '16370'))
         self.assertEqual((c['ws'], c['fs'], c['rs']), ('0', '', ''))

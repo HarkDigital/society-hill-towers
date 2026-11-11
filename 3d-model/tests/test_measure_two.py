@@ -1,4 +1,4 @@
-"""Round 226, measurement round two (Stage 1 of the Nov 10 plan): the timers and beacon fields that decide the later stages.
+"""Round 229, measurement round two (Stage 1 of the Nov 10 plan): the timers and beacon fields that decide the later stages.
 
 Fields and timers only: nothing drawn changes and no shader text is touched. The block is cut from app.js and run under
 Node against a scripted WebGL context whose calls advance a scripted clock, so every figure is checked to the millisecond:
@@ -38,7 +38,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / 'app.js').read_text()
-BLOCK = cut(SRC, '  // ---- Round 226, measurement round two (Stage 1 of the Nov 10 plan', '  // ---- reversed-Z depth (Round 192, from perf spike 1)')
+BLOCK = cut(SRC, '  // ---- Round 229, measurement round two (Stage 1 of the Nov 10 plan', '  // ---- reversed-Z depth (Round 192, from perf spike 1)')
 BEACONS_PY = ROOT.parent / '.claude' / 'skills' / 'philly3d-capture' / 'scripts' / 'beacons.py'
 BAD = ('—', '–', '·')   # no em dash, en dash or middot
 
@@ -646,7 +646,7 @@ console.log(JSON.stringify(out));
         self.assertLess(f.index('packResident(groupCity);'), f.index('famWalk(false);'), 'after the pack: the bytes are the packed ones')
         self.assertLess(f.index('famWalk(false);'), f.index('renderer.render(scene, camera)'), 'before the render that uploads and frees')
         self.assertLess(f.index('const fp = renderer.info.programs.length;'), f.index('renderer.render(scene, camera)'))
-        self.assertTrue(f.rstrip().endswith('flushNote(tf, fp);   // Round 226: this flush\'s step, ms and programs for the ready beacon\'s fll, and the fence behind it'))
+        self.assertTrue(f.rstrip().endswith('flushNote(tf, fp);   // Round 229: this flush\'s step, ms and programs for the ready beacon\'s fll, and the fence behind it'))
         self.assertIn('      famWalk(false);\n', cut(BLOCK, '  function measReady() {', '\n  }\n'), 'and at Ready, for what the first frame uploads')
 
 
@@ -839,7 +839,7 @@ class Wiring(unittest.TestCase):
         self.assertIn("    pinOccPoll();", f)
         i = f.index('    const tj1 = performance.now();')
         self.assertLess(f.index('    pinOccPoll();'), i)
-        self.assertIn('    const tj1 = performance.now();   // Round 226: the marks that split the JavaScript before the draw (measJs)\n    measFrame(rawMs, once);', f)
+        self.assertIn('    const tj1 = performance.now();   // Round 229: the marks that split the JavaScript before the draw (measJs)\n    measFrame(rawMs, once);', f)
         order = ['const tj1 = ', 'applyLighting();', 'const tj2 = performance.now();\n    updateTransit(now, dt);', 'updateTraffic(now, dt);\n    const tj3 = performance.now();',
                  'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on || !MEAS.lit) measLit();', 'if (!ENTER.lit) enterLight();']
         at = [f.index(x) for x in order]

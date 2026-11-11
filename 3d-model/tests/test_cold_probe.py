@@ -1,4 +1,4 @@
-"""Round 226, measurement round two, part two (Stage 1 of the Nov 10 plan): cold runs on demand and the link probe.
+"""Round 229, measurement round two, part two (Stage 1 of the Nov 10 plan): cold runs on demand and the link probe.
 
 Two tools that answer one question, the one Stage 3 (linking ahead) is decided on: are programs issued together and then
 awaited faster than the same programs linked one at a time? Nothing drawn changes and no GLSL string in app.js is touched.
@@ -37,8 +37,8 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = (ROOT / 'app.js').read_text()
-COLD = cut(SRC, '  // ---- Round 226 (Stage 1 of the Nov 10 plan, measurement round two, part two): cold runs on demand', '\n  let renderer;\n')
-PROBE = cut(SRC, '  // ---- Round 226, measurement round two, part two: THE LINK PROBE', '  // ---- reversed-Z depth (Round 192, from perf spike 1)')
+COLD = cut(SRC, '  // ---- Round 229 (Stage 1 of the Nov 10 plan, measurement round two, part two): cold runs on demand', '\n  let renderer;\n')
+PROBE = cut(SRC, '  // ---- Round 229, measurement round two, part two: THE LINK PROBE', '  // ---- reversed-Z depth (Round 192, from perf spike 1)')
 PAGE = (ROOT / 'tests' / 'prelink_gpu.html').read_text()
 BEACONS_PY = ROOT.parent / '.claude' / 'skills' / 'philly3d-capture' / 'scripts' / 'beacons.py'
 BAD = ('—', '–', '·')   # no em dash, en dash or middot

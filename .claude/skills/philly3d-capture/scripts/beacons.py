@@ -6,13 +6,13 @@ usage: ssh lionspool-vps "zcat -f /var/log/nginx/access.log /var/log/nginx/acces
 A load is a run of lines from one ip and user agent whose t (performance.now() at the send) climbs. Each step beacon's ms is
 that step's own duration; a computer beacons eight steps (BEACON_STEPS), a phone every one. Phases per load: t0 (navigation
 start to app.js's first line) = ready.t - ready.ms; boot = the first step's start - t0; build = the step ms summed; gaps =
-everything else before ready; enter_gap = ready to the Enter tap. Where a load ran the link probe (Round 226, pp) the probe's
+everything else before ready; enter_gap = ready to the Enter tap. Where a load ran the link probe (Round 229, pp) the probe's
 own ms, which sit between the last step and Ready, are taken out of gaps and ready and printed apart (probe=), so a probed
 cold load reads as an unprobed one of the same device would and the medians are not moved by the instrument. Since Round 220 the beacons also carry the navigation
 timing (tx, enc, dec, net, di, fcp), a boot checkpoint, every step's ms on ready (sp), the GPU bytes (gb, gbp, gbw) and each
 phased step's parts (fd fl fg ff fr fa, wd wl wf, sm sp sf sc, ld lb lt lf, ts tl tf, cw cl cf): --all prints them.
 
-Round 226 (measurement round two) added, and --all prints each decoded (FIELDS names every number; a list's numbers are
+Round 229 (measurement round two) added, and --all prints each decoded (FIELDS names every number; a list's numbers are
 joined by dots and its entries by underscores, which a query never escapes):
   every beacon: ws fs rs (the navigation's workerStart, fetchStart and responseStart, ms), gbs (GPU MB: buffers, textures,
     renderbuffers, and the part of the textures a framebuffer has attached).
@@ -26,7 +26,7 @@ joined by dots and its entries by underscores, which a query never escapes):
     and slowest: a warm load's timers come off at Ready), lit (ms from Ready to the lit button), eb (1 when the fallback
     timer drew the first frame).
   bail: cold. A bail is the first hide before Ready, not an abandonment: each is printed with whether Ready came later.
-  ctxlost: d=1 is a computer's (Round 226 beacons it; before, only a phone's was sent), ar and ae after Ready and Enter.
+  ctxlost: d=1 is a computer's (Round 229 beacons it; before, only a phone's was sent), ar and ae after Ready and Enter.
   perf, settled, late: stl (stalls of 250 ms or more after Enter), prg, db, gbf, pl (pin landings), pt (the pins'
     captures), eh (eye-height bands), js (the JavaScript before the draw in five parts), fgl (frame gap after a landing
     frame against the rest), trm (the traffic reconcile's worst ms), an.
@@ -64,7 +64,7 @@ import statistics
 import sys
 import urllib.parse
 
-# Round 226: the numbers of each dotted field, in order
+# Round 229: the numbers of each dotted field, in order
 FIELDS = {
     'lk': ('programs', 'compile_ms', 'link_ms', 'query_ms', 'intro_ms', 'drain_ms', 'median_ms'),
     'f1k': ('programs', 'compile_ms', 'link_ms', 'query_ms', 'intro_ms', 'drain_ms'),
@@ -101,7 +101,7 @@ def num(v):
 
 
 def decode(key, value):
-    """A Round 226 field as something a person can read: a dotted field as a dict of its named numbers, a list field as
+    """A Round 229 field as something a person can read: a dotted field as a dict of its named numbers, a list field as
     its entries, the slowest programs as (tag, ms) pairs; anything else as it came."""
     if value is None or value == '':
         return value
@@ -219,7 +219,7 @@ def main():
         ready = [e for e in ev if e[0] == 'ready']; steps = [e for e in ev if e[0] and e[0].startswith('step:')]
         enter = [e for e in ev if e[0] == 'enter']; perf = [e for e in ev if e[0] in ('perf', 'settled', 'late')]
         kind, name = device(L)
-        # Round 226: a bail is the first hide before Ready, paired here with whether Ready came later in the same load; a
+        # Round 229: a bail is the first hide before Ready, paired here with whether Ready came later in the same load; a
         # lost context is printed whatever else the load sent (a computer's is d=1)
         for st, t, q in ev:
             if st == 'bail':
@@ -232,7 +232,7 @@ def main():
         first = steps[0]; boot = first[1] - int(first[2].get('ms', 0)) - t0
         bsum = sum(int(q.get('ms', 0)) for st, t, q in steps)
         eg = (int(enter[0][2]['ms']) - rt) if enter else None
-        cold = cold_of(ready[0][2], coldms)   # Round 226: cold and warm loads apart (the page's flag, or --coldms against the median)
+        cold = cold_of(ready[0][2], coldms)   # Round 229: cold and warm loads apart (the page's flag, or --coldms against the median)
         if ready[0][2].get('cs'):   # part two: a load salted by ?cold=<n> is a dev's cold run on demand, reduced apart from the visitors'
             cold = ('salted ' + cold).strip()
         if ready[0][2].get('pp'):

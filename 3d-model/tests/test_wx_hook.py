@@ -1,4 +1,4 @@
-"""Round 226 (Stage 1 of the Nov 10 plan): the weather's hooks are laid before the first compile, so no program compiles
+"""Round 229 (Stage 1 of the Nov 10 plan): the weather's hooks are laid before the first compile, so no program compiles
 twice.
 
 Until this round the block after build() wrapped the facade (cityMat, coreMat), every flat that carries userData.wxSurf
@@ -18,7 +18,7 @@ What must hold:
 - a hook laid over the weather's after a material's first flush is counted on the last call.
 
 The proof that no program's source changed is not here but in the round's captures: the hashes of every shader of every
-program linked, old page against new, on the computer and the phone path (devlog, Round 226). This file runs the function
+program linked, old page against new, on the computer and the phone path (devlog, Round 229). This file runs the function
 itself under Node with stub materials."""
 import json
 from pathlib import Path

@@ -90,7 +90,7 @@ while (performance.now() - t0 < 38000) {
 
 A warm reload lands in 6 to 8 s, so most calls after the first are quick.
 
-Wait for the button, not only for `__dbg` (Round 226). Enter lights at the end of the
+Wait for the button, not only for `__dbg` (Round 229). Enter lights at the end of the
 first drawn frame, no longer as the build ends, and a click on a disabled button does
 nothing at all: the veil stays up and the page never enters. The pane draws no frame of
 its own, so the page's fallback draws that first frame from a timer about 1.5 s after
@@ -209,8 +209,8 @@ The tools in `scripts/memory/` (Node 18+, Google Chrome installed; they launch t
 Compare against a build from git that is known to work on the phone (`git show <sha>:3d-model/society-hill-towers.html`):
 Round 158's reference is Sep 17's e90c765, 981 MB of GPU plus copies after the first frames, 162 MB peak live heap.
 
-Since Round 226 the Enter button lights after the first drawn frame, and both `measure.mjs` and `beacons_headless.mjs`
-take their "at ready" reading when the button lights with animation frames held: on a build from Round 226 on that
+Since Round 229 the Enter button lights after the first drawn frame, and both `measure.mjs` and `beacons_headless.mjs`
+take their "at ready" reading when the button lights with animation frames held: on a build from Round 229 on that
 reading is taken AFTER the first frame (the page's fallback has drawn it), on an older build before it, so the two are
 not the same instant. The first frame uploads what the last steps staged, so compare "after the frames" across that
 line, or take a true at-Ready reading by polling `__dbg.PERF.ready` and calling `clearTimeout(__dbg.PERF.enterTimer)`

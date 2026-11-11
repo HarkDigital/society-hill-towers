@@ -1,4 +1,4 @@
-"""Round 226 (Stage 1 of the Nov 10 plan): Enter lights only when a tap can be answered.
+"""Round 229 (Stage 1 of the Nov 10 plan): Enter lights only when a tap can be answered.
 
 The button used to light as build() ended, with the first frame still to draw. That frame uploads the last of the
 geometry and compiles whatever the flushes never drew, and while it runs the page answers nothing: on a cold device it

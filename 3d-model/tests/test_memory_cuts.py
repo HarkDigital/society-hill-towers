@@ -15,7 +15,7 @@ what a phone never reads:
 - a phone's pole inventory is typed arrays (since Round 218 every tier keeps it, for its pole meshes);
 - the ground registry's normals go when the last conformDrape is done;
 - the El's sleepers are gathered without a 28,344-argument spread and its ties' matrices go at upload;
-- (until Round 226: every material the post-build weather pass re-hooked was disposed, so r149 released the program it
+- (until Round 229: every material the post-build weather pass re-hooked was disposed, so r149 released the program it
   had compiled. The weather's hooks are now laid before the first compile, wxHookAll, so no program is compiled without
   them and none is left to release: tests/test_wx_hook.py. What r149's dispose releases is still pinned below.)
 
@@ -458,7 +458,7 @@ class FreedArrays(unittest.TestCase):
 class ProgramRelease(unittest.TestCase):
     def test_no_material_is_rehooked_after_it_compiled(self):
         # Round 158 disposed every material the block after build() re-hooked, so the variant compiled behind the veil
-        # was released when the first frame compiled the weather's. Round 226 moved the hooks ahead of the first compile
+        # was released when the first frame compiled the weather's. Round 229 moved the hooks ahead of the first compile
         # (wxHookAll: before every flush's render, and once as build() ends), so there is no second variant to release:
         # the block hooks nothing and disposes nothing, and the hooking itself never disposes
         src = (ROOT / 'app.js').read_text()

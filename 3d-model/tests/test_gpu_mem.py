@@ -16,7 +16,7 @@ phone and behind ?gpumem=1 on a computer, installed on both context prototypes b
 - bootCtx's crumb carries gb, gpuMemField gives the beacon fields and PERF.gpuMem the probe, and the phone's reversed-Z
   target records its own bytes for gbm.
 
-Round 226 (measurement round two): the accounting is on for a computer too (?gpumem=0 turns it off), the sum rides the
+Round 229 (measurement round two): the accounting is on for a computer too (?gpumem=0 turns it off), the sum rides the
 beacons apart as gbs (buffers, textures, renderbuffers), and the textures a framebuffer has attached are summed on their
 own (GPUMEM.att(), gbs's fourth number): the render targets' colour and depth textures are textures to the hook, and the
 art is the textures without them."""
@@ -230,7 +230,7 @@ class Wiring(unittest.TestCase):
 
     def test_installed_before_the_first_context(self):
         s = self.s
-        # Round 226: on for every device (a computer had never reported its bytes), ?gpumem=0 the way out, and att the attached textures' sum
+        # Round 229: on for every device (a computer had never reported its bytes), ?gpumem=0 the way out, and att the attached textures' sum
         self.assertIn("const GPUMEM = { on: !/[?&]gpumem=0\\b/.test(location.search), buf: 0, tex: 0, rb: 0, peak: 0, peakAt: '', zrev: 0, att: () => 0 };", s)
         install = 'if (GPUMEM.on) gpuMemInstall(GPUMEM, [window.WebGLRenderingContext, window.WebGL2RenderingContext], gpuMemWhere);'
         self.assertIn(install, s)
@@ -277,7 +277,7 @@ console.log(JSON.stringify({ early, a, b, c, d }));
 '''
         out = run_node(js)
         self.assertEqual(out['early'], {})
-        # Round 226: gbs, the sum apart (buffers, textures, renderbuffers, the attached part of the textures), whole MB joined by dots
+        # Round 229: gbs, the sum apart (buffers, textures, renderbuffers, the attached part of the textures), whole MB joined by dots
         self.assertEqual(out['a'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': '', 'gbs': '3.5.7.2'})
         self.assertEqual(out['b'], {'gb': 15, 'gbp': 20, 'gbw': 'Raising the far ring', 'gbm': 136, 'gbs': '3.5.7.2'})
         self.assertEqual(out['d']['gbs'], '3.5.7.0')
@@ -285,7 +285,7 @@ console.log(JSON.stringify({ early, a, b, c, d }));
 
     @unittest.skipUnless(NODE, 'node not on PATH')
     def test_attached_textures_are_summed_apart(self):
-        # Round 226: a texture a framebuffer has attached is a render target's; its bytes stay in the texture sum (the
+        # Round 229: a texture a framebuffer has attached is a render target's; its bytes stay in the texture sum (the
         # totals are what they were) and are also summed on their own, by its size record, until the texture is deleted
         f = cut_function(self.s, 'gpuMemInstall')
         self.assertIn('const atts = new Set();', f)
