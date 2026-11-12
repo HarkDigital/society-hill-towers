@@ -29773,10 +29773,12 @@ if (uOlLamp > 0.001) {
       const JX = REAL ? streetJunctions(wideRoadRecs, STREET_JOINS, STREET_JOINS, (a, q) => !ovpOwned(a[0], a[1], q[0], q[1])) : null;
       if (JX) { const P = PERF.junctions || (PERF.junctions = {}); P.wide = JX.reduce((n, l) => n + l.length / 2, 0); P.wideMs = Math.round(performance.now() - tJ); }
       WMS.junc = Math.round(performance.now() - tJ);   // Round 220: the junction pass (0 without REAL), on the fit step's beacon as wj
+      const BM = BROAD_MED_ON ? broadMedianFit(wideRoadRecs, JX) : null;   // Round 238: South Broad Street's median (broadMedianFit)
       for (let ri = 0; ri < wideRoadRecs.length; ri++) {
         const { w, t, i } = wideRoadRecs[ri], jl = JX && JX[ri];
         const pts = jl && jl.length ? splitAtS(wideRoadRecs[ri].pts, junctionCuts(jl)) : wideRoadRecs[ri].pts;
-        const laneJ = jl && jl.length ? (v, u, s, hw2, cls2) => rcLane(v, u, s, hw2, laneW(cls2, jl, s)) : rcLane;
+        let laneJ = jl && jl.length ? (v, u, s, hw2, cls2) => rcLane(v, u, s, hw2, laneW(cls2, jl, s)) : rcLane;
+        if (BM && BM.side.has(ri)) laneJ = broadMedLane(BM, BM.side.get(ri), laneJ, rc);   // its lanes counted from the median's edge
         const edges = routeOffsets(pts);
         c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i));
         const hw = w / 2;
@@ -29845,6 +29847,7 @@ if (uOlLamp > 0.001) {
           if (roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0)) rc.raised.push(r0, rc.idx.length);   // Round 168: see roadRaised
         }
       }
+      if (BM) broadMedianDraw(BM, rc, rcLane, wideRoadRecs);   // Round 238: the median's strip over the two, and its row of cars
       wideRoadRecs.length=0;
     });
     // -------- landmark rebuilds: City Hall tower + One & Two Liberty Place --------
@@ -45866,6 +45869,253 @@ float pinOccGate() {
     return g < PARK_MED_GAP || (g < PARK_TWIN_GAP && r.oneway && side < 0 && SRG.cls[PARKED.gapK] <= r.cls);
   }
   const _pkM = {};
+  // ---- South Broad Street's median (Round 238, Mike, Nov 11: "Draw the median on South Broad so the cars come back").
+  // Round 236 took the rows off the inner kerbs of every divided street, and South Broad Street's with them, though its
+  // median parking is real: from Washington Avenue to Oregon Avenue the city has long let about two hundred cars stand nose
+  // to tail down the middle of Broad (never legal, never enforced). The 2019 photosphere at Snyder Avenue shows the median
+  // flush, a car and a half wide between two double yellow lines, one row of cars parallel parked in it. OSM draws the
+  // stretch as two one-way carriageways 8.7 to 13 m apart (11 to 12 at most blocks), each painted 13 m wide as a two-way
+  // street: they overlapped down the middle and each wore a double yellow down its own centre line.
+  // broadMedianFit finds the two by their place alone (the packed streets carry no names): every primary record within
+  // BROAD_MED.reach of the axis from the middle of Washington's crossing to the middle of Oregon's, running along it, then
+  // the median's middle and the carriageways' separation every 2 m, and the crossing streets that break it (any street
+  // over the median's line: its half width and BROAD_MED.nose more each side, measured along the axis, wider at a slant).
+  // The paint takes no new shader text and no new mesh (the wide streets' own lane shader, through aLane):
+  // - broadMedLane counts each carriageway's lanes from the median's edge: the double yellow on the edge, two moving lanes
+  //   and the parking lane out to the kerb, no centre line and no kerb inside it (its crossings and stop bars kept);
+  // - broadMedianDraw lays the median and its double yellows again as a strip of their own, BROAD_MED.up over the streets
+  //   (a carriageway stands at most 0.32 over LAYER.road), from nose to nose (BROAD_MED.nose past the crossing street's
+  //   kerb line, so its stop bars lie under the strip and its zebra is clear of it), each half its own carriageway's paint
+  //   continued, so the strip meets the carriageway unseen and nothing of the two carriageways' overlap shows through: where
+  //   they overlap, the higher had painted its lane line over the other's double yellow and its stop bars into the median;
+  //   and fills BROAD_SLOTS, the row down its middle, which parkedLay lays with the lots' stalls, each block at its own fill.
+  // A carriageway's centre line stands broadMedE (2.9 to 3.9 m) off the median's edge, so a van in the inner moving lane
+  // (1.6 m off that line, 0.9 m either side of it) keeps 0.4 m off the edge and clear of its double yellow, each painted
+  // lane holds the cars that drive it, and the median is what is left (2.9 to 5.2 m wide; at the narrowest, Washington's
+  // end, a van parked in it and one in the inner lane pass 0.8 m apart). Round 236's rule still takes the inner kerbs' rows: the
+  // median's row stands in their place. ?broadmed=0 draws the stretch as Round 236 did (?parkmid=1, Round 233's rows, turns
+  // it off too); __dbg.PERF.broadMed reports the fit
+  const BROAD_MED_ON = REAL && !/[?&]broadmed=0\b/.test(location.search) && !/[?&]parkmid=1\b/.test(location.search);
+  const BROAD_MED = { a: [-1879.3, 841.1], b: [-2269.1, 3170.4], step: 2, reach: 15, up: 0.38, edge: 0.35, nose: 3.9, min: 12, seg: 8 };
+  const broadMedE = (sep) => clamp((sep - 4) / 2, 2.9, 3.9);   // a carriageway's centre line from the median's edge
+  const BROAD_SLOTS = [];   // the median's row: x, z, y, yaw, roll, the block's fill
+  // recs: [{ pts, w, t }], the wide tier's packed streets. Null, or the stretch's frame (s along the axis from Washington, lat
+  // across it toward n = (-uz, ux)), the median's middle and the separation every BROAD_MED.step, the carriageways (record
+  // index to the side of the median it lies on, 1 toward n), the gaps and the blocks between them (s from, s to)
+  function broadMedianFit(recs, JX) {
+    const t0 = performance.now(), M = BROAD_MED, A = M.a, ax = M.b[0] - A[0], az = M.b[1] - A[1], L = Math.hypot(ax, az), ux = ax / L, uz = az / L, nx = -uz, nz = ux;
+    const S = (q) => (q[0] - A[0]) * ux + (q[1] - A[1]) * uz, T = (q) => (q[0] - A[0]) * nx + (q[1] - A[1]) * nz;
+    const cw = [];
+    for (let ri = 0; ri < recs.length; ri++) {
+      const r = recs[ri], p = r.pts, a = p[0], b = p[p.length - 1];
+      if (r.t !== 2) continue;
+      const sa = S(a), sb = S(b);
+      if (Math.min(sa, sb) < -3 || Math.max(sa, sb) > L + 3) continue;
+      let far = 0;
+      for (const q of p) far = Math.max(far, Math.abs(T(q)));
+      const ch = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (far > M.reach || (ch > 1 && Math.abs(sb - sa) < 0.94 * ch)) continue;   // off the stretch, or a street across it
+      cw.push(ri);
+    }
+    if (cw.length < 2) return null;
+    const N = Math.floor(L / M.step) + 1, lo = new Float32Array(N).fill(-Infinity), hi = new Float32Array(N).fill(Infinity);
+    const lr = new Int32Array(N).fill(-1), hr = new Int32Array(N).fill(-1);
+    for (const ri of cw) {
+      const p = recs[ri].pts;
+      for (let j = 0; j + 1 < p.length; j++) {
+        const s0 = S(p[j]), s1 = S(p[j + 1]), t0 = T(p[j]), t1 = T(p[j + 1]);
+        if (Math.abs(s1 - s0) < 1e-6) continue;
+        const k1 = Math.min(N - 1, Math.floor(Math.max(s0, s1) / M.step));
+        for (let k = Math.max(0, Math.ceil(Math.min(s0, s1) / M.step)); k <= k1; k++) {
+          const t = t0 + (t1 - t0) * (k * M.step - s0) / (s1 - s0);
+          if (t < 0) { if (t > lo[k]) { lo[k] = t; lr[k] = ri; } } else if (t < hi[k]) { hi[k] = t; hr[k] = ri; }
+        }
+      }
+    }
+    const sep = new Float32Array(N), mid = new Float32Array(N), ok = new Uint8Array(N);
+    let nOk = 0;
+    for (let k = 0; k < N; k++) {
+      const d = hi[k] - lo[k];
+      if (d > 6 && d < 16) { sep[k] = d; mid[k] = (hi[k] + lo[k]) / 2; ok[k] = 1; nOk++; }
+    }
+    if (nOk < N * 0.9) return null;
+    for (let k = 0, last = -1; k < N; k++) {   // a sample the two did not both cross takes its nearest neighbours'
+      if (!ok[k]) continue;
+      for (let q = last + 1; q < k; q++) { const f = last < 0 ? 1 : (q - last) / (k - last); sep[q] = last < 0 ? sep[k] : lerp(sep[last], sep[k], f); mid[q] = last < 0 ? mid[k] : lerp(mid[last], mid[k], f); lr[q] = lr[k]; hr[q] = hr[k]; }
+      last = k;
+      if (k === N - 1 || ok.indexOf(1, k + 1) < 0) for (let q = k + 1; q < N; q++) { sep[q] = sep[k]; mid[q] = mid[k]; lr[q] = lr[k]; hr[q] = hr[k]; }
+    }
+    const F = { L, ux, uz, nx, nz, sep, mid, lr, hr, N, side: new Map(), gaps: [], blocks: [] };
+    for (const ri of cw) {
+      const p = recs[ri].pts, q = p[p.length >> 1], at = broadMedAt(F, q[0], q[1]);
+      F.side.set(ri, at.lat > at.mid ? 1 : -1);
+    }
+    // the crossings: every other street over the median's line, from its kerb plus the nose on one side to the other's
+    const cross = [];
+    for (let ri = 0; ri < recs.length; ri++) {
+      const r = recs[ri];
+      if (r.t > 5 || F.side.has(ri)) continue;
+      const p = r.pts;
+      for (let j = 0; j + 1 < p.length; j++) {
+        const a = broadMedAt(F, p[j][0], p[j][1]), b = broadMedAt(F, p[j + 1][0], p[j + 1][1]), d0 = a.lat - a.mid, d1 = b.lat - b.mid;
+        if (d0 * d1 > 0 || d0 === d1) continue;
+        const sc = a.s + (b.s - a.s) * d0 / (d0 - d1);
+        if (sc < -40 || sc > L + 40) continue;
+        const dl = Math.hypot(p[j + 1][0] - p[j][0], p[j + 1][1] - p[j][1]) || 1;
+        const cs = Math.abs((p[j + 1][0] - p[j][0]) * ux + (p[j + 1][1] - p[j][1]) * uz) / dl, sn = Math.max(0.5, Math.sqrt(Math.max(0, 1 - cs * cs)));
+        const sp = broadMedAt(F, A[0] + ux * sc, A[1] + uz * sc).sep, g = (r.w / 2 + M.nose) / sn + ((sp - 2 * broadMedE(sp)) / 2 + M.edge) * cs / sn;
+        cross.push([sc - g, sc + g, sc, r.w / 2]);
+      }
+    }
+    // each half's own gaps: at a crossing, its own carriageway's junction there (JX, which places the zebra, the stop bars
+    // and the end of the double yellow) to BROAD_MED.nose past the crossing street's kerb line along that carriageway, so
+    // a skewed crossing (Oregon's) staggers the two noses as the paint does; the line's own estimate where none is found.
+    // The row's blocks keep clear of both halves' gaps
+    const arcPt = (p, s) => {   // the point at arc s along a polyline, carried on past either end
+      let acc = 0;
+      for (let j = 0; j + 1 < p.length; j++) {
+        const Lj = Math.hypot(p[j + 1][0] - p[j][0], p[j + 1][1] - p[j][1]);
+        if (s <= acc + Lj || j === p.length - 2) { const t = (s - acc) / (Lj || 1); return [p[j][0] + (p[j + 1][0] - p[j][0]) * t, p[j][1] + (p[j + 1][1] - p[j][1]) * t]; }
+        acc += Lj;
+      }
+      return p[0];
+    };
+    const merge = (list) => {
+      const out = [];
+      list.sort((a, b) => a[0] - b[0]);
+      for (const g of list) { const n = out.length; if (n && g[0] <= out[n - 1][1]) out[n - 1][1] = Math.max(out[n - 1][1], g[1]); else out.push([g[0], g[1]]); }
+      return out;
+    };
+    const between = (gaps) => {
+      const out = [];
+      let s = 0;
+      for (const g of gaps.concat([[L, L]])) {
+        if (g[0] - s >= M.min) out.push([Math.max(0, s), Math.min(L, g[0])]);
+        s = Math.max(s, g[1]);
+      }
+      return out;
+    };
+    F.half = {};
+    let found = 0;
+    for (const sg of [1, -1]) {
+      const own = [];
+      for (const [g0, g1, sc, hx] of cross) {
+        let best = null, bd = Infinity;
+        if (JX) for (const [ri, side] of F.side) {
+          const jl = JX[ri];
+          if (side !== sg || !jl) continue;
+          for (let k = 0; k < jl.length; k += 2) {
+            const d = Math.abs(S(arcPt(recs[ri].pts, jl[k])) - sc);
+            if (d < bd && d < hx + 12) { bd = d; best = [recs[ri].pts, jl[k], jl[k + 1]]; }
+          }
+        }
+        if (!best) { own.push([g0, g1]); continue; }
+        const [p, sj, h] = best, a = S(arcPt(p, sj - h - M.nose)), b = S(arcPt(p, sj + h + M.nose));
+        own.push([Math.min(a, b), Math.max(a, b)]);
+        found++;
+      }
+      F.half[sg] = between(merge(own));
+      F.gaps.push(...own);
+    }
+    F.gaps = merge(F.gaps);
+    F.blocks = between(F.gaps);
+    PERF.broadMed = { recs: cw.length, sepMin: +Math.min(...sep).toFixed(2), sepMax: +Math.max(...sep).toFixed(2), crossings: cross.length, ownNoses: found, gaps: F.gaps.length, blocks: F.blocks.length,
+      m: Math.round(F.blocks.reduce((n, b) => n + b[1] - b[0], 0)), slots: 0, tris: 0, ms: +(performance.now() - t0).toFixed(1) };
+    return F;
+  }
+  // a point's s along the stretch and lat across it, and the median's middle and the separation there (interpolated)
+  function broadMedAt(F, x, z) {
+    const A = BROAD_MED.a, dx = x - A[0], dz = z - A[1], s = dx * F.ux + dz * F.uz, lat = dx * F.nx + dz * F.nz;
+    const f = clamp(s / BROAD_MED.step, 0, F.N - 1), k = Math.min(F.N - 2, Math.floor(f)), t = f - k;
+    return { s, lat, mid: lerp(F.mid[k], F.mid[k + 1], t), sep: lerp(F.sep[k], F.sep[k + 1], t) };
+  }
+  // a carriageway's aLane from its vertex's place (sg the side of the median it lies on): u from the median's edge, 0 on
+  // it and growing to the kerb, where it is the half width the lane shader reads, so the two-way class's double yellow
+  // falls on the edge and its lane lines count out from there (the vertex is in rc.pos when lane is called: roadWeld)
+  function broadMedU(F, sg, x, z, hw) {
+    const q = broadMedAt(F, x, z), e = broadMedE(q.sep), m = q.sep - 2 * e;
+    return [sg * (q.lat - q.mid) - m / 2, hw + e];
+  }
+  function broadMedLane(F, sg, lane, rc) {
+    return (v, u, s, hw, cls) => { const r = broadMedU(F, sg, rc.pos[v * 3], rc.pos[v * 3 + 2], hw); lane(v, r[0], s, r[1], cls); };
+  }
+  // the median's row, block by block: one car's slot every PARK_PITCH (with its jitter) down the middle, a metre clear of
+  // each nose, either way about, at the block's own fill (Mike's fuller pick's multiplier, PARK_FILL.k, as every kerb);
+  // yAt(x, z) is the strip's top there
+  function broadMedSlots(F, yAt) {
+    const out = [], A = BROAD_MED.a;
+    for (const [b0, b1] of F.blocks) {
+      const fill = clamp((0.58 + 0.22 * hash01(b0 * 0.0137 + 3.1)) * PARK_FILL.k, 0, 0.95);
+      for (let k = 0; ; k++) {
+        const roll = hash01(b0 * 0.731 + k * 78.233 + 911.3);
+        const s = b0 + 1 + PARK_PITCH / 2 + k * PARK_PITCH + (roll - 0.5) * PARK_JIT;
+        if (s > b1 - 1 - PARK_PITCH / 2) break;
+        const f = clamp(s / BROAD_MED.step, 0, F.N - 1), j = Math.min(F.N - 2, Math.floor(f));
+        const lat = lerp(F.mid[j], F.mid[j + 1], f - j) + (hash01(roll * 5.3) - 0.5) * 0.3;
+        const x = A[0] + F.ux * s + F.nx * lat, z = A[1] + F.uz * s + F.nz * lat, fw = hash01(roll * 7.7) < 0.5 ? 1 : -1;
+        out.push(x, z, yAt(x, z), Math.atan2(-F.uz * fw, F.ux * fw) + (hash01(roll * 3.1) - 0.5) * 0.05, roll, fill);
+      }
+    }
+    return out;
+  }
+  // the median's strip into the wide streets' mesh (rc), laid on the drawn ground like theirs, and its row. Each half, from
+  // the middle out to BROAD_MED.edge past the edge on its side, is its own carriageway's paint continued: broadMedU's u
+  // and half width, that record's own s (its arc, so the lane photographs run on unbroken) and colour, and no junction
+  // (the double yellow runs from nose to nose, past a side street's mouth). So the strip covers the double yellows too:
+  // where the two carriageways overlap (sep under 13 m), whichever stands higher painted the other's double yellow over
+  // with its own lane line (Washington's end), and painted its stop bar past every crossing into the median
+  function broadMedianDraw(F, rc, lane, recs) {
+    const t1 = performance.now(), M = BROAD_MED, A = M.a, lift = LAYER.road + M.up, col = new THREE.Color(), tri0 = rc.idx.length;
+    const at = (s) => { const f = clamp(s / M.step, 0, F.N - 1), k = Math.min(F.N - 2, Math.floor(f)), t = f - k; return [lerp(F.mid[k], F.mid[k + 1], t), lerp(F.sep[k], F.sep[k + 1], t)]; };
+    const yRoad = (x, z) => (groundMeshLandY(x, z) ?? siteY(x, z, 'road'));
+    // every carriageway's ends on the axis, so no half of a quad spans two records (each carries its own s)
+    const cuts = [];
+    for (const ri of F.side.keys()) { const p = recs[ri].pts; cuts.push(broadMedAt(F, p[0][0], p[0][1]).s, broadMedAt(F, p[p.length - 1][0], p[p.length - 1][1]).s); }
+    cuts.sort((a, b) => a - b);
+    const arcs = new Map();
+    const recS = (ri, x, z) => {   // the record's own s at (x, z): the arc to the nearest point of its polyline
+      const p = recs[ri].pts;
+      let cum = arcs.get(ri);
+      if (!cum) { cum = [0]; for (let j = 1; j < p.length; j++) cum.push(cum[j - 1] + Math.hypot(p[j][0] - p[j - 1][0], p[j][1] - p[j - 1][1])); arcs.set(ri, cum); }
+      let best = Infinity, s = 0;
+      for (let j = 0; j + 1 < p.length; j++) {
+        const dx = p[j + 1][0] - p[j][0], dz = p[j + 1][1] - p[j][1], L = cum[j + 1] - cum[j];
+        if (L < 0.01) continue;
+        const t = clamp(((x - p[j][0]) * dx + (z - p[j][1]) * dz) / (L * L), 0, 1), d = (p[j][0] + dx * t - x) ** 2 + (p[j][1] + dz * t - z) ** 2;
+        if (d < best) { best = d; s = cum[j] + L * t; }
+      }
+      return s;
+    };
+    for (const sg of [1, -1]) for (const [b0, b1] of F.half[sg]) {
+      const ss = [b0];
+      for (const c of cuts) if (c > b0 + 0.5 && c < b1 - 0.5) ss.push(c);
+      ss.push(b1);
+      for (let q = 0; q + 1 < ss.length; q++) {
+        const n = Math.max(1, Math.ceil((ss[q + 1] - ss[q]) / M.seg)), km = clamp(Math.round((ss[q] + ss[q + 1]) / 2 / M.step), 0, F.N - 1);
+        {
+          const ri = sg > 0 ? F.hr[km] : F.lr[km], r = recs[ri];
+          if (!r) continue;
+          col.set(ROAD_COLORS[r.t] || COLORS.asphalt).multiplyScalar(streetAge(r.i));
+          const cr = col.r * 255, cg = col.g * 255, cb = col.b * 255, hw = r.w / 2;
+          for (let k = 0; k < n; k++) {
+            const sa = ss[q] + (ss[q + 1] - ss[q]) * k / n, sb = ss[q] + (ss[q + 1] - ss[q]) * (k + 1) / n, [ma, pa] = at(sa), [mb, pb] = at(sb);
+            const oa = sg * ((pa - 2 * broadMedE(pa)) / 2 + M.edge), ob = sg * ((pb - 2 * broadMedE(pb)) / 2 + M.edge);
+            const cax = A[0] + F.ux * sa + F.nx * ma, caz = A[1] + F.uz * sa + F.nz * ma, cbx = A[0] + F.ux * sb + F.nx * mb, cbz = A[1] + F.uz * sb + F.nz * mb;
+            const ga = groundMeshLandY(cax, caz), gb = groundMeshLandY(cbx, cbz), ya = yRoad(cax, caz) + lift, yb = yRoad(cbx, cbz) + lift;
+            const hiA = Math.max(oa, 0), loA = Math.min(oa, 0), hiB = Math.max(ob, 0), loB = Math.min(ob, 0);   // the +n side first, as routeQuad lays a strip
+            const ring = [[cax + F.nx * hiA, caz + F.nz * hiA, ya], [cbx + F.nx * hiB, cbz + F.nz * hiB, yb], [cbx + F.nx * loB, cbz + F.nz * loB, yb], [cax + F.nx * loA, caz + F.nz * loA, ya]];
+            roadWeldBegin();
+            drapeRouteQuad(ring, lift, (x, y, z) => {
+              roadWeld(rc, x, y, z, (i) => { rc.col.push(cr, cg, cb); const u = broadMedU(F, sg, x, z, hw); lane(i, u[0], recS(ri, x, z), u[1], 0); });
+            }, ga !== null && gb !== null);
+          }
+        }
+      }
+    }
+    BROAD_SLOTS.length = 0;
+    if (PARKED.on) BROAD_SLOTS.push(...broadMedSlots(F, (x, z) => (groundMeshY(x, z) ?? siteY(x, z, 'road')) + lift));
+    if (PERF.broadMed) { PERF.broadMed.slots = BROAD_SLOTS.length / 6; PERF.broadMed.tris = (rc.idx.length - tri0) / 3; PERF.broadMed.ms = +(PERF.broadMed.ms + performance.now() - t1).toFixed(1); }
+  }
   // the moving lane's sideways shift on a one-lane one-way street that parks one kerb: to the middle of what the parked row
   // leaves, 1.07 m off the centreline away from it, once per run and the same whether or not the eye is near (a car must
   // not step sideways when the row is laid)
@@ -45929,6 +46179,15 @@ float pinOccGate() {
           if (hash01(roll * 51.3) > occ) continue;
           put(x, y, z, Math.atan2(-LOT_STALLS[i + 4], LOT_STALLS[i + 3]), parkedKind(hash01(roll * 17.3)), roll, d);
         }
+      }
+      // Round 238: South Broad Street's median, day and night at its blocks' own fills (broadMedSlots)
+      for (let i = 0; i < BROAD_SLOTS.length; i += 6) {
+        const roll = BROAD_SLOTS[i + 4];
+        if (hash01(roll * 91.7) > BROAD_SLOTS[i + 5]) continue;
+        const x = BROAD_SLOTS[i], z = BROAD_SLOTS[i + 1], y = BROAD_SLOTS[i + 2];
+        const dx = x - ex, dy = y - ey, dz = z - ez, d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (d > R) continue;
+        put(x, y, z, BROAD_SLOTS[i + 3], parkedKind(hash01(roll * 17.3)), roll, d);
       }
     }
     for (const p of PARKED.meshes) {

@@ -14249,3 +14249,60 @@ they were unused: `tmp_pack_I4vwmL` (59 MB) was the pack the orphan `pack-e261ff
 (git index-pack of it gives that hash); neither was named in the multi-pack index or open in any process; with them
 moved out every one of its 499 objects (66 commits, 225 trees, 208 blobs) still resolved from the live packs and
 `git fsck --full` was clean; then they were deleted. The pack folder went from 384 MB to 328 MB.
+
+## Round 238 — South Broad Street's median, and its row of cars back (Nov 11)
+
+Mike, after Round 236: "Draw the median on South Broad so the cars come back." Round 236 had taken the rows off the
+inner kerbs of every divided street, South Broad's with them, and its devlog said the model drew no median there.
+
+The real thing: from Washington Avenue to Oregon Avenue the city has long let about two hundred cars park down the
+middle of South Broad (never legal, never enforced; about two hundred by the press's counts). A 2019 photosphere at Snyder
+Avenue shows it flush, not raised: a strip a car and a half wide between two double yellow lines, one row of cars
+parallel parked in it, facing either way.
+
+The model's: OSM draws the stretch as two one-way carriageways (45 packed records) whose centre lines run 8.7 to 13 m
+apart (11 to 12 at most blocks, 8.7 at Washington). Each was painted 13 m wide as a two-way street, so the two
+overlapped by up to 4 m down the middle and each wore a double yellow down its own centre line; where they overlapped,
+the higher of the two (each street's lift has its own hash) painted its lane line over the other's paint.
+
+What the round does (JavaScript only; no shader text, no new mesh, no data):
+- `broadMedianFit` finds the two by their place (the packed streets carry no names): the primary records within 15 m
+  of the axis from the middle of Washington's crossing to the middle of Oregon's, running along it. It keeps the
+  median's middle and the separation every 2 m, and the crossings: every other street over the median's line (21 named
+  ones, Washington, Alter, Ellsworth, Federal, Wharton, Reed, Dickinson, Tasker, Morris, Castle, Moore, Mifflin,
+  McKean and Passyunk together, Snyder, Jackson, Wolf, Ritner, Porter, Shunk, Oregon). At each crossing each half's nose
+  comes from its own carriageway's junction there (the junction list the lane paint already reads), 3.9 m past the
+  crossing street's kerb line along that carriageway, so the zebra is clear of it and the stop bars under it; a skewed
+  crossing (Oregon's) staggers the two noses.
+- `broadMedLane` counts each carriageway's lanes from the median's edge through the lane shader's own attribute
+  (aLane's u and half width): the double yellow on the edge, two moving lanes and the parking lane out to the kerb,
+  no centre line and no kerb paint inside. The carriageway's centre line stands 2.9 to 3.9 m off the edge
+  (`broadMedE`), so the moving lanes (1.6 m either side of it) fall in the painted ones and a van in the inner lane
+  keeps 0.4 m off the edge; the median is what is left, 2.9 to 5.2 m wide.
+- `broadMedianDraw` lays the median and its double yellows again as a strip of their own in the wide streets' mesh,
+  0.06 m over the highest carriageway, each half its carriageway's paint continued (the same u, half width, s and
+  colour, no junction), so it meets the carriageway unseen and hides what the overlap painted (the lane line over the
+  far double yellow at Washington, the stop bars past every crossing). 2,010 triangles.
+- `broadMedSlots` fills `BROAD_SLOTS`, 299 slots down the middle at the kerbs' pitch, a block's fill 0.73 to 0.95
+  (Mike's fuller multiplier, as every kerb), either way about, and `parkedLay` lays them with the lots' stalls. Round
+  236's rule still takes the inner kerbs' rows; the median's row stands in their place.
+`?broadmed=0` draws the stretch as Round 236 did, and `?parkmid=1` (Round 233's rows) turns it off too.
+`__dbg.PERF.broadMed` reports the fit (records, separation, crossings, noses, blocks, metres, slots, triangles, ms).
+
+The cost: 18 to 23 ms once in the load ('Fitting streets to the terrain'), nothing a frame beyond 299 more slots for
+`parkedLay` to read (within its half mile).
+
+Checked: before and after from 14 m, straight down and at 9 pm south of Snyder; close tops of Washington (the
+narrowest), Tasker, Snyder, Passyunk and McKean, Oregon (skewed), mid-block; at street level; the phone path. The first
+cut showed a stub of white in the median past every crossing (a carriageway's stop bar for traffic leaving the
+junction lies on the side away from its kerb, now the median's) and lost the far double yellow at Washington under
+the other carriageway's lane line; both are what the strip's second form hides. `tests/broad_median_checks.js` runs the
+page's own functions over scene_wide.json (`test_broad_median.py`): the fit, every crossing in a gap of the row and of
+both halves, the carriageways' paint (three lanes everywhere, the kerb at the half width the shader reads), the strip,
+the row, the clearances and the flags.
+
+Not done: the packed streets carry no one-way flag, so the lane shader still paints every other one-way primary,
+secondary and tertiary in the wide set as a two-way street, a double yellow down its middle; South Broad north of
+Washington and south of Oregon keeps that paint.
+
+Suite: 1,504 tests, OK (one skip, one expected failure, both as before).

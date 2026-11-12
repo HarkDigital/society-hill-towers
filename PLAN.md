@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 237 (the people's walk in four poses a step).
+Last updated: Nov 11, 2026, after Round 238 (South Broad Street's median and its row of cars).
 
 ## The ask
 
@@ -106,6 +106,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   two one-way halves of a divided street no longer park their inner kerbs (Columbus Boulevard, Girard Avenue, South
   Broad Street, Spring Garden Street): 272 km of the city's 5,309 km of parking kerb, `?parkmid=1` the old rows.
   JavaScript only; no shader text changed. Traffic queueing at junctions stays as it is (Mike: natural).
+- **Round 238** (Mike: "Draw the median on South Broad so the cars come back"): from Washington to Oregon the two
+  halves of South Broad are painted from a flush median between two double yellows, laid as its own strip broken at
+  all 21 crossing streets, with a row of about 300 slots parked down it at the kerbs' fills. `?broadmed=0` draws the
+  stretch as Round 236 did. JavaScript only; no shader text, no new mesh.
 
 ## In flight (finish these first)
 
