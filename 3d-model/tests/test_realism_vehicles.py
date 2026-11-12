@@ -220,12 +220,75 @@ class Runtime(unittest.TestCase):
         self.assertEqual((L['kind3Near'], L['kind3Far']), (0, 1))
 
     def test_furniture_geometry_is_plain_triangles(self):
-        g = self.r['furnGeom']
-        self.assertEqual(g['indexed'], [])
-        self.assertEqual(g['tris']['stop'], 28)   # the post's box (12), the sign's two octagons (8 each): every part's index expanded
-        self.assertEqual(g['tris']['bus'], 16)    # the post's box and the plate's two faces
-        for k, m in g['longest'].items():
-            self.assertLessEqual(m, 4.9, k)       # no triangle longer than its tallest part
+        for name in ('furnGeom', 'furnGeomOld', 'furnGeomTouch'):
+            g = self.r[name]
+            self.assertEqual(g['indexed'], [], name)
+            self.assertEqual(g['tris']['stop'], 28)   # the post's box (12), the sign's two octagons (8 each): every part's index expanded
+            self.assertEqual(g['tris']['bus'], 16)    # the post's box and the plate's two faces
+            for k, m in g['longest'].items():
+                # no triangle longer than its tallest part: the old pole's 4.9 m, the mast pole's 7.2 m (Round 239)
+                self.assertLessEqual(m, 7.2 if (k == 'pole' and name != 'furnGeomOld') else 4.9, (name, k))
+            for k, b in g['streams'].items():
+                self.assertEqual(b % 4, 0, (name, k))   # never a 1- or 3-byte stream (WebKit's Metal backend pads a copy)
+        self.assertNotIn('arm', self.r['furnGeomOld']['tris'])   # ?signals=old: no arms, posts or pedestrian heads
+        g, t = self.r['furnGeom'], self.r['furnGeomTouch']
+        self.assertEqual(sorted(g['tris']), ['arm', 'bench', 'bin', 'bus', 'head', 'hyd', 'ped', 'pole', 'post', 'stop'])
+        self.assertLessEqual(g['tris']['head'], 130)   # the head's triangles are drawn a dozen times a junction
+        self.assertLessEqual(t['tris']['head'], 80)    # a phone's head: no backplate edge, three-sided visors
+        # the arm runs from 0 to 1 along x (its instance's scale is its length), tapering, at the pole's axis
+        self.assertEqual(g['box']['arm'][0], 0); self.assertEqual(g['box']['arm'][3], 1)
+        # the mast pole stands 7.27 m with the arm's clamp at FURN_ARM.armY; the head hangs headDrop under the arm
+        self.assertEqual(g['box']['pole'][4], 7.34)
+        self.assertEqual(g['box']['head'][4], 0.79)
+
+    def test_mast_arms(self):
+        # Round 239: Philadelphia's mast arms. A four-way of two two-way secondaries (5.5 m to the kerb): a mast pole on each
+        # corner (each the far right corner of one approach), its arm square across that approach over the far side
+        f = self.r['armsFour']
+        self.assertEqual(f['poles'], [[-7.1, -7.1], [-7.1, 7.1], [7.1, -7.1], [7.1, 7.1]])
+        self.assertEqual(f['posts'], [])
+        self.assertEqual([a['L'] for a in f['arms']], [4.7] * 4)   # from 7.1 across to the moving lane's middle (2.65) and 0.45 on
+        self.assertEqual({(a['dx'], a['dz']) for a in f['arms']}, {(1, 0), (0, 1), (-1, 0), (0, -1)})
+        self.assertEqual(len(f['heads']), 8)                   # a head over the lane and one on the pole, for each approach
+        self.assertTrue(all(h['across'] for h in f['heads']))  # each hangs across the junction from the drivers it faces
+        self.assertTrue(all(h['right'] > 0 for h in f['heads']))   # on their right of the middle: over the lanes they drive
+        self.assertEqual(sorted({h['y'] for h in f['heads']}), [3.65, 5.31])   # the pole's head and the arm's (6.1 - 0.79)
+        self.assertTrue(f['onArm'])
+        self.assertEqual(f['groups'], [0, 1])
+        self.assertEqual((f['peds'], f['pedGroups']), (8, [0, 1]))   # two a corner, one across each street
+        # South Broad: two one-way carriageways 12 m apart, the signal mapped on three approaches: one junction, its poles
+        # behind the outer kerbs (6 + 6.5 + 1.6), none on the asphalt or the median, each southbound or northbound arm over
+        # both of its carriageway's moving lanes
+        b = self.r['armsBroad']
+        self.assertEqual((b['junctions'], b['sg']['merged']), (1, 2))
+        self.assertEqual(b['poles'], [[-14.1, -7.1], [-14.1, 7.1], [14.1, -7.1], [14.1, 7.1]])
+        self.assertEqual((b['onStreet'], b['onMedian']), (0, 0))
+        self.assertTrue(b['medianPole'])   # a pole stood on the median would be refused
+        self.assertEqual(sorted(a['L'] for a in b['arms']), [4.7, 4.7, 10.65, 10.65])
+        self.assertEqual(sorted(h['right'] for h in b['heads'] if h['fz'] and h['y'] > 5), [3.9, 3.9, 8.1, 8.1])
+        self.assertTrue(b['onArm'])
+        # South Broad by Walnut: only one carriageway has a node; the other runs straight past and is found as its twin
+        t = self.r['armsTwin']
+        self.assertEqual(t['sg']['twins'], 1)
+        self.assertEqual(t['poles'], [[-14.1, -5.1], [-14.1, 5.1], [15.1, -5.1]])
+        self.assertEqual(t['posts'], [[15.1, 5.1]])   # no traffic comes in from the west: a post on its far right corner
+        self.assertEqual(t['onStreet'], 0)
+        self.assertEqual(sorted(h['right'] for h in t['heads'] if h['fz'] < 0 and h['y'] > 5), [3.9, 8.1])
+        self.assertEqual(sorted(h['right'] for h in t['heads'] if h['fz'] > 0 and h['y'] > 5), [4.9, 9.1])
+        # Center City: one-way west crossing one-way south: two arms over both lanes, a post on each other corner
+        o = self.r['armsOneWay']
+        self.assertEqual(o['poles'], [[-7.1, -7.1], [-7.1, 7.1]])
+        self.assertEqual(o['posts'], [[7.1, -7.1], [7.1, 7.1]])
+        self.assertEqual([a['L'] for a in o['arms']], [9.15, 9.15])
+        self.assertEqual(sorted(h['right'] for h in o['heads'] if h['y'] > 5), [-1.6, -1.6, 1.6, 1.6])
+        self.assertEqual(o['peds'], 8)
+        # a mid-block crossing on a street that runs straight through: a pole a crosswalk's width past it on each side, at
+        # the driver's right; the walkers go with the other group
+        m = self.r['armsMid']
+        self.assertEqual(m['poles'], [[-3, -7.1], [3, 7.1]])
+        self.assertEqual((len(m['arms']), len(m['heads']), m['peds']), (2, 4, 2))
+        self.assertEqual((m['groups'], m['pedGroups']), ([0], [1]))
+        self.assertEqual(m['sg']['through'], 1)
 
     def test_furniture(self):
         f = self.r['furniture']
@@ -246,6 +309,9 @@ class Wiring(unittest.TestCase):
         self.assertIn("const VART = REAL && typeof VEHICLE_ART !== 'undefined' && VEHICLE_ART && VEHICLE_ART.cars && !/[?&]vart=0\\b/.test(location.search)", SRC)
         self.assertIn("on: REAL && !TIER2 && !/[?&]parked=0\\b/.test(location.search)", SRC)
         self.assertIn("/[?&]furniture=0\\b/", SRC)
+        self.assertIn("arms: !/[?&]signals=old\\b/.test(location.search)", SRC)   # Round 239's escape
+        # a row's kind is its index: the old seven keep theirs
+        self.assertIn("const FURN_KINDS = ['pole', 'head', 'stop', 'bus', 'hyd', 'bench', 'bin', 'arm', 'post', 'ped'];", SRC)
         self.assertIn("/[?&]carpools=0\\b/", SRC)
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("VEHICLE_ART", text_of("vehicle_art.json", "null"))', b)
@@ -319,6 +385,10 @@ class Wiring(unittest.TestCase):
     def test_near_rule(self):
         self.assertIn('R = Math.min(PARKED.r, NEAR_R)', cut('  function parkedLay(now) {', '  function updateParked('))
         self.assertIn('R = Math.min(FURN.r, NEAR_R)', cut('  function furnLay() {', '  function updateFurniture('))
+        u = cut('  function updateFurniture(now) {', '  // a run\'s road height at s')
+        self.assertIn('lx = FURN.arms ? FURN_ARM.lensX : 0.33', u)   # a mast arm head's lens sits 0.14 in front of its middle
+        self.assertIn('const P = FURN.peds;', u)                      # the pedestrian heads on the same lamps
+        self.assertIn("if (k === 'arm') _ss.set(rows[i + 5], 1, 1);", cut('  function furnLay() {', '  function updateFurniture('))
 
     def test_no_dashes_in_strings(self):
         for a, b in (('  // ---- the vehicles\' own faces', '  function trafficCreateFleet() {'), ('  // ---- parked cars', '  function trafficPrepareGraph(runs) {')):

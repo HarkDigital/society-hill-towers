@@ -32,7 +32,7 @@ const OLD = '?parked=old&carscale=1';
 const make = (touch, art, furn, coreHw, search = '') => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', 'SEARCH', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + roadGrid + traffic +
   'return {CAR_MODELS,carArtGeom,vehLoft,VART,trafficRuns,trafficCreateFleet,trafficFleet,PARKED,parkedInit,parkedLay,carSample,runHydrants,parkHalfW,FURN,furnInit,furnCell,TRAFFIC,camera,setReady:()=>{trafficReady=true;},' +
   'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms,' +
-  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom,septaRoadAdd,SRG,PARK_MED,PARK_MED_GAP,PARK_TWIN_GAP};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
+  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom,septaRoadAdd,SRG,PARK_MED,PARK_MED_GAP,PARK_TWIN_GAP,FURN_KINDS,FURN_ARM,streetInside,furnMedian};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
 // the cars: every kind's near and far body at its real size, every uv inside the atlas
 for (const touch of [false, true]) {
   const a = make(touch, true);
@@ -76,7 +76,7 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
 // a signalised four-way junction of two secondaries, a stop sign 20 m up a residential street, a hydrant in the road
 {
   const F = { sig: [0, 0], stop: [6, 160], hyd: [200, 2], bench: [], bin: [] };   // 0.5 m units: the stop at (3, 80) on the one-way street, the hydrant at (100, 1) in the road
-  const a = make(false, false, F);
+  const a = make(false, false, F, undefined, '?signals=old');   // Round 239: the old poles behind ?signals=old
   a.trafficRuns.push(run([[0, 0], [300, 0]], 3, false), run([[0, 0], [-300, 0]], 3, false), run([[0, 0], [0, 300]], 3, false), run([[0, 0], [0, -300]], 3, false), run([[3, 120], [3, 0.1]], 5, true));
   a.furnInit();
   const rows = a.furnCell(0 * 100003 + 0), kinds = ['pole', 'head', 'stop', 'bus', 'hyd', 'bench', 'bin'], got = {};
@@ -94,7 +94,7 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
 // approach: each pole stands 1.6 m behind both kerbs, at the corner of the streets as they are drawn, not of the node
 {
   const F = { sig: [120, 144], stop: [], hyd: [], bench: [], bin: [] };
-  const a = make(false, false, F);
+  const a = make(false, false, F, undefined, '?signals=old');
   a.trafficRuns.push(run([[60, 60], [300, 60]], 1, false), run([[60, 60], [-200, 60]], 1, false), run([[60, 60], [60, 300]], 3, false), run([[60, 60], [60, -200]], 3, false));
   a.furnInit();
   const rows = a.furnCell(0), poles = [];
@@ -293,13 +293,94 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
 }
 // the furniture's geometry as plain triangles: an indexed part copied without its index drew slivers across the street
 {
-  const a = make(false, false), G = a.furnGeoms();
-  const longest = {};
-  for (const k of Object.keys(G)) {
-    const p = G[k].attributes.position.array; let m = 0;
-    for (let i = 0; i < p.length; i += 9) for (const [u, v] of [[0, 3], [3, 6], [6, 0]]) m = Math.max(m, Math.hypot(p[i + u] - p[i + v], p[i + u + 1] - p[i + v + 1], p[i + u + 2] - p[i + v + 2]));
-    longest[k] = +m.toFixed(2);
+  for (const [name, search, touch] of [['furnGeom', '', false], ['furnGeomOld', '?signals=old', false], ['furnGeomTouch', '', true]]) {
+    const a = make(touch, false, undefined, undefined, search), G = a.furnGeoms();
+    const longest = {}, box = {};
+    for (const k of Object.keys(G)) {
+      const p = G[k].attributes.position.array; let m = 0;
+      for (let i = 0; i < p.length; i += 9) for (const [u, v] of [[0, 3], [3, 6], [6, 0]]) m = Math.max(m, Math.hypot(p[i + u] - p[i + v], p[i + u + 1] - p[i + v + 1], p[i + u + 2] - p[i + v + 2]));
+      longest[k] = +m.toFixed(2);
+      G[k].computeBoundingBox(); const b = G[k].boundingBox; box[k] = [b.min.x, b.min.y, b.min.z, b.max.x, b.max.y, b.max.z].map((v) => +v.toFixed(3));
+    }
+    const streams = {};   // every vertex stream's bytes per vertex (never 1 or 3: WebKit's Metal backend pads a copy)
+    for (const k of Object.keys(G)) for (const [nm, at] of Object.entries(G[k].attributes)) streams[k + '.' + nm] = at.itemSize * at.array.BYTES_PER_ELEMENT;
+    out[name] = { tris: Object.fromEntries(Object.keys(G).map((k) => [k, G[k].attributes.position.count / 3])), longest, box, streams, indexed: Object.keys(G).filter((k) => G[k].index) };
   }
-  out.furnGeom = { tris: Object.fromEntries(Object.keys(G).map((k) => [k, G[k].attributes.position.count / 3])), longest, indexed: Object.keys(G).filter((k) => G[k].index) };
+}
+// ---- the mast arms (Round 239): a junction's rows, as a list of kinds with places
+const furnRows = (a, key) => {
+  const rows = a.furnCell(key || 0), K = a.FURN_KINDS, got = {};
+  for (let i = 0; i < rows.length; i += 6) (got[K[rows[i]]] = got[K[rows[i]]] || []).push({ x: rows[i + 1], y: rows[i + 2], z: rows[i + 3], yaw: rows[i + 4], ex: rows[i + 5] });
+  return got;
+};
+const r1 = (v) => Math.round(v * 10) / 10;
+const sortP = (ps) => ps.map((p) => [r1(p.x), r1(p.z)]).sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+// a head's facing (fx, fz), whether it hangs across the junction from the drivers it faces, and its place across their way
+// (+ the driver's right as they drive in along -f)
+const headInfo = (h) => { const fx = Math.cos(h.yaw), fz = -Math.sin(h.yaw); return { fx: +fx.toFixed(3), fz: +fz.toFixed(3), across: fx * h.x + fz * h.z < 0, right: r1(fz * h.x - fx * h.z), y: +h.y.toFixed(2) }; };
+const armInfo = (r) => ({ x: r1(r.x), z: r1(r.z), y: +r.y.toFixed(2), L: +r.ex.toFixed(2), dx: +Math.cos(r.yaw).toFixed(3), dz: +(-Math.sin(r.yaw)).toFixed(3) });
+const summary = (a, got) => ({ poles: sortP(got.pole || []), posts: sortP(got.post || []), arms: (got.arm || []).map(armInfo), heads: (got.head || []).map(headInfo),
+  groups: [...new Set((got.head || []).map((h) => Math.floor(h.ex)))].sort(), peds: (got.ped || []).length, pedGroups: [...new Set((got.ped || []).map((h) => Math.floor(h.ex)))].sort(),
+  // the arm's reach: every head hangs on an arm of its pole, at the arm's height, within its length
+  onArm: (got.head || []).filter((h) => Math.abs(h.y - (a.FURN_ARM.armY - a.FURN_ARM.headDrop)) < 0.01).every((h) => (got.arm || []).some((r) => { const dx = Math.cos(r.yaw), dz = -Math.sin(r.yaw), s = (h.x - r.x) * dx + (h.z - r.z) * dz, o = Math.abs(-(h.x - r.x) * dz + (h.z - r.z) * dx); return o < 0.01 && s > 0 && s < r.ex; })),
+  sg: { ...a.FURN.sg } });
+{
+  // a four-way of two two-way secondaries (5.5 m to the kerb): a mast pole on each corner, the far right corner of one
+  // approach each, its arm square across that approach over its one moving lane, a head there and one on the pole
+  const F = { sig: [0, 0], stop: [], hyd: [], bench: [], bin: [] };
+  const a = make(false, false, F);
+  a.trafficRuns.push(run([[0, 0], [300, 0]], 3, false), run([[0, 0], [-300, 0]], 3, false), run([[0, 0], [0, 300]], 3, false), run([[0, 0], [0, -300]], 3, false));
+  a.furnInit();
+  out.armsFour = summary(a, furnRows(a));
+}
+{
+  // South Broad Street: two one-way carriageways (6.5 m half widths, 12 m apart, overlapping a metre like the drawn ones)
+  // crossing a two-way secondary, its signal mapped on three approaches 12 to 15 m apart; the drawn streets in the road
+  // grid as every tier writes them. One junction, its poles behind the outer kerbs, none on the asphalt or the median
+  const F = { sig: [-12, -30, 12, 28, -12, 0], stop: [], hyd: [], bench: [], bin: [] };
+  const a = make(false, false, F);
+  a.trafficRuns.push(run([[-6, -300], [-6, 0]], 2, true), run([[-6, 0], [-6, 300]], 2, true), run([[6, 300], [6, 0]], 2, true), run([[6, 0], [6, -300]], 2, true),
+    run([[-6, 0], [-300, 0]], 3, false), run([[6, 0], [300, 0]], 3, false), run([[-6, 0], [6, 0]], 3, false));
+  for (const [x0, z0, x1, z1, hw, cls] of [[-6, -300, -6, 300, 6.5, 2], [6, -300, 6, 300, 6.5, 2], [-300, 0, 300, 0, 5.5, 3]]) a.septaRoadAdd(x0, z0, x1, z1, hw, cls);
+  a.furnInit();
+  const got = furnRows(a), s = summary(a, got), poles = [...(got.pole || []), ...(got.post || [])];
+  s.junctions = a.FURN.junctions.length;
+  s.onStreet = poles.filter((p) => a.streetInside(p.x, p.z, 0.4)).length;
+  s.onMedian = poles.filter((p) => a.furnMedian(p.x, p.z)).length;
+  // a pole stood on the median (x = 0) is dropped; one stood in a carriageway is moved out to the kerb
+  s.medianPole = a.furnMedian(0, 10);
+  out.armsBroad = s;
+}
+{
+  // South Broad by Walnut: only the west carriageway (southbound) has a node at the crossing; the east one (northbound,
+  // 13 m off) runs straight past it in one run, and so does Walnut (one-way west) across it. The east carriageway is
+  // found as the twin, so the east corners stand behind its kerb, not in it
+  const F = { sig: [-12, 0], stop: [], hyd: [], bench: [], bin: [] };
+  const a = make(false, false, F);
+  a.trafficRuns.push(run([[-6, -300], [-6, 0]], 2, true), run([[-6, 0], [-6, 300]], 2, true), run([[7, 300], [7, -300]], 2, true),
+    run([[300, 0], [-6, 0]], 5, true), run([[-6, 0], [-300, 0]], 5, true));
+  for (const [x0, z0, x1, z1, hw, cls] of [[-6, -300, -6, 300, 6.5, 2], [7, -300, 7, 300, 6.5, 2], [-300, 0, 300, 0, 3.5, 5]]) a.septaRoadAdd(x0, z0, x1, z1, hw, cls);
+  a.furnInit();
+  const J = a.FURN.junctions[0], got = furnRows(a, Math.floor(J.x / 160) * 100003 + Math.floor(J.z / 160)), s = summary(a, got), poles = [...(got.pole || []), ...(got.post || [])];
+  s.onStreet = poles.filter((p) => a.streetInside(p.x, p.z, 0.4)).length;
+  out.armsTwin = s;
+}
+{
+  // Center City: a one-way street west crossing a one-way street south (5.5 m half widths): two approaches, so two mast
+  // poles (the northwest and southwest corners), their arms over both moving lanes, and a post on each other corner
+  const F = { sig: [0, 0], stop: [], hyd: [], bench: [], bin: [] };
+  const a = make(false, false, F);
+  a.trafficRuns.push(run([[300, 0], [0, 0]], 3, true), run([[0, 0], [-300, 0]], 3, true), run([[0, -300], [0, 0]], 3, true), run([[0, 0], [0, 300]], 3, true));
+  a.furnInit();
+  out.armsOneWay = summary(a, furnRows(a));
+}
+{
+  // a signalised mid-block crossing on a two-way street that runs straight through: a pole a crosswalk's width past it on
+  // each side, at the driver's right
+  const F = { sig: [0, 0], stop: [], hyd: [], bench: [], bin: [] };
+  const a = make(false, false, F);
+  a.trafficRuns.push(run([[-200, 0], [200, 0]], 3, false));
+  a.furnInit();
+  out.armsMid = summary(a, furnRows(a));
 }
 console.log(JSON.stringify(out));

@@ -45333,10 +45333,21 @@ float pinOccGate() {
   // two streets, a stop sign at the right of its stop line facing the driver, a SEPTA stop pole at the kerb of the street
   // its stop is on, and the rest where they are mapped, pushed off the carriageway. The lit lens of every head is a lamp
   // seen only from in front, the two streets of a junction taking turns on a 60 s cycle, so a junction shows its red and
-  // green day and night. Behind REAL; ?furniture=0 turns it off
+  // green day and night. Behind REAL; ?furniture=0 turns it off.
+  // Round 239 (Mike, Nov 11, from South Broad Street at night: "The traffic lights look really bad. Can we remodel those to
+  // be the ones that hang over the street to be more realistic?"): the signals are Philadelphia's mast arms now (FURN.arms,
+  // furnJunction below), and ?signals=old keeps the pole on every corner with its two box heads, placed as before
   const FURN = { on: REAL && !TIER2 && typeof STREET_FURN !== 'undefined' && !!STREET_FURN && !/[?&]furniture=0\b/.test(location.search),
-    r: isTouch ? 170 : 330, step: isTouch ? 20 : 25, cell: 160, ready: false, lx: 1e9, ly: 1e9, lz: 1e9, nodes: null, runs: null, done: new Map(), meshes: {}, heads: [], lamps: null, n: {}, cells: 0 };
-  const FURN_KINDS = ['pole', 'head', 'stop', 'bus', 'hyd', 'bench', 'bin'];
+    arms: !/[?&]signals=old\b/.test(location.search), junctions: null, peds: [], sg: { nodes: 0, junctions: 0, merged: 0, built: 0, poles: 0, posts: 0, arms: 0, heads: 0, peds: 0, pushed: 0, dropped: 0, through: 0, armMax: 0, armSum: 0 },
+    r: isTouch ? 170 : 330, step: isTouch ? 20 : 25, cell: 160, ready: false, layMs: 0, cellMs: 0, lx: 1e9, ly: 1e9, lz: 1e9, nodes: null, runs: null, done: new Map(), meshes: {}, heads: [], lamps: null, n: {}, cells: 0 };
+  // 'arm', 'post' and 'ped' (Round 239) only under FURN.arms; a row's kind is its index here, so new kinds go on the end
+  const FURN_KINDS = ['pole', 'head', 'stop', 'bus', 'hyd', 'bench', 'bin', 'arm', 'post', 'ped'];
+  // the mast arms' measures (Round 239): c behind each kerb for a pole, the arm's height and a head's middle below it (a
+  // head's foot 4.8 m over the pole's ground), the pole's own head and the pedestrian heads, a lit lens's place in front of
+  // the head's middle, the signal nodes of one junction merged within merge metres of each other's middles, the run ends
+  // within reach of a middle taken as its streets (and a divided street's other carriageway within twin), and the arm's
+  // length kept between armMin and armMax
+  const FURN_ARM = { c: 1.6, armY: 6.1, headDrop: 0.79, poleHeadY: 3.65, poleHeadX: 0.2, pedY: 2.55, pedX: 0.25, lensX: 0.14, merge: 16, reach: 18, twin: 16, armMin: 2.6, armMax: 15.5, slice: 4 };
   function furnSignTexture() {
     // the stop sign and the SEPTA stop's plate, drawn once: an octagon of red inside white with its word, and a blue plate
     // with a bus over a white panel; a grey patch for the posts and the plates' backs
@@ -45402,15 +45413,48 @@ float pinOccGate() {
     const slat = [0.035, 0.07, 0.05];
     G.bench = merge([B(1.6, 0.06, 0.42, 0, 0.46, 0, slat), B(1.6, 0.4, 0.05, 0, 0.74, -0.2, slat), B(0.06, 0.46, 0.42, -0.72, 0.23, 0, dark), B(0.06, 0.46, 0.42, 0.72, 0.23, 0, dark)]);
     G.bin = merge([C(0.28, 0.25, 0.86, isTouch ? 8 : 12, 0, 0.43, 0, [0.03, 0.06, 0.045]), C(0.29, 0.29, 0.05, isTouch ? 8 : 12, 0, 0.88, 0, dark)]);
+    if (FURN.arms) {
+      // Round 239: Philadelphia's signals as Street View shows them on Broad, Washington and Walnut: black steel, a
+      // yellow three-lens head with black tunnel visors on a black backplate edged in yellow. The mast pole (with the
+      // arm's clamp at FURN_ARM.armY), the corner post with no arm, the arm itself (a tapered tube from 0 to 1 along x,
+      // stretched to its length by the instance's scale: r149 divides the normal by each axis's scale, so the taper
+      // stays lit right), the head (its middle lens at 0, the hanger reaching FURN_ARM.headDrop up to the arm) and the
+      // pedestrian head. One material, the furniture's own (no new program)
+      const steel = [0.03, 0.032, 0.035], yel = [0.5, 0.3, 0.018], rim = [0.7, 0.5, 0.03], blk = [0.012, 0.012, 0.013], sg = isTouch ? 8 : 12;
+      const flip = (g) => {   // the same triangles seen from the other side: the visors' insides
+        for (const nm of ['position', 'normal', 'color', 'uv']) { const at = g.attributes[nm]; if (!at) continue; const a = at.array, s = at.itemSize; for (let i = 0; i < at.count; i += 3) for (let c = 0; c < s; c++) { const t = a[(i + 1) * s + c]; a[(i + 1) * s + c] = a[(i + 2) * s + c]; a[(i + 2) * s + c] = t; } }
+        const n = g.attributes.normal.array; for (let i = 0; i < n.length; i++) n[i] = -n[i];
+        return g;
+      };
+      const tube = (r0, r1, h, s, y) => col(new THREE.CylinderGeometry(r0, r1, h, s, 1, true).translate(0, y, 0), steel);
+      const A = FURN_ARM;
+      G.pole = merge([tube(0.105, 0.15, 7.2, sg, 3.6), C(0.25, 0.28, 0.5, sg, 0, 0.25, 0, steel), C(0.02, 0.105, 0.14, sg, 0, 7.27, 0, steel), C(0.165, 0.165, 0.42, sg, 0, A.armY, 0, steel)]);
+      G.post = merge([tube(0.075, 0.1, 3.9, sg, 1.95), C(0.17, 0.19, 0.36, sg, 0, 0.18, 0, steel), C(0.02, 0.075, 0.1, sg, 0, 3.95, 0, steel)]);
+      G.arm = merge([col(new THREE.CylinderGeometry(0.06, 0.1, 1, isTouch ? 6 : 8, 1, false).rotateZ(-Math.PI / 2).translate(0.5, 0, 0), steel)]);
+      const hd = [B(0.24, 1.02, 0.36, 0, 0, 0, yel), B(0.02, 1.3, 0.64, -0.03, 0, 0, blk), B(0.07, A.headDrop - 0.5, 0.07, -0.02, 0.5 + (A.headDrop - 0.5) / 2, 0, blk)];
+      // the backplate's yellow edge, four strips just proud of its face, seen from in front only (a slab behind the plate
+      // showed its whole back yellow to the cars it faces away from)
+      if (!isTouch) for (const [w, h, y, z] of [[0.64, 0.05, 0.625, 0], [0.64, 0.05, -0.625, 0], [0.05, 1.2, 0, 0.295], [0.05, 1.2, 0, -0.295]]) hd.push(col(new THREE.PlaneGeometry(w, h).rotateY(Math.PI / 2).translate(-0.016, y, z), rim));
+      const vs = isTouch ? 3 : 4;
+      for (const y of FURN_LENS_Y) {
+        hd.push(col(new THREE.CircleGeometry(0.13, isTouch ? 8 : 10).rotateY(Math.PI / 2).translate(0.122, y, 0), lens));
+        hd.push(col(new THREE.CylinderGeometry(0.16, 0.16, 0.24, vs, 1, true, Math.PI, Math.PI).rotateZ(-Math.PI / 2).translate(0.242, y, 0), blk));
+        if (!isTouch) hd.push(flip(col(new THREE.CylinderGeometry(0.15, 0.15, 0.24, vs, 1, true, Math.PI, Math.PI).rotateZ(-Math.PI / 2).translate(0.242, y, 0), blk)));
+      }
+      G.head = merge(hd);
+      G.ped = merge([B(0.2, 0.44, 0.42, 0, 0, 0, blk), B(0.01, 0.36, 0.34, 0.105, 0, 0, lens), B(0.16, 0.02, 0.42, 0.18, 0.21, 0, blk), B(0.07, 0.08, 0.07, -0.13, 0, 0, blk)]);
+    }
     return G;
   }
+  // true once the furniture is ready. Round 239: the junctions are worked out FURN_ARM.slice ms a frame (3,908 nodes took
+  // 21 ms in one frame on the Mac), the rest as before in the frame that finishes them
   function furnInit() {
-    const D = STREET_FURN, C = FURN.cell, nodes = new Map();
+    const D = STREET_FURN, C = FURN.cell, nodes = new Map(), tI = performance.now();
     const add = (k, arr) => { if (!arr) return; for (let i = 0; i + 1 < arr.length; i += 2) { const x = arr[i] * 0.5, z = arr[i + 1] * 0.5, key = Math.floor(x / C) * 100003 + Math.floor(z / C); let o = nodes.get(key); if (!o) nodes.set(key, o = []); o.push(k, x, z); } };
-    for (const k of ['sig', 'stop', 'hyd', 'bench', 'bin']) add(k, D[k]);
-    const S = typeof SEPTA_STOPS !== 'undefined' && SEPTA_STOPS && SEPTA_STOPS.bus;
-    if (S && S.x) { const a = new Array(S.x.length * 2); for (let i = 0; i < S.x.length; i++) { a[i * 2] = S.x[i]; a[i * 2 + 1] = S.z[i]; } add('busstop', a); }
-    FURN.nodes = nodes;
+    if (FURN.runs) {   // a later frame: the junctions' next slice
+      if (FURN.arms && !furnJunctions(D.sig || [], tI + FURN_ARM.slice)) { const d = performance.now() - tI; FURN.initMs += d; FURN.initMax = Math.max(FURN.initMax || 0, d); return false; }
+      return furnInitEnd(nodes, add, tI);
+    }
     // the traffic runs by cell (every class but the motorways'), for the streets a junction joins and the kerb a sign stands at
     const runs = new Map();
     for (let i = 0; i < trafficRuns.length; i++) {
@@ -45423,11 +45467,28 @@ float pinOccGate() {
       }
     }
     FURN.runs = runs;
+    FURN.initMs = 0;
+    if (FURN.arms && !furnJunctions(D.sig || [], tI + FURN_ARM.slice)) { const d = performance.now() - tI; FURN.initMs += d; FURN.initMax = Math.max(FURN.initMax || 0, d); return false; }
+    return furnInitEnd(nodes, add, tI);
+  }
+  function furnInitEnd(nodes, add, tI) {
+    const D = STREET_FURN, C = FURN.cell;
+    // the signals: under FURN.arms one record a junction (furnJunctions: OpenStreetMap's nodes on a wide street's approaches
+    // merged), each in the cell of its middle; else every node as it was
+    if (FURN.arms) {
+      for (let j = 0; j < FURN.junctions.length; j++) { const J = FURN.junctions[j], key = Math.floor(J.x / C) * 100003 + Math.floor(J.z / C); let o = nodes.get(key); if (!o) nodes.set(key, o = []); o.push('jx', j, 0); }
+    } else add('sig', D.sig);
+    for (const k of ['stop', 'hyd', 'bench', 'bin']) add(k, D[k]);
+    const S = typeof SEPTA_STOPS !== 'undefined' && SEPTA_STOPS && SEPTA_STOPS.bus;
+    if (S && S.x) { const a = new Array(S.x.length * 2); for (let i = 0; i < S.x.length; i++) { a[i * 2] = S.x[i]; a[i * 2 + 1] = S.z[i]; } add('busstop', a); }
+    FURN.nodes = nodes;
     const G = furnGeoms();
     const propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.1 });
     const signMat = new THREE.MeshStandardMaterial({ map: furnSignTexture(), roughness: 0.45, metalness: 0.05 });
-    const caps = { pole: isTouch ? 260 : 700, head: isTouch ? 520 : 1400, stop: isTouch ? 160 : 420, bus: isTouch ? 120 : 320, hyd: isTouch ? 160 : 420, bench: isTouch ? 120 : 400, bin: isTouch ? 120 : 400 };
+    const caps = { pole: isTouch ? 260 : 700, head: isTouch ? (FURN.arms ? 600 : 520) : (FURN.arms ? 1600 : 1400), stop: isTouch ? 160 : 420, bus: isTouch ? 120 : 320, hyd: isTouch ? 160 : 420, bench: isTouch ? 120 : 400, bin: isTouch ? 120 : 400,
+      arm: isTouch ? 260 : 700, post: isTouch ? 260 : 700, ped: isTouch ? 600 : 1600 };
     for (const k of FURN_KINDS) {
+      if (!G[k]) continue;   // ?signals=old: no arms, posts or pedestrian heads
       const m = new THREE.InstancedMesh(G[k], k === 'stop' || k === 'bus' ? signMat : propMat, caps[k]);
       m.count = 0; m.visible = false; m.frustumCulled = false; m.receiveShadow = true; m.userData.furn = k;
       groupCity.add(m);
@@ -45435,6 +45496,9 @@ float pinOccGate() {
     }
     FURN.lamps = vLampPoints(caps.head * 3, true);
     FURN.ready = true;
+    const d = performance.now() - tI;
+    FURN.initMs += d; FURN.initMax = Math.max(FURN.initMax || 0, d);
+    return true;
   }
   // the run segment nearest (x, z) within maxD among the cell's runs: { r, j, t, d, ux, uz, side, hw }
   function furnNearest(x, z, maxD) {
@@ -45458,6 +45522,309 @@ float pinOccGate() {
   }
   const furnY = (x, z) => groundMeshY(x, z) ?? siteY(x, z, 'ground');
   const _fuS = {};
+  // ---- the mast arms (Round 239). The old signals stood a pole 1.6 m behind both kerbs of each corner, the kerbs taken
+  // from the one node a signal resolved to; South Broad Street is mapped as two one-way carriageways with a node each, and
+  // OpenStreetMap often maps a wide street's signal on every approach, so a junction there was worked out two or three
+  // times from different middles, each with one carriageway's width: poles stood in the other carriageway, on the median
+  // and in the junction box. Now:
+  // - furnJunctions merges the signal nodes whose junction middles lie within FURN_ARM.merge of each other into one record;
+  // - furnJunction takes every run end within FURN_ARM.reach of any of its middles (and a street that runs straight
+  //   through), groups them by the way they leave into streets, and treats each street as a strip across its own frame
+  //   (every carriageway's lateral place and its DRAWN half width, from the road grid every tier writes), so a divided
+  //   street is one wide street with its inbound carriageway on the driver's right;
+  // - a corner is where two neighbouring streets' kerb lines, each FURN_ARM.c behind the kerb, meet;
+  // - each approach that traffic comes in along gets its mast pole on the far right corner (the corner after the street
+  //   straight on), its arm square across the approach over the far side, a head over each moving lane facing the driver
+  //   and one more on the pole (a far side's open kerb, a mid-block crossing and the stem of a T take the kerb itself);
+  // - a corner no arm stands on gets a post; every corner's pole carries a pedestrian head across each of its crosswalks;
+  // - every pole is checked against every drawn street (streetPush: moved square out to 0.45 m past the edge, dropped when
+  //   it lies more than 12 m in or no move clears it) and against a median (furnMedian), and its arm is laid from where it
+  //   ends up; the heads take turns by the street's axis, two groups a junction, on the old 60 s cycle.
+  // __dbg.signals() reports the counts and surveys every junction; ?signals=old keeps the old poles
+  const furnAng = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+  // every run end within R of any of the points: [{ ri, e, x, z }], each run's ends once
+  function furnEndsNear(pts, R) {
+    const C = FURN.cell, seen = new Set(), out = [];
+    for (const p of pts) for (const ri of FURN.runs.get(Math.floor(p[0] / C) * 100003 + Math.floor(p[1] / C)) || []) {
+      if (seen.has(ri)) continue;
+      seen.add(ri);
+      const r = trafficRuns[ri], n = r.xs.length;
+      for (const e of [0, 1]) {
+        const ex = e ? r.xs[n - 1] : r.xs[0], ez = e ? r.zs[n - 1] : r.zs[0];
+        for (const q of pts) if ((ex - q[0]) ** 2 + (ez - q[1]) ** 2 <= R * R) { out.push({ ri, e, x: ex, z: ez }); break; }
+      }
+    }
+    return out;
+  }
+  // a signal node's junction middle: the node most of the ends within reach share (within 2 m), else their mean, else the
+  // nearest run's point (a mid-block crossing), else the node
+  function furnCentre(x, z) {
+    const ends = furnEndsNear([[x, z]], FURN_ARM.reach);
+    if (!ends.length) { const n = furnNearest(x, z, 20); return n ? [n.cx, n.cz] : [x, z]; }
+    let best = null;
+    for (const p of ends) { const g = ends.filter((q) => Math.hypot(q.x - p.x, q.z - p.z) < 2); if (!best || g.length > best.length) best = g; }
+    const g = best.length >= 2 ? best : ends;
+    let cx = 0, cz = 0; for (const q of g) { cx += q.x / g.length; cz += q.z / g.length; }
+    return [cx, cz];
+  }
+  // the junctions: [{ x, z, m: [middles] }] in FURN.junctions, a node joining the nearest junction whose middle lies within
+  // FURN_ARM.merge of its own; nodes in order until performance.now() passes until (at least 64 a call): true when all are done
+  function furnJunctions(sig, until) {
+    const M = FURN_ARM.merge, q = FURN.jq || (FURN.jq = { i: 0, grid: new Map() }), grid = q.grid, J = FURN.junctions || (FURN.junctions = []);
+    for (let i = q.i, n = 0; i + 1 < sig.length; i += 2, n++) {
+      if (n >= 64 && performance.now() > until) { q.i = i; return false; }
+      const c = furnCentre(sig[i] * 0.5, sig[i + 1] * 0.5), gx = Math.floor(c[0] / M), gz = Math.floor(c[1] / M);
+      let hit = null, hd = M;
+      for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) for (const j of grid.get(a * 100003 + b) || []) { const d = Math.hypot(j.x - c[0], j.z - c[1]); if (d < hd) { hd = d; hit = j; } }
+      FURN.sg.nodes++;
+      if (hit) {
+        FURN.sg.merged++;
+        if (!hit.m.some((q) => Math.hypot(q[0] - c[0], q[1] - c[1]) < 1)) hit.m.push(c);
+        hit.x = 0; hit.z = 0; for (const q of hit.m) { hit.x += q[0] / hit.m.length; hit.z += q[1] / hit.m.length; }
+        continue;
+      }
+      const j = { x: c[0], z: c[1], m: [c] }, k = gx * 100003 + gz;
+      J.push(j);
+      let o = grid.get(k); if (!o) grid.set(k, o = []); o.push(j);
+    }
+    q.i = sig.length; q.grid = null;
+    FURN.sg.junctions = J.length;
+    return true;
+  }
+  // the drawn half width of the street along (ux, uz) through (x, z): the widest segment of the road grid within 2.5 m of
+  // the point running its way, or 0
+  function furnDrawnHw(x, z, ux, uz) {
+    const C = SEPTA_RG_CELL, gx = Math.floor(x / C), gz = Math.floor(z / C);
+    let hw = 0;
+    for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
+      const [q0, q1] = septaRoadCell(a, b), S = SRG.seg, ids = SRG.ids;
+      for (let q = q0; q < q1; q++) {
+        const k = ids[q], i = k * 4, h = SRG.hw[k] / 10;
+        if (!h || h <= hw) continue;
+        const ax = S[i], az = S[i + 1], dx = S[i + 2] - ax, dz = S[i + 3] - az, L = Math.hypot(dx, dz);
+        if (L < 0.5 || Math.abs(dx * uz - dz * ux) / L > 0.35) continue;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / (L * L), 0, 1);
+        if (Math.hypot(x - ax - dx * t, z - az - dz * t) < 2.5) hw = h;
+      }
+    }
+    return hw;
+  }
+  // a point between two drawn streets that run side by side, each within 6 m of it past its edge (a median, flush or raised)
+  function furnMedian(x, z) {
+    const C = SEPTA_RG_CELL, gx = Math.floor(x / C), gz = Math.floor(z / C), near = [];
+    for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
+      const [q0, q1] = septaRoadCell(a, b), S = SRG.seg, ids = SRG.ids;
+      for (let q = q0; q < q1; q++) {
+        const k = ids[q], i = k * 4, h = SRG.hw[k] / 10;
+        if (!h) continue;
+        const ax = S[i], az = S[i + 1], dx = S[i + 2] - ax, dz = S[i + 3] - az, L = Math.hypot(dx, dz);
+        if (L < 0.5) continue;
+        const t = ((x - ax) * dx + (z - az) * dz) / (L * L);
+        if (t < 0 || t > 1) continue;   // only a street alongside, not one that ends short of the point
+        const d = Math.hypot(x - ax - dx * t, z - az - dz * t);
+        if (d - h < 6) near.push([dx / L, dz / L, (-(dz) * (x - ax) + dx * (z - az)) / L]);
+      }
+    }
+    for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
+      const p = near[i], q = near[j], dot = p[0] * q[0] + p[1] * q[1];
+      if (Math.abs(p[0] * q[1] - p[1] * q[0]) < 0.26 && p[2] * q[2] * Math.sign(dot) < 0) return true;
+    }
+    return false;
+  }
+  // a pole's place on the sidewalk, or null (FURN.sg.dropped) when it cannot stand clear of every street and median
+  function furnKerb(x, z) {
+    const p = streetPush(x, z, 0.45, 12), D = FURN.sg.dropAt || (FURN.sg.dropAt = []);   // dropAt: every drop, for __dbg.signals('survey')
+    if (p === false) { FURN.sg.dropped++; D.push([Math.round(x), Math.round(z), 0]); return null; }
+    if (p) { x = p[0]; z = p[1]; FURN.sg.pushed++; }
+    if (furnMedian(x, z)) { FURN.sg.dropped++; D.push([Math.round(x), Math.round(z), 1]); return null; }
+    return [x, z];
+  }
+  // how far the other streets of the junction reach along (vx, vz) from its middle (their kerbs on that side), 0 at least
+  function furnReach(ways, vx, vz, skip) {
+    let s = 0;
+    for (const q of ways) {
+      if (skip.includes(q)) continue;
+      const k = q.px * vx + q.pz * vz;
+      if (Math.abs(k) < 0.5) continue;
+      s = Math.max(s, q.lo * k, q.hi * k);
+    }
+    return s;
+  }
+  // a junction's poles, arms, heads and pedestrian heads, by push(kind, x, z, yaw, extra, y)
+  function furnJunction(J, push) {
+    const A = FURN_ARM, cc = A.c, P0x = J.x, P0z = J.z, dirs = [], endRuns = new Set();
+    for (const q of furnEndsNear(J.m, A.reach)) {
+      const r = trafficRuns[q.ri];
+      endRuns.add(q.ri);
+      // the way out of the junction: toward the run's point 8 m along (the middle of a short run)
+      const s = Math.min(8, r.len * 0.5);
+      carSample(r, q.e ? r.len - s : s, 1, 0, _fuS);
+      let ux = _fuS.x - q.x, uz = _fuS.z - q.z; const L = Math.hypot(ux, uz);
+      if (L < 0.5) continue;
+      ux /= L; uz /= L;
+      const s2 = Math.min(12, r.len * 0.5);
+      carSample(r, q.e ? r.len - s2 : s2, 1, 0, _fuS);
+      const hw = furnDrawnHw(_fuS.x, _fuS.z, ux, uz) || (inCore(_fuS.x, _fuS.z) ? roadHalfW(_fuS.x, _fuS.z) : PARK_HW[r.cls]);
+      dirs.push({ ux, uz, x: q.x, z: q.z, hw, inb: !r.oneway || q.e === 1, ow: !!r.oneway, cls: r.cls });   // a one-way run's traffic arrives at its end
+    }
+    // a street that runs straight through (its run ends nowhere near): both ways out from its nearest point
+    const C = FURN.cell;
+    for (const p of J.m) for (const ri of FURN.runs.get(Math.floor(p[0] / C) * 100003 + Math.floor(p[1] / C)) || []) {
+      if (endRuns.has(ri)) continue;
+      const r = trafficRuns[ri];
+      let bd = 36, bs = -1;
+      for (let j = 0; j + 1 < r.xs.length; j++) {
+        const dx = r.xs[j + 1] - r.xs[j], dz = r.zs[j + 1] - r.zs[j], L2 = dx * dx + dz * dz || 1e-9, t = clamp(((p[0] - r.xs[j]) * dx + (p[1] - r.zs[j]) * dz) / L2, 0, 1);
+        const d2 = (r.xs[j] + dx * t - p[0]) ** 2 + (r.zs[j] + dz * t - p[1]) ** 2;
+        if (d2 < bd) { bd = d2; bs = r.cum[j] + (r.cum[j + 1] - r.cum[j]) * t; }
+      }
+      if (bs < 0) continue;
+      endRuns.add(ri);
+      FURN.sg.through++;
+      carSample(r, bs, 1, 0, _fuS);
+      const mx = _fuS.x, mz = _fuS.z, hx = Math.cos(_fuS.yaw), hz = -Math.sin(_fuS.yaw);
+      const hw = furnDrawnHw(mx, mz, hx, hz) || (inCore(mx, mz) ? roadHalfW(mx, mz) : PARK_HW[r.cls]);
+      dirs.push({ ux: hx, uz: hz, x: mx, z: mz, hw, inb: !r.oneway, ow: !!r.oneway, cls: r.cls }, { ux: -hx, uz: -hz, x: mx, z: mz, hw, inb: true, ow: !!r.oneway, cls: r.cls });
+    }
+    // a divided street's other carriageway, when only one of the two has a node here (South Broad by Walnut: the west one
+    // runs straight past 13 m off): a one-way run within FURN_ARM.twin of a middle, running alongside a one-way street of
+    // its class that already meets here, the other way
+    for (const p of J.m) for (const ri of FURN.runs.get(Math.floor(p[0] / C) * 100003 + Math.floor(p[1] / C)) || []) {
+      if (endRuns.has(ri)) continue;
+      const r = trafficRuns[ri];
+      if (!r.oneway) continue;
+      let bd = FURN_ARM.twin * FURN_ARM.twin, bs = -1;
+      for (let j = 0; j + 1 < r.xs.length; j++) {
+        const dx = r.xs[j + 1] - r.xs[j], dz = r.zs[j + 1] - r.zs[j], L2 = dx * dx + dz * dz || 1e-9, t = clamp(((p[0] - r.xs[j]) * dx + (p[1] - r.zs[j]) * dz) / L2, 0, 1);
+        const d2 = (r.xs[j] + dx * t - p[0]) ** 2 + (r.zs[j] + dz * t - p[1]) ** 2;
+        if (d2 < bd) { bd = d2; bs = r.cum[j] + (r.cum[j + 1] - r.cum[j]) * t; }
+      }
+      if (bs < 0) continue;
+      carSample(r, bs, 1, 0, _fuS);
+      const mx = _fuS.x, mz = _fuS.z, hx = Math.cos(_fuS.yaw), hz = -Math.sin(_fuS.yaw);
+      // the twin: a one-way end of the same class whose traffic runs the other way (its way out along the run's heading
+      // carries traffic in, or the reverse), parallel within 0.35 rad
+      const twin = dirs.some((d) => d.ow && d.cls === r.cls && Math.abs(d.ux * hz - d.uz * hx) < 0.34 && (d.ux * hx + d.uz * hz > 0 ? d.inb : !d.inb));
+      if (!twin) continue;
+      endRuns.add(ri);
+      FURN.sg.twins = (FURN.sg.twins || 0) + 1;
+      const hw = furnDrawnHw(mx, mz, hx, hz) || (inCore(mx, mz) ? roadHalfW(mx, mz) : PARK_HW[r.cls]);
+      dirs.push({ ux: hx, uz: hz, x: mx, z: mz, hw, inb: false, ow: true, cls: r.cls }, { ux: -hx, uz: -hz, x: mx, z: mz, hw, inb: true, ow: true, cls: r.cls });
+    }
+    // the streets: the ends grouped by the way they leave, each street a strip across its own frame (p, the right of u)
+    const ways = [];
+    for (const d of dirs) {
+      const a = Math.atan2(d.uz, d.ux);
+      let w = ways.find((q) => Math.abs(furnAng(q.a, a)) < 0.5);
+      if (!w) ways.push(w = { a, sx: 0, sz: 0, mem: [] });
+      w.mem.push(d); w.sx += d.ux; w.sz += d.uz; w.a = Math.atan2(w.sz, w.sx);
+    }
+    if (ways.length < 2) {   // nothing ends here: a crossing on the nearest street, both ways
+      const n = furnNearest(J.x, J.z, 20);
+      if (!n) return;
+      const hw = furnDrawnHw(n.cx, n.cz, n.ux, n.uz) || n.hw, ow = !!n.r.oneway;
+      ways.length = 0;
+      for (const sg of [1, -1]) ways.push({ a: Math.atan2(n.uz * sg, n.ux * sg), sx: n.ux * sg, sz: n.uz * sg, mem: [{ ux: n.ux * sg, uz: n.uz * sg, x: n.cx, z: n.cz, hw, inb: !ow || sg < 0, ow }] });
+    }
+    for (const w of ways) {
+      const L = Math.hypot(w.sx, w.sz) || 1;
+      w.ux = w.sx / L; w.uz = w.sz / L; w.px = -w.uz; w.pz = w.ux; w.a = Math.atan2(w.uz, w.ux);
+      w.lo = Infinity; w.hi = -Infinity; w.in0 = Infinity; w.in1 = -Infinity; w.hw = 0; w.inOw = false;
+      for (const d of w.mem) {
+        const n = (d.x - P0x) * w.px + (d.z - P0z) * w.pz;
+        w.lo = Math.min(w.lo, n - d.hw); w.hi = Math.max(w.hi, n + d.hw); w.hw = Math.max(w.hw, d.hw);
+        // the lanes coming in: a two-way street's half on the driver's right (toward -p as they drive in along -u)
+        if (d.inb) { w.in0 = Math.min(w.in0, n - d.hw); w.in1 = Math.max(w.in1, d.ow ? n + d.hw : n); w.inOw = w.inOw || d.ow; }
+      }
+    }
+    ways.sort((p, q) => p.a - q.a);
+    let wide = ways[0];
+    for (const w of ways) if (w.hw > wide.hw) wide = w;
+    for (const w of ways) w.g = Math.abs(Math.sin(w.a - wide.a)) > 0.707 ? 1 : 0;   // two groups, by the widest street's axis
+    const nW = ways.length, ph = hash01(J.x * 0.137 + J.z * 0.731) * 60, corners = [];
+    J.nW = nW; J.hw = ways.map((w) => +w.hw.toFixed(1));   // for __dbg.signals('list')
+    for (let i = 0; i < nW; i++) {
+      const Aw = ways[i], Bw = ways[(i + 1) % nW];
+      let span = Bw.a - Aw.a; if (span <= 0) span += Math.PI * 2;
+      const c = { A: Aw, B: Bw, span, flat: span >= Math.PI * 0.9, open: span > Math.PI * 1.6, P: null };
+      if (!c.flat) {
+        // the meeting of A's kerb line on B's side (A.hi, as B lies toward A's +p) and B's on A's (B.lo), each cc behind it
+        const tA = Aw.hi + cc, tB = Bw.lo - cc, det = Aw.px * Bw.pz - Aw.pz * Bw.px;
+        const X = (tA * Bw.pz - Aw.pz * tB) / det, Z = (Aw.px * tB - tA * Bw.px) / det;
+        if (Math.hypot(X, Z) < 32) c.P = [P0x + X, P0z + Z];
+      } else if (!c.open) c.P = [P0x + Aw.px * (Aw.hi + cc), P0z + Aw.pz * (Aw.hi + cc)];   // the far side of a T, a mid-block crossing
+      Aw.cNext = c;
+      corners.push(c);
+    }
+    const sg = FURN.sg;
+    sg.built++;
+    // a pole, placed once (a corner's, or the kerb's for c null): on the sidewalk clear of every street and median, with its
+    // pedestrian heads (a corner's two, a mid-block crossing's one), or null where it cannot stand
+    const poleAt = (c, P, kind) => {
+      if (c && c.Q !== undefined) return c.Q;
+      const Q = furnKerb(P[0], P[1]);
+      if (c) c.Q = Q;
+      if (!Q) return null;
+      Q.by = furnY(Q[0], Q[1]);
+      push(kind, Q[0], Q[1], 0, 0, Q.by);
+      if (kind === 'pole') sg.poles++; else sg.posts++;
+      furnPeds(Q, Q.by, c && (!c.flat || nW === 2) ? c : null, nW, ph, push);
+      return Q;
+    };
+    // the approaches: each street traffic comes in along
+    for (const w of ways) {
+      if (!(w.in1 > w.in0)) continue;
+      const dx = -w.ux, dz = -w.uz;
+      let F = null, fd = 0.6;
+      for (const q of ways) { const e = Math.abs(furnAng(q.a, w.a + Math.PI)); if (q !== w && e < fd) { fd = e; F = q; } }
+      let Q = null;
+      if (F && F.cNext.P && !F.cNext.flat) Q = poleAt(F.cNext, F.cNext.P, 'pole');
+      else if (F) {   // nothing on the driver's right: on F's kerb past the streets that cross, or a crosswalk's width past a mid-block crossing
+        const s = Math.max(1.5, furnReach(ways, F.ux, F.uz, [F, w])) + 1.5;
+        Q = poleAt(F.cNext.open ? null : F.cNext, [P0x + F.ux * s + F.px * (F.hi + cc), P0z + F.uz * s + F.pz * (F.hi + cc)], 'pole');
+      } else {   // the stem of a T: on the far kerb across the junction, beyond the approach's own right kerb
+        const s = furnReach(ways, dx, dz, [w]) + cc;
+        Q = poleAt(null, [P0x + dx * s + w.px * (w.in0 - cc), P0z + dz * s + w.pz * (w.in0 - cc)], 'pole');
+      }
+      if (!Q && F) {   // the far right corner stands in a street or a median: the arm from the far left corner, reaching right
+        const cL = corners.find((c) => c.B === F && c.P && !c.flat);
+        if (cL) { Q = poleAt(cL, cL.P, 'pole'); if (Q) sg.leftArms = (sg.leftArms || 0) + 1; }
+      }
+      if (!Q) { sg.unsignalled = (sg.unsignalled || 0) + 1; continue; }
+      const by = Q.by, tP = (Q[0] - P0x) * w.px + (Q[1] - P0z) * w.pz;
+      // the moving lanes: past a parking lane at each kerb of a street wide enough to park one
+      const park = w.in1 - w.in0 > 6 ? 2.3 : 0, a0 = w.in0 + park, a1 = w.inOw ? w.in1 - park : w.in1 - 0.2;
+      const nH = clamp(Math.round((a1 - a0) / 3.6), 1, 3), lanes = [];
+      for (let h = 0; h < nH; h++) lanes.push(a0 + (h + 0.5) * (a1 - a0) / nH);
+      const side = lanes.reduce((s, h) => s + h, 0) / nH > tP ? 1 : -1;
+      const kept = lanes.filter((h) => (h - tP) * side > 0.6 && Math.abs(h - tP) <= A.armMax - 0.45);
+      const L = kept.length ? Math.max(A.armMin, Math.max(...kept.map((h) => Math.abs(h - tP))) + 0.45) : 0;
+      const g = w.g + ph / 100, yaw = Math.atan2(-w.uz, w.ux);   // facing the driver, back out along the street they come in on
+      if (L) {
+        push('arm', Q[0], Q[1], Math.atan2(-w.pz * side, w.px * side), L, by + A.armY);
+        sg.arms++; sg.armSum += L; sg.armMax = Math.max(sg.armMax, L);
+        for (const h of kept) { const o = h - tP; push('head', Q[0] + w.px * o, Q[1] + w.pz * o, yaw, g, by + A.armY - A.headDrop); sg.heads++; }
+      }
+      push('head', Q[0] + w.ux * A.poleHeadX, Q[1] + w.uz * A.poleHeadX, yaw, g, by + A.poleHeadY);
+      sg.heads++;
+    }
+    // the corners no arm stands on: a post with its pedestrian heads (the far side of a T stays bare: the arms stand there)
+    for (const c of corners) if (c.Q === undefined && c.P && !(c.flat && nW > 2)) poleAt(c, c.P, 'post');
+  }
+  // a corner's pedestrian heads: one across each street it stands on, facing the people waiting on the other side, lit
+  // with the traffic that runs the way they walk (the other group); a mid-block crossing's one across its street
+  function furnPeds(Q, by, c, nW, ph, push) {
+    if (!c) return;
+    const A = FURN_ARM, y = by + A.pedY;
+    const across = [[c.A, -1]];   // the corner lies on A's +p side: its crosswalk runs toward -p
+    if (!c.flat) across.push([c.B, 1]);   // and on B's -p side
+    else if (nW > 2) return;
+    for (const [w, s] of across) {
+      const fx = w.px * s, fz = w.pz * s;
+      push('ped', Q[0] + fx * A.pedX, Q[1] + fz * A.pedX, Math.atan2(-fz, fx), (1 - w.g) + ph / 100, y);
+      FURN.sg.peds++;
+    }
+  }
   // the hydrants OpenStreetMap does not have (it maps about 600 of the city's 25,000): one about every 95 m of a street that
   // carries traffic, on the side the run's own hash picks, as [s, side] pairs along the run. The furniture stands them
   // (furnCell) and the parked cars leave each its 15 feet (parkedExpand), so a kerb's row of cars breaks where one stands
@@ -45471,14 +45838,16 @@ float pinOccGate() {
   function furnCell(key) {
     let out = FURN.done.get(key);
     if (out) return out;
+    const tC = performance.now();
     out = [];
     const a = FURN.nodes.get(key) || [];
-    const push = (k, x, z, yaw, ex) => out.push(FURN_KINDS.indexOf(k), x, furnY(x, z), z, yaw, ex || 0);
+    const push = (k, x, z, yaw, ex, y) => out.push(FURN_KINDS.indexOf(k), x, y ?? furnY(x, z), z, yaw, ex || 0);   // y: the mast arms' own heights (Round 239)
     const yawOf = (dx, dz) => Math.atan2(-dz, dx);
     const offRoad = (x, z) => { const n = furnNearest(x, z, 14); if (n && n.d < n.hw + 0.4) { const k = n.hw + 0.7; return [n.cx - n.uz * n.side * k, n.cz + n.ux * n.side * k]; } return [x, z]; };
     for (let i = 0; i < a.length; i += 3) {
       const k = a[i], x = a[i + 1], z = a[i + 2];
-      if (k === 'sig') {
+      if (k === 'jx') furnJunction(FURN.junctions[x], push);   // Round 239: x is the junction's index
+      else if (k === 'sig') {
         // the streets that meet here: each run end within 18 m, as the way out of the junction along it, with its own
         // drawn half width taken 12 m out (at the junction itself the core's grid answers for whichever street is nearer)
         const dirs = [], ends = [];
@@ -45561,12 +45930,14 @@ float pinOccGate() {
     }
     FURN.done.set(key, out);
     FURN.cells++;
+    FURN.cellMs += performance.now() - tC;
     return out;
   }
   function furnLay() {
+    const tL = performance.now();
     const ex = camera.position.x, ey = camera.position.y, ez = camera.position.z, R = Math.min(FURN.r, NEAR_R), C = FURN.cell;
     for (const k of FURN_KINDS) FURN.n[k] = 0;
-    FURN.heads.length = 0;
+    FURN.heads.length = 0; FURN.peds.length = 0;
     if (ey < R) {
       const rg = Math.sqrt(R * R - ey * ey);
       for (let gx = Math.floor((ex - rg) / C); gx <= Math.floor((ex + rg) / C); gx++) for (let gz = Math.floor((ez - rg) / C); gz <= Math.floor((ez + rg) / C); gz++) {
@@ -45575,30 +45946,103 @@ float pinOccGate() {
           const k = FURN_KINDS[rows[i]], x = rows[i + 1], y = rows[i + 2], z = rows[i + 3];
           if ((x - ex) ** 2 + (y - ey) ** 2 + (z - ez) ** 2 > R * R) continue;
           const m = FURN.meshes[k], n = FURN.n[k];
-          if (n >= m.instanceMatrix.count) continue;
-          const yy = k === 'head' ? y + 3.6 : y;
-          _sp.set(x, yy, z); _sq.setFromAxisAngle(TRAFFIC_UP, rows[i + 4]); _ss.set(1, 1, 1); _sm.compose(_sp, _sq, _ss);
+          if (!m || n >= m.instanceMatrix.count) continue;
+          const yy = k === 'head' && !FURN.arms ? y + 3.6 : y;   // Round 239: a mast arm's rows carry their own heights
+          _sp.set(x, yy, z); _sq.setFromAxisAngle(TRAFFIC_UP, rows[i + 4]);
+          if (k === 'arm') _ss.set(rows[i + 5], 1, 1); else _ss.set(1, 1, 1);   // an arm's length is its row's extra
+          _sm.compose(_sp, _sq, _ss);
           m.setMatrixAt(n, _sm); FURN.n[k] = n + 1;
           if (k === 'head') FURN.heads.push(x, yy, z, rows[i + 4], rows[i + 5]);
+          else if (k === 'ped') FURN.peds.push(x, yy, z, rows[i + 4], rows[i + 5]);
         }
       }
     }
-    for (const k of FURN_KINDS) { const m = FURN.meshes[k]; m.count = FURN.n[k]; m.visible = m.count > 0; flushInst(m, -1); }
+    for (const k of FURN_KINDS) { const m = FURN.meshes[k]; if (!m) continue; m.count = FURN.n[k]; m.visible = m.count > 0; flushInst(m, -1); }
     FURN.lx = ex; FURN.ly = ey; FURN.lz = ez;
+    FURN.layMs = performance.now() - tL;
   }
   const FURN_LENS_Y = [0.31, 0, -0.31];   // red, amber and green over the head's middle
+  // __dbg.signals() (Round 239): the counts; ('survey') works out every signalised junction's cell in the city and counts
+  // the poles and posts standing on a drawn street (inside its drawn half width) or on a median, with the first few of
+  // each; (x, z, r) lists the furniture rows within r of a point
+  function furnProbe(a, b, c) {
+    if (!FURN.on) return { on: false };
+    if (!FURN.ready) { if (!trafficReady || !trafficRuns.length) return { on: true, ready: false }; while (!furnInit()); }
+    // tris: the furniture's triangles a frame (every instance drawn); bytes: its GPU buffers (each kind's geometry and its
+    // instance matrices at the mesh's capacity); layMs and cellMs: the last lay and every cell's working out so far
+    let tris = 0, bytes = 0;
+    for (const k in FURN.meshes) {
+      const m = FURN.meshes[k], g = m.geometry;
+      tris += m.count * g.attributes.position.count / 3;
+      for (const nm in g.attributes) bytes += g.attributes[nm].array.byteLength;
+      bytes += m.instanceMatrix.array.byteLength;
+    }
+    const base = { on: true, arms: FURN.arms, ready: FURN.ready, cells: FURN.cells, sg: { ...FURN.sg, dropAt: undefined }, n: { ...FURN.n }, tris, bytes, initMs: +(FURN.initMs || 0).toFixed(1), initMax: +(FURN.initMax || 0).toFixed(1), layMs: +FURN.layMs.toFixed(2), cellMs: +FURN.cellMs.toFixed(1), lamps: FURN.heads.length / 5 + FURN.peds.length / 5 };
+    if (typeof a === 'number') {
+      const out = [], r = c || 40, C = FURN.cell;
+      for (let gx = Math.floor((a - r) / C); gx <= Math.floor((a + r) / C); gx++) for (let gz = Math.floor((b - r) / C); gz <= Math.floor((b + r) / C); gz++) {
+        const rows = furnCell(gx * 100003 + gz);
+        for (let i = 0; i < rows.length; i += 6) if (Math.hypot(rows[i + 1] - a, rows[i + 3] - b) <= r) out.push([FURN_KINDS[rows[i]], +rows[i + 1].toFixed(2), +rows[i + 2].toFixed(2), +rows[i + 3].toFixed(2), +rows[i + 4].toFixed(3), +rows[i + 5].toFixed(3)]);
+      }
+      return Object.assign(base, { rows: out });
+    }
+    if (a === 'list') {   // ('list', x, z, r): the junctions within r, their streets' count and drawn half widths (worked out on the way)
+      const out = [];
+      for (const J of FURN.junctions || []) if (Math.hypot(J.x - b, J.z - c) <= (arguments[3] || 200)) { furnCell(Math.floor(J.x / FURN.cell) * 100003 + Math.floor(J.z / FURN.cell)); out.push([Math.round(J.x), Math.round(J.z), J.m.length, J.nW, J.hw]); }
+      return Object.assign(base, { list: out });
+    }
+    if (a === 'roads') {   // ('roads', x, z, r): the drawn streets' segments within r (the road grid every tier writes) and the runs' ends
+      const out = [], ends = [], r = arguments[3] || 30, C = SEPTA_RG_CELL;
+      for (let gx = Math.floor((b - r) / C); gx <= Math.floor((b + r) / C); gx++) for (let gz = Math.floor((c - r) / C); gz <= Math.floor((c + r) / C); gz++) {
+        const [q0, q1] = septaRoadCell(gx, gz);
+        for (let q = q0; q < q1; q++) { const k = SRG.ids[q], i = k * 4, S = SRG.seg, dx = S[i + 2] - S[i], dz = S[i + 3] - S[i + 1], t = clamp(((b - S[i]) * dx + (c - S[i + 1]) * dz) / (dx * dx + dz * dz || 1), 0, 1); if (Math.hypot(S[i] + dx * t - b, S[i + 1] + dz * t - c) < r) out.push([S[i], S[i + 1], S[i + 2], S[i + 3]].map(Math.round).concat([SRG.hw[k] / 10, SRG.cls[k]])); }
+      }
+      for (const q of furnEndsNear([[b, c]], r)) { const t = trafficRuns[q.ri]; ends.push([Math.round(q.x), Math.round(q.z), q.e, t.cls, t.oneway ? 1 : 0, Math.round(t.len)]); }
+      return Object.assign(base, { roads: [...new Set(out.map(String))].map((q) => q.split(',').map(Number)), ends });
+    }
+    if (a !== 'survey') return base;
+    const t0 = performance.now(), keys = new Set();
+    for (const [key, list] of FURN.nodes) for (let i = 0; i < list.length; i += 3) if (list[i] === 'jx' || list[i] === 'sig') { keys.add(key); break; }
+    const s = { poles: 0, posts: 0, arms: 0, heads: 0, peds: 0, inRoad: 0, inMed: 0, inRoadAt: [], inMedAt: [], armLen: [0, 0, 0, 0, 0], headsHigh: [0, 0] };
+    const iPole = FURN_KINDS.indexOf('pole'), iPost = FURN_KINDS.indexOf('post');
+    for (const key of keys) {
+      const rows = furnCell(key);
+      for (let i = 0; i < rows.length; i += 6) {
+        const k = rows[i], x = rows[i + 1], z = rows[i + 3];
+        if (k === FURN_KINDS.indexOf('arm')) { s.arms++; s.armLen[Math.min(4, Math.floor(rows[i + 5] / 4))]++; continue; }
+        if (k === FURN_KINDS.indexOf('head')) { s.heads++; continue; }
+        if (k === FURN_KINDS.indexOf('ped')) { s.peds++; continue; }
+        if (k !== iPole && k !== iPost) continue;
+        if (k === iPole) s.poles++; else s.posts++;
+        const inside = streetInside(x, z, 0);
+        if (inside) { s.inRoad++; if (s.inRoadAt.length < 12) s.inRoadAt.push([Math.round(x), Math.round(z), +(inside[4] - inside[5]).toFixed(1)]); }
+        else if (furnMedian(x, z)) { s.inMed++; if (s.inMedAt.length < 12) s.inMedAt.push([Math.round(x), Math.round(z)]); }
+      }
+    }
+    s.cellsSurveyed = keys.size; s.ms = Math.round(performance.now() - t0);
+    return Object.assign(base, { survey: s, sg: { ...FURN.sg } });
+  }
   function updateFurniture(now) {
     if (!FURN.on) return;
-    if (!FURN.ready) { if (!trafficReady || !trafficRuns.length) return; furnInit(); }
+    if (!FURN.ready) { if (!trafficReady || !trafficRuns.length || !furnInit()) return; }
     if (Math.hypot(camera.position.x - FURN.lx, camera.position.y - FURN.ly, camera.position.z - FURN.lz) > FURN.step) furnLay();
     // the lit lenses: each junction's two groups of heads take turns, green 26 s, amber 4 s, red 30 s
-    const L = FURN.lamps, H = FURN.heads, t = now / 1000, k = 0.55 + 0.45 * nightUniform.value;
+    const L = FURN.lamps, H = FURN.heads, t = now / 1000, k = 0.55 + 0.45 * nightUniform.value, lx = FURN.arms ? FURN_ARM.lensX : 0.33;
     for (let i = 0; i < H.length; i += 5) {
       const x = H[i], y = H[i + 1], z = H[i + 2], yaw = H[i + 3], grp = Math.floor(H[i + 4]), ph = (H[i + 4] - grp) * 100;
       const c = (t + ph + (grp ? 30 : 0)) % 60, fx = Math.cos(yaw), fz = -Math.sin(yaw);
       const lens = c < 26 ? 2 : c < 30 ? 1 : 0, ly = FURN_LENS_Y[lens];
       const r = lens === 2 ? 0.1 : 4.5, g = lens === 2 ? 4.2 : lens === 1 ? 2.6 : 0.12, b = lens === 2 ? 2.2 : 0.04;
-      L.putFacing(x + fx * 0.33, y + ly, z + fz * 0.33, r * k, g * k, b * k, 0.28, fx, fz);
+      L.putFacing(x + fx * lx, y + ly, z + fz * lx, r * k, g * k, b * k, 0.28, fx, fz);
+    }
+    // Round 239: the pedestrian heads, with the traffic their crosswalk runs beside: the white walker for its first 19 s of
+    // green, then the orange hand flashing to the red, then the hand steady
+    const P = FURN.peds;
+    for (let i = 0; i < P.length; i += 5) {
+      const yaw = P[i + 3], grp = Math.floor(P[i + 4]), ph = (P[i + 4] - grp) * 100, c = (t + ph + (grp ? 30 : 0)) % 60, fx = Math.cos(yaw), fz = -Math.sin(yaw);
+      if (c >= 19 && c < 30 && (t % 1) > 0.5) continue;
+      if (c < 19) L.putFacing(P[i] + fx * 0.12, P[i + 1], P[i + 2] + fz * 0.12, 2.3 * k, 2.4 * k, 2.4 * k, 0.2, fx, fz);
+      else L.putFacing(P[i] + fx * 0.12, P[i + 1], P[i + 2] + fz * 0.12, 4.2 * k, 1.25 * k, 0.08 * k, 0.2, fx, fz);
     }
     L.end();
   }
@@ -55563,7 +56007,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { ovp: ovpProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

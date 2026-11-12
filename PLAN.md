@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 238 (South Broad Street's median and its row of cars).
+Last updated: Nov 11, 2026, after Round 239 (Philadelphia's mast-arm signals).
 
 ## The ask
 
@@ -110,6 +110,13 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   halves of South Broad are painted from a flush median between two double yellows, laid as its own strip broken at
   all 21 crossing streets, with a row of about 300 slots parked down it at the kerbs' fills. `?broadmed=0` draws the
   stretch as Round 236 did. JavaScript only; no shader text, no new mesh.
+- **Round 239** (Mike: "The traffic lights look really bad. Can we remodel those to be the ones that hang over the
+  street"): every signalised junction is one record (OSM's approach nodes merged), its streets strips at their drawn
+  widths (a divided street one wide street), a black mast pole on each approach's far right corner with its arm and a
+  yellow head over each moving lane, one on the pole, a post on the other corners and pedestrian heads on all. No pole on
+  a drawn street or median anywhere in the city (surveyed: `__dbg.signals('survey')`). `?signals=old` keeps the old
+  poles. Phone: +3 draw calls, +0.2k to 2.4k triangles, +0.1 MB GPU, frame time in the noise. JavaScript only; no
+  shader text, no new program.
 
 ## In flight (finish these first)
 
@@ -211,7 +218,7 @@ next) if four poses still read as steps.
 | Pick | What | Cost and effort |
 |---|---|---|
 | The city's real canopy | The land mask's two invented channels from measured 1 m land cover | Art +0.4 to 2.3 MB; medium to large; a citywide side by side |
-| Junctions that work | The City's 16,992 intersection controls: signal heads, stop signs, queues | +45 to 90 KB; 6 to 9 days |
+| Junctions that work | The City's 16,992 intersection controls: stop signs and queues (the signals' look is Round 239's mast arms) | +45 to 90 KB; 6 to 9 days |
 | A street pace | The flight slows in its last 12 m and comes down to eye level | Small; Mike's feel on the phone |
 | The Art Museum's massing | A kit rebuild, then its walls and Rocky | Large, three to four review rounds |
 | Twenty stone towers | Round 198's pipeline again in a second atlas | +55.9 MB on a computer; phones after ASTC |

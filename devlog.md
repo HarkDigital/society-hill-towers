@@ -14306,3 +14306,82 @@ secondary and tertiary in the wide set as a two-way street, a double yellow down
 Washington and south of Oregon keeps that paint.
 
 Suite: 1,504 tests, OK (one skip, one expected failure, both as before).
+
+## Round 239 — Philadelphia's mast-arm signals, and no pole in the street (Nov 11)
+
+Mike, with a screenshot of South Broad at night (Broad and Christian): "The traffic lights look really bad. Can we remodel
+those to be the ones that hang over the street to be more realistic?" The old signals were a thin 4.9 m pole on every
+corner with a box head toward each street, and several stood in the roadway: two in the junction box and two at the far
+stop bars, mid-carriageway.
+
+Why they stood there: a corner was put 1.6 m behind both kerbs, the kerbs measured from the one node the signal resolved
+to. South Broad is two one-way carriageways with a node each, and OpenStreetMap maps a wide street's signal on every
+approach (Broad and Christian has three nodes 22 to 34 m apart, past the bake's 22 m merge), so one junction was worked
+out two or three times from different middles, each with one carriageway's width. Where only one carriageway had a node
+(South Broad by Walnut: the other runs straight past 13 m off), the corners on that side landed in it.
+
+The real thing (Street View, Oct 2025 and Oct 2024): yellow-bodied three-lens heads with black visors on black poles; on
+Broad and Washington they are bracketed to the ornamental lamp poles, at 16th and Walnut to black corner poles, with
+pedestrian countdown heads on every corner. Mike asked for heads that hang over the street, so the round builds the
+modern Philadelphia mast arm (Washington Avenue's, University City's): a black steel pole on the far right corner of each
+approach, its arm square across the approach over the far side, a yellow head with a black backplate edged in yellow over
+each moving lane facing the drivers, one more on the pole.
+
+What the round does (JavaScript only; no shader text, no new material or program, no data):
+- `furnJunctions` merges the signal nodes whose junction middles lie within 16 m of each other into one record (3,908
+  nodes, 3,647 junctions, 261 merged), worked out FURN_ARM.slice (4 ms) a frame once traffic is ready.
+- `furnJunction` takes every run end within 18 m of any of the junction's middles, a street whose run passes straight
+  through within 6 m (1,876 junctions have one), and a divided street's other carriageway: a one-way run within 16 m
+  running alongside a one-way end of its class the other way (135 junctions). Each street is a strip across its own frame:
+  every carriageway's lateral place and its DRAWN half width (`furnDrawnHw`, the road grid every tier writes), so a
+  divided street is one wide street with its inbound carriageway on the driver's right. A corner is where two neighbouring
+  streets' kerb lines, each 1.6 m behind the kerb, meet.
+- Each approach that traffic comes in along (a one-way run's traffic arrives at its end) gets its mast pole on the far
+  right corner (the corner after the street straight on), an arm to the farthest moving lane plus 0.45 m (2.6 to 15.5 m;
+  the arm is a unit tube stretched by its instance's x scale, which r149's instanced normals handle), a head over each
+  moving lane (past a parking lane at each kerb of a street over 6 m), and one on the pole. A far side's open kerb, a
+  mid-block crossing and the stem of a T take the kerb itself. A corner no arm stands on gets a 3.9 m post; every corner's
+  pole carries a pedestrian head across each of its crosswalks (the white walker for the first 19 s of the group's green,
+  the hand flashing to the red, then steady).
+- Every pole is checked against every drawn street (`streetPush`, 0.45 m past the edge, refused more than 12 m in) and
+  against a median (`furnMedian`: drawn streets alongside within 6 m on both sides); the arm is laid from where it ends
+  up. When the far right corner is refused the arm hangs from the far left corner, sharing its pole (109 approaches);
+  193 of about 10,600 approaches have no corner to stand on (the Vine Street Expressway's cut between its frontage
+  roads, Roosevelt Boulevard's and Island Avenue's wide medians) and go unsignalled.
+- The heads take turns by the widest street's axis, two groups, on the old cycle (green 26 s, amber 4 s, red 30 s).
+- `?signals=old` keeps the old poles exactly as they were (the captures match the deployed build's). `__dbg.signals()`
+  reports the counts, triangles, GPU bytes and timings; `('survey')` works out every signalised junction in the city and
+  counts the poles on a drawn street or a median; `('list', x, z, r)` and `('roads', x, z, r)` list junctions and the drawn
+  streets and run ends round a point; `(x, z, r)` the rows.
+
+Citywide survey (desktop): 10,382 mast poles, 2,618 posts, 10,420 arms, 23,903 heads, 23,408 pedestrian heads; poles
+or posts on a drawn street 0, on a median 0.
+
+The cost, headless on this Mac's GPU, A/B against `?signals=old` on the same build (traffic, transit, flights off):
+- Phone (touch path, 740x360 at 1.25, the 170 m furniture radius): +0.2k to +2.4k triangles a frame (of 3.3 M to 6.7 M),
+  +3 draw calls, furniture GPU 267 KB against 164 KB, the page's GPU total 952.0 MB against 951.9; frame time inside the
+  noise (1.4 to 2.1 ms median both ways).
+- Desktop (330 m): the furniture 53k to 66k triangles against 40k to 45k, +3 draw calls, 585 KB against 336 KB; frame
+  time inside the noise.
+- The one-time setup: 40 ms of work spread over frames, the worst frame 9.2 ms (desktop) and 9.9 ms (phone emulation),
+  under the old setup's single 13.1 and 10.9 ms frame. A cell's furniture takes about 0.2 to 0.4 ms to work out the first
+  time the eye comes near (0.1 to 0.2 before); a lay 1 ms when no new cell is in it.
+- Lamps a frame: 263 to 366 on a computer (174 to 222 before), 79 to 121 on a phone.
+Not measured on Mike's own Mac or iPhone.
+
+Checked: Mike's pose day and night, a driver's eye on southbound Broad, Broad from above, 16th and Walnut, a South Philly
+rowhouse crossing at street level and from above, the phone path, `?signals=old` against the deployed build. The first
+cut showed the backplate's yellow edge as a whole yellow slab from behind (now four strips seen from in front only), and
+dropped the west corners at Broad and Walnut into the other carriageway (now the twin). Before and after sheet:
+signals-before-after.jpg in the session's scratchpad.
+
+Tests: `vehicles_checks.js` builds a four-way, South Broad's twin carriageways with three nodes, South Broad by Walnut
+with one, a one-way pair and a mid-block crossing; `test_mast_arms` checks the poles, arms, heads, groups and pedestrian
+heads, no pole on a street or median, and the geometry's streams. The old checks run under `?signals=old`.
+
+Not done: the signal faces carry no street name signs; the pedestrian heads have no countdown digits; a pole is not
+shared with a nearby streetlight (both stand); the heads are the same at every junction (no left-turn arrows or
+five-section heads); wide-median boulevards lose an approach's signal where both its corners stand in the median.
+
+Suite: 1,505 tests, OK (one skip, one expected failure, both as before).
+
