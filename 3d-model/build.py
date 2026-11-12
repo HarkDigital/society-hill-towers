@@ -220,7 +220,7 @@ const("NJ_ART", text_of("nj_art.json", "null"))   # the USS New Jersey's plating
 const("MOSHULU_ART", text_of("moshulu_art.json", "null"))   # the Moshulu's hull plating and teak deck (bake_moshulu_art.py), Round 195
 const("OLYMPIA_ART", text_of("olympia_art.json", "null"))   # the cruiser Olympia's plating, superstructure, deck and buff atlas (bake_olympia_art.py), Round 215
 const("BRIDGE_ART", text_of("bridge_art.json", "null"))   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage elevations (bake_bridge_art.py), Round 195
-const("PEOPLE_ART", text_of("people_art.json", "null"))   # the walking people's atlas: three test figures, six poses each (bake_people_art.py), Round 227; read by the walkers' drawing under ?people=1 (app.js, peopleCells)
+const("PEOPLE_ART", text_of("people_art.json", "null"))   # the walking people's atlases: thirty figures, ten a wardrobe (cold, cool, warm), eight pictures a step in three views (bake_people_art.py), Rounds 227 and 242; read by the walkers' drawing under ?people=1 (app.js, peopleCells)
 
 
 def art_paths(o):

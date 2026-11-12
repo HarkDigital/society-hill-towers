@@ -59,7 +59,7 @@ MANIFESTS += ('moshulu_art.json',)   # the Moshulu's hull plating and teak deck 
 MANIFESTS += ('olympia_art.json',)   # the cruiser Olympia's plating, superstructure, deck and buff (Round 215)
 MANIFESTS += ('blade_art.json',)   # the blade signs' six blanks (the realism round two, R9)
 MANIFESTS += ('bridge_art.json',)   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage (Round 195)
-MANIFESTS += ('people_art.json',)   # the walking people's atlas, three test figures (Round 227)
+MANIFESTS += ('people_art.json',)   # the walking people's atlases, one a wardrobe (Rounds 227 and 242)
 
 
 class Files(unittest.TestCase):

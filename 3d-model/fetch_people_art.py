@@ -1,164 +1,184 @@
 #!/usr/bin/env python3
-"""Generate the walking people's character sheets (Round 227, Mike: "people on the sidewalks, walking").
+"""Generate the walking people's pictures (Round 227, Mike: "people on the sidewalks, walking"; Round 242: "make it smoother
+still and have many more different looking people. They should also be dressed specific to the season").
 
-One sheet a figure from OpenAI's image API on a transparent background: six full-body pictures of the SAME person in one
-row, so the views match one another, in the order POSES gives (front, back and side, each at the two moments of a walk
-that make a two-frame step: the contact, legs apart, and the passing, legs together). Written to
-lidar_cache/people_art_raw/<id>.png with a sidecar .json (the prompt, the model, the size, the usage).
-bake_people_art.py cuts every sheet into its six poses and packs the page's atlases.
+Three STRIPS a figure, each eight full-body pictures of one person in one row: the eight equal moments of ONE step of a
+walk, seen from the side, from the front and from behind. The side strip is made from words alone; the front and the back
+are EDITS of it, so all three are the same person. Written to lidar_cache/people_art_raw/<id>-<view>.png with a sidecar
+.json (the prompt, the model, the size, the usage). bake_people_art.py cuts every strip into its eight pictures and packs
+one atlas a wardrobe.
 
 A figure is one record of FIGURES: its id, one line saying who it is and what it wears, its height in metres and its
-wardrobe's season. The full set is more records, nothing else: the three here are the test the proposal's verifiers
-asked to see walking before the rest is made.
+WARDROBE: cold, cool or warm. The page draws one wardrobe at a time, chosen by the temperature (app.js, peopleWardrobe),
+so each wardrobe is a crowd of its own weather and mixed inside it (a cool day has a coat and a T-shirt in it too).
+
+Every figure is MIRROR-SAFE: the page draws the second step of a cycle as the first one mirrored (from the front and from
+behind the other leg leads), so nothing is carried on one side only. Hands are empty or a backpack is worn on both
+shoulders: no tote, no shoulder bag, no crossbody strap, no cup, no phone, no umbrella.
 
 No lettering, no logo, no brand, no uniform and nobody in particular: the figures are ordinary and generic, seen from
-4 m at the nearest. Every sheet is looked at before it is kept (six whole figures, one person, one scale, a true
-profile, no ground or shadow); a reject is made again with --force, which keeps the picture it replaces beside it.
+4 m at the nearest. Every strip is looked at before it is kept (eight whole figures, one person, one scale, the step's
+moments in order, no ground or shadow); a reject is made again with --force, which keeps the picture it replaces beside
+it.
 
 The key is read from OPENAI_API_KEY or ~/.config/philly3d/openai.env, never from the repo, and is never printed.
-PEOPLE_ART_RAW moves the raw folder (a worktree has no lidar_cache of its own), PEOPLE_ART_MODEL picks the model
-(default gpt-image-1.5, which takes a transparent background on this account; gpt-image-2 refuses one) and
-PEOPLE_ART_QUALITY the quality (default high, as the blade signs). Medium was tried first, eight sheets of it: the six
-pictures did not hold one person (a knitted cap turned into a peaked cap in the profiles, a man bald from the front had
-a full head of hair from behind, a woman grew a beard, a backpack went missing in one profile) and the figures read as
-game characters. The first three sheets at high were all kept.
+PEOPLE_ART_RAW moves the raw folder (a worktree has no lidar_cache of its own), PEOPLE_ART_MODEL picks the model and
+PEOPLE_ART_QUALITY the quality.
 
-What the prompt had to learn, sheet by sheet (keep these when the wording changes):
-- "legs together" is not enough for the second frame of a view: the profile came back as a second stride until the
-  prompt called it the PASSING position, said it is NOT a stride, and described the one narrow column the legs make;
-- a hat, glasses and a beard are where the six pictures drift apart: describe hair plainly and leave the rest off;
-- the model cannot keep a shoulder bag on one shoulder from the front and from behind. A picture that came out
-  left-for-right is mirrored in the bake (bake_people_art.py's FLIP) rather than asked for again;
-- the figures stand about 480 to 560 px tall in the 1024: enough for the sharp atlas's 512 px cell and no more.
+What the pictures had to learn (keep these when the wording changes):
+- Rounds 227 and 237 asked gpt-image-1.5 for six pictures a sheet, two moments of each view, and then for an edit with
+  two more: it could not hold a moment it was asked for (a profile's "up" came back a stride as often as not, so the
+  bake ordered the in-betweens by how far apart the feet stood), and a step of four pictures still read as stepping;
+- optical flow between those pictures (OpenCV's DIS) made fair in-betweens from the front and behind and ghost legs from
+  the side, where a leg swings 30 px between pictures;
+- a sixteen-picture Muybridge cycle from gpt-image-1.5 came back as nineteen strides with a cartoon face;
+- gpt-image-2.6 draws the eight moments of one step in order, the passing narrowest, one person in all eight, and
+  returns the figures already cut out on transparency when asked for a flat chroma green ground (the bake keys the green
+  itself if a strip ever comes back opaque). Its pictures are about 440 px tall: the atlas's 256 px cell and no more;
+- a hat, glasses and a beard are where the pictures drift apart: describe them plainly or leave them off.
 
-Usage: python3 fetch_people_art.py [--mid] [--only id,...] [--force] [--list] [--workers 3]"""
+Usage: python3 fetch_people_art.py [--only id,...] [--views side,front,back] [--force] [--list] [--workers 4]"""
 import argparse, base64, concurrent.futures, json, os, sys, time, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.environ.get('PEOPLE_ART_RAW') or os.path.join(HERE, 'lidar_cache', 'people_art_raw')
 API = 'https://api.openai.com/v1/images/generations'
-MODEL = os.environ.get('PEOPLE_ART_MODEL', 'gpt-image-1.5')
-QUALITY = os.environ.get('PEOPLE_ART_QUALITY', 'high')
-SIZE = '1536x1024'   # six figures in one row: each about 250 px wide and 480 to 560 tall
-
-# the sheet's six pictures, left to right: (view, frame). bake_people_art.py reads this order. Frames run through one
-# step: 0 the contact (legs apart), 1 the down (the weight landing), 2 the passing (legs together), 3 the up (the
-# swinging leg reaching forward). The first sheet holds the contact and the passing; the in-between sheet (MID, Round
-# 237) the down and the up
-POSES = [('front', 0), ('front', 2), ('back', 0), ('back', 2), ('side', 0), ('side', 2)]
-MID_POSES = [('front', 1), ('front', 3), ('back', 1), ('back', 3), ('side', 1), ('side', 3)]
 EDIT_API = 'https://api.openai.com/v1/images/edits'
+MODEL = os.environ.get('PEOPLE_ART_MODEL', 'gpt-image-2.6-sunburst')
+QUALITY = os.environ.get('PEOPLE_ART_QUALITY', 'high')
+SIZE = '1536x1024'   # eight figures in one row: each about 190 px wide and 430 to 460 tall
 
-SHEET = ('A sheet of six cut-out photographs of the SAME real person, of the kind architects place in their renderings: '
-         '{who}. A real adult\'s proportions: the head is small, about one seventh of the full height, and the legs are '
-         'half of it; never stocky, never big-headed, never a doll or a cartoon. The six pictures stand in ONE horizontal '
-         'row on a fully transparent background, evenly spaced, with a clear empty gap between each figure and the next '
-         'so that no figure touches or overlaps another. All six are at exactly the same scale, the heads level with one '
-         'another and the shoes level with one another, and each figure is whole from the top of the head to the soles of '
-         'the shoes with nothing cut off. The same face, the same hair, the same clothes and the same bag in all six, and '
-         'left and right stay true: what is on the person\'s own right side in the front view is on their own right side '
-         'from behind too, so it appears on the other side of the picture. From left to right: '
-         '(1) seen from the FRONT, walking briskly straight toward the camera, caught in mid stride: one leg swung well '
-         'forward with its knee bent and its foot lifted clear in front, the other leg straight and trailing behind, the '
-         'two feet plainly apart, one arm swung forward and the other back; '
-         '(2) seen from the FRONT, facing the camera, in the PASSING position of the walk, which is NOT a stride: upright '
-         'and at full height, the two legs together and straight, both feet side by side under the body, and both arms '
-         'hanging close to the sides; '
-         '(3) seen from directly BEHIND, walking briskly straight away from the camera, caught in mid stride: one leg '
-         'trailing behind with its heel lifted so the sole of that shoe shows, the other leg forward, the two feet plainly '
-         'apart, one arm swung forward and the other back; '
-         '(4) seen from directly BEHIND, facing away from the camera, in the PASSING position of the walk, which is NOT a '
-         'stride: upright and at full height, the two legs together and straight, both feet side by side under the body '
-         'with neither sole showing, and both arms hanging close to the sides; '
-         '(5) an exact SIDE PROFILE, walking toward the right edge of the frame, in the CONTACT position of an animator\'s '
-         'walk cycle: the legs wide apart in a full step, the front heel touching down and the back foot pushing off '
-         'from its toe, the arms swinging opposite to the legs; '
-         '(6) an exact SIDE PROFILE, facing the right edge of the frame, in the PASSING position of an animator\'s walk '
-         'cycle, which is NOT a stride: the body upright and at its tallest, the supporting leg straight and vertical '
-         'under the hips, the other knee bent a little with its foot lifted just off the ground right beside the '
-         'supporting ankle, so that from the side the two legs overlap into one narrow column and both feet are under '
-         'the body, no more than a shoe apart; the arms hang straight down beside the hips. This sixth figure is the '
-         'narrowest of the six, and it carries the same bag as the others. '
-         'Leave a wide clear gap between the fifth figure and the sixth: the fifth figure\'s front foot comes nowhere '
-         'near the sixth figure. '
-         'Every picture is taken level from chest height, from far away with a long lens, so there is no perspective '
-         'distortion. Soft, even, overcast daylight from all round, with no cast shadows and no hard highlights. No ground, '
-         'no floor, no pavement, no shadow under the feet, no backdrop, no frame lines, no text, no labels, no numbers, no '
-         'logos and no lettering anywhere, plain clothes with no prints. Muted, realistic colours, natural skin, real '
-         'cloth with its own creases. A photograph of an ordinary person on an ordinary weekday: not fashion, not an '
-         'illustration, not a 3D render, not a game character.')
+VIEWS = ['side', 'front', 'back']   # the order they are made in: the side from words, the other two edits of it
+FRAMES = 8                           # the eight equal moments of one step, 0 the contact; the passing is 4
 
-# Round 237 (Mike: "The people are a bit disjointed. Can we smooth out their gait?"): two pictures a view made the walk a
-# flip between a stride and standing still. The in-between sheet is an EDIT of the figure's own first sheet (the image
-# endpoint's edits with input_fidelity high), so the face, the clothes and the bag are the first sheet's, and asks for
-# the two moments an animator draws between those two: the down and the up. <id>-mid.png beside <id>.png.
-MID_SHEET = ('The attached picture is a sheet of six cut-out photographs of one real person walking, in one row: from the '
-             'front in mid stride, from the front in the passing position, from behind in mid stride, from behind in the '
-             'passing position, in side profile in the contact position, and in side profile in the passing position. '
-             'Make a NEW sheet of the SAME person: exactly the same face, hair, build, clothes and colours, at exactly '
-             'the same scale and in the same soft overcast light, six NEW full-body pictures in ONE horizontal row on a '
-             'fully transparent background, evenly spaced with a clear gap between each figure and the next, the heads level '
-             'and the shoes level, nothing cut off. These six show the two IN-BETWEEN moments of the same walk that an '
-             'animator draws between the stride and the passing position. From left to right: '
-             '(1) seen from the FRONT walking toward the camera, the DOWN position just after a stride: the front foot now '
-             'flat on the ground and taking the weight with its knee a little bent, the back foot\'s heel lifted, the feet '
-             'still apart but closer than in a full stride, the arms swung part of the way; '
-             '(2) seen from the FRONT walking toward the camera, the UP position just after passing: upright on one straight '
-             'leg, the other leg swinging forward with its knee bent and its foot lifted just off the ground a little ahead, '
-             'the feet close together, the arms only slightly swung; '
-             '(3) seen from directly BEHIND walking away, the DOWN position: the forward foot flat and taking the weight, '
-             'the back foot\'s heel lifted so part of its sole shows, the feet apart but closer than in a full stride, the '
-             'arms swung part of the way; '
-             '(4) seen from directly BEHIND walking away, the UP position: upright on one straight leg, the other knee bent '
-             'and its foot lifted just off the ground, swinging forward, the feet close together, the arms only slightly '
-             'swung; '
-             '(5) an exact SIDE PROFILE walking toward the right edge of the frame, the DOWN position: the front leg bent at '
-             'the knee under the body\'s weight with its foot flat, the back leg trailing with its heel lifted high and only '
-             'its toes on the ground, the feet about two thirds of a full stride apart, the arms swinging opposite to the '
-             'legs; '
-             '(6) an exact SIDE PROFILE walking toward the right edge of the frame, the UP position, a moment after the legs '
-             'have passed each other: the legs like a narrow pair of scissors only just opened, the supporting leg straight '
-             'and under the hips with its heel starting to rise, the swinging leg a little ahead of it with the knee bent and '
-             'its foot in the air, clear of the ground, so the two feet are only about one shoe length apart. This sixth '
-             'figure is far narrower than the fifth; the arms close to the sides and only just swinging. '
-             '{carry} '
-             'Every picture is taken level from chest height with a long lens, no perspective distortion. No ground, no '
-             'floor, no shadow under the feet, no backdrop, no frame lines, no text, no labels, no numbers, no logos. A '
-             'photograph of an ordinary person, not an illustration, not a 3D render, not a game character.')
-
-# what each figure carries, said plainly for the in-between sheet (asked to keep "the bag", a figure with none grew one)
-MID_CARRY = {
-    'p01': 'She carries the same plain tan canvas tote bag hanging from her own right shoulder in all six pictures, as in the attached sheet.',
-    'p02': 'He carries NOTHING: his hands are empty, and there is no bag, no strap and no backpack anywhere in any of the six pictures.',
-    'p03': 'He wears the same plain black backpack on both shoulders in all six pictures, as in the attached sheet.',
+STEPS = {
+    'side': ('in exact SIDE PROFILE, facing and walking toward the right edge of the frame',
+             '1: contact, the legs at their widest, the right leg forward with its heel just touching down, the left leg behind '
+             'on its toes. 2: the right foot rolling flat, the legs a little less wide. 3: the down, the right foot flat with its '
+             'knee bent under the weight, the left heel high. 4: the left foot leaving the ground, the left knee bending as the '
+             'leg starts to swing forward. 5: the passing, upright, the right leg straight under the hips, the left foot just '
+             'off the ground beside the right ankle, both legs overlapping in one narrow column. 6: the left leg swinging ahead '
+             'of the right, its knee bent, the feet a short step apart. 7: the up, the right heel rising, the left leg reaching '
+             'forward almost straight. 8: the left heel about to touch down, the legs nearly as wide as in picture 1.'),
+    'front': ('seen from straight in FRONT, walking straight toward the camera, the face to the camera',
+              '1: contact, the right leg forward with its heel just touching down and the left leg behind, the feet a stride '
+              'apart in depth. 2: the right foot rolling flat. 3: the down, the right knee a little bent under the weight, the '
+              'left heel lifted behind. 4: the left foot leaving the ground behind. 5: the passing, upright and tallest, the '
+              'left foot just off the ground beside the right ankle. 6: the left leg swinging forward past the right, its knee '
+              'bent. 7: the up, the right heel rising, the left leg reaching forward. 8: the left heel about to touch down.'),
+    'back': ('seen from straight BEHIND, walking straight away from the camera, the back of the head to the camera',
+             '1: contact, the right leg forward with its heel just touching down and the left leg behind with its heel lifted so '
+             'its sole shows. 2: the right foot rolling flat. 3: the down, the right knee a little bent under the weight, the '
+             'left sole showing. 4: the left foot leaving the ground behind, its sole showing. 5: the passing, upright and '
+             'tallest, the left foot just off the ground beside the right ankle. 6: the left leg swinging forward past the '
+             'right, its knee bent. 7: the up, the right heel rising so its sole shows, the left leg reaching forward. 8: the '
+             'left heel about to touch down ahead.'),
 }
 
-SEASONS = {
-    'cold': 'dressed for a cold, dry November day',
-    'warm': 'dressed for a warm summer day',
+STRIP = ('{lead}as an animator\'s reference strip: EIGHT full-body photographs of this person {how}, in ONE horizontal row, '
+         'evenly spaced, read left to right as the eight equal moments of ONE step of a relaxed walk. {beats} From each picture '
+         'to the next the legs and arms move by a small, even amount, like consecutive frames of a film; the arms swing opposite '
+         'to the legs. Every figure at exactly the same scale, heads level and shoes on one level line, each centred in its own '
+         'equal slot with a clear gap between neighbours, nothing cut off. Level camera at chest height with a long lens, soft '
+         'even overcast daylight. {carry} Plain flat pure chroma-key green background (#00FF00), perfectly even all over, no '
+         'ground, no floor, no shadow on the ground, no lines, no numbers, no text, no logos, plain clothes with no prints or '
+         'lettering. A real photograph of an ordinary person on an ordinary day in the city, not an illustration, not a 3D '
+         'render, not a game character.')
+LEAD_NEW = 'A picture of {who}, {season}, '
+LEAD_EDIT = ('Make a NEW picture of the SAME person as in the attached picture, exactly the same face, hair, build, clothes, '
+             'colours and anything carried, ')
+
+WARDROBES = {
+    'cold': 'dressed for a cold winter day in Philadelphia',
+    'cool': 'dressed for a mild spring or autumn day in Philadelphia',
+    'warm': 'dressed for a warm summer day in Philadelphia',
+}
+CARRY = {
+    'none': 'The hands are empty in every picture: nothing is carried, no bag, no strap, no cup and no phone.',
+    'pack': 'The same backpack is worn on BOTH shoulders in every picture, its two straps over both shoulders; nothing else is '
+            'carried and the hands are empty.',
 }
 
-# id, who (one line: age, build, skin, hair, what they wear and carry), height in metres, the wardrobe's season
+# id, who (one line: age, build, skin, hair, what they wear), height in metres, wardrobe, what is carried (CARRY)
 FIGURES = [
-    ('p01', 'a woman in her early forties of medium, fairly slim build with dark brown skin, a soft feminine face with no facial hair and short natural black hair, in a '
-            'charcoal grey wool coat that ends at mid thigh, a plain dull green scarf, dark blue jeans and flat brown '
-            'leather ankle boots, with a plain tan canvas tote bag hanging from her right shoulder', 1.65, 'cold'),
-    ('p02', 'a heavyset man in his late sixties with pale skin, thick short grey hair that covers the whole top of his head in every view (he is not bald) and grey stubble, bare-headed, no glasses, '
-            'in a plain navy blue quilted winter jacket with a plain collar and no hood, zipped up, loose khaki trousers '
-            'and plain dark brown walking shoes, carrying nothing, his hands empty', 1.76, 'cold'),
-    ('p03', 'a slim man in his middle twenties with light brown skin and short black hair, in a plain olive green hooded '
-            'parka with the hood down, plain black trousers and plain grey trainers, wearing a plain black backpack on '
-            'both shoulders', 1.80, 'cold'),
+    # cold: under about 50 F
+    ('c01', 'a woman in her early forties of medium, fairly slim build with dark brown skin and short natural black hair, in a '
+            'charcoal grey wool coat that ends at mid thigh, a plain dull green scarf, dark blue jeans and flat brown leather '
+            'ankle boots', 1.65, 'cold', 'none'),
+    ('c02', 'a heavyset man in his late sixties with pale skin and thick short grey hair, bare-headed, no glasses, in a plain '
+            'navy blue quilted winter jacket zipped up, loose khaki trousers and plain dark brown walking shoes', 1.76, 'cold', 'none'),
+    ('c03', 'a slim man in his middle twenties with light brown skin and short black hair, in a plain olive green hooded parka '
+            'with the hood down, plain black trousers and plain grey trainers, with a plain black backpack', 1.80, 'cold', 'pack'),
+    ('c04', 'an East Asian woman in her late twenties with straight black hair to her shoulders, in a long camel wool coat to '
+            'the knee, a plain black knitted beanie, black trousers and black leather ankle boots, with a small plain black '
+            'backpack', 1.62, 'cold', 'pack'),
+    ('c05', 'a tall, broad Black man of about fifty with a short neat greying beard, in a plain black knitted cap, a long dark '
+            'grey wool overcoat, charcoal trousers and black leather shoes', 1.88, 'cold', 'none'),
+    ('c06', 'a white woman in her middle seventies with short white hair, in a long plain maroon quilted coat, a light grey '
+            'knitted scarf, grey wool trousers and flat black shoes', 1.58, 'cold', 'none'),
+    ('c07', 'a Latino young man of about eighteen with short curly dark brown hair, in a plain black puffer jacket, plain grey '
+            'sweatpants and plain white sneakers, with a plain dark blue backpack', 1.74, 'cold', 'pack'),
+    ('c08', 'a South Asian man in his middle thirties with short black hair and a short neat black beard, in a dark green '
+            'waxed cotton field jacket, a plain grey knitted scarf, blue jeans and brown leather boots', 1.75, 'cold', 'none'),
+    ('c09', 'a white woman of about thirty with red-blonde hair in a low bun, in a light grey puffer coat to the knee, a plain '
+            'cream knitted hat, black leggings and tan winter boots', 1.68, 'cold', 'none'),
+    ('c10', 'a Black woman of about sixty with short grey natural hair, in a burgundy wool coat to the knee, a plain mustard '
+            'yellow scarf, dark trousers and black low boots', 1.63, 'cold', 'none'),
+    # cool: about 50 to 70 F
+    ('m01', 'a white man in his middle forties with short brown hair, in a plain navy blue zip-up windbreaker, khaki chinos '
+            'and plain white leather sneakers', 1.79, 'cool', 'none'),
+    ('m02', 'a Black woman in her middle twenties with long box braids tied back, in a plain blue denim jacket over a plain '
+            'white T-shirt, black jeans and plain white sneakers, with a small tan backpack', 1.70, 'cool', 'pack'),
+    ('m03', 'an East Asian man of about sixty with short grey and black hair, in a plain beige lightweight jacket zipped half '
+            'way over a light blue collared shirt, grey trousers and black leather shoes', 1.70, 'cool', 'none'),
+    ('m04', 'a Latina woman of about forty with wavy dark brown hair to her shoulders, in a plain burgundy knitted sweater, '
+            'dark blue jeans and brown leather ankle boots', 1.60, 'cool', 'none'),
+    ('m05', 'a white young woman of about nineteen with long straight blonde hair, in a plain grey hooded sweatshirt with the '
+            'hood down, black leggings and plain white sneakers, with a plain black backpack', 1.66, 'cool', 'pack'),
+    ('m06', 'a South Asian man of about thirty with short black hair, in a plain olive green bomber jacket over a plain black '
+            'T-shirt, dark blue jeans and plain grey sneakers', 1.77, 'cool', 'none'),
+    ('m07', 'a white woman of about seventy with short silver hair, in a plain light blue quilted vest over a white long-sleeved '
+            'top, tan trousers and white walking shoes', 1.60, 'cool', 'none'),
+    ('m08', 'a Black man in his middle thirties with a shaved head, in a plain dark grey crewneck sweatshirt, black jogging '
+            'trousers and plain black sneakers, with a plain black backpack', 1.83, 'cool', 'pack'),
+    ('m09', 'a white woman of about fifty with a brown chin-length bob, in a long charcoal wool coat worn open over a black '
+            'sweater, black trousers and flat black shoes', 1.67, 'cool', 'none'),
+    ('m10', 'a Latino man of about twenty-two with short black hair, in a plain white T-shirt, blue jeans and plain white '
+            'sneakers', 1.75, 'cool', 'none'),
+    # warm: over about 70 F
+    ('w01', 'a woman in her early thirties of slim build with light olive skin and long dark brown hair tied back in a low '
+            'ponytail, in a plain sleeveless rust-orange cotton top, light blue denim shorts to mid thigh and plain white canvas '
+            'sneakers', 1.66, 'warm', 'none'),
+    ('w02', 'a Black man of about thirty with short twisted hair, in a plain light grey T-shirt, khaki shorts to the knee and '
+            'plain white sneakers, with a plain black backpack', 1.80, 'warm', 'pack'),
+    ('w03', 'a white man of about sixty, bald on top with a short fringe of grey hair, in a plain light blue short-sleeved '
+            'button shirt, beige chino trousers and brown leather loafers', 1.75, 'warm', 'none'),
+    ('w04', 'an East Asian woman of about twenty-two with long straight black hair worn loose, in a plain pale yellow '
+            'short-sleeved cotton sundress to the knee and plain white flat sandals', 1.60, 'warm', 'none'),
+    ('w05', 'a Black woman of about forty-five with short natural hair, in a plain coral short-sleeved blouse, white linen '
+            'trousers and tan flat sandals', 1.68, 'warm', 'none'),
+    ('w06', 'a Latino young man of about eighteen with short black hair, in a plain oversized white T-shirt, black athletic '
+            'shorts to the knee and plain black sneakers', 1.72, 'warm', 'none'),
+    ('w07', 'a South Asian woman in her middle thirties with long black hair in a single braid, in a plain teal short-sleeved '
+            'tunic top, loose light grey trousers and flat tan sandals', 1.58, 'warm', 'none'),
+    ('w08', 'a white woman of about twenty-eight with short curly red hair, in a plain navy blue T-shirt, olive green cargo '
+            'shorts and plain grey trainers, with a small plain grey backpack', 1.70, 'warm', 'pack'),
+    ('w09', 'a Black man of about seventy with short white hair, in a plain white short-sleeved polo shirt with no logo, grey '
+            'trousers and black leather shoes', 1.74, 'warm', 'none'),
+    ('w10', 'a heavyset white man in his middle thirties with a short brown beard and short brown hair, in a plain maroon '
+            'T-shirt, dark grey shorts to the knee and plain black sneakers', 1.82, 'warm', 'none'),
 ]
 
 
-def prompt_of(fig):
-    fid, who, tall, season = fig
-    return SHEET.format(who=who + ', ' + SEASONS[season])
+def prompt_of(fig, view):
+    fid, who, tall, ward, carry = fig
+    how, beats = STEPS[view]
+    lead = LEAD_NEW.format(who=who, season=WARDROBES[ward]) if view == 'side' else LEAD_EDIT
+    return STRIP.format(lead=lead, how=how, beats=beats, carry=CARRY[carry])
 
 
-def jobs():
-    return [(f[0], prompt_of(f)) for f in FIGURES]
+def jobs(views=VIEWS):
+    return [(f[0], v, prompt_of(f, v)) for f in FIGURES for v in views]
 
 
 def api_key():
@@ -186,31 +206,34 @@ def multipart(fields, files):
     return b''.join(out), 'multipart/form-data; boundary=' + b
 
 
-def make(key, fid, prompt, force, mid=False):
+def raw_path(fid, view):
+    return os.path.join(RAW, '%s-%s.png' % (fid, view))
+
+
+def make(key, fid, view, prompt, force):
     os.makedirs(RAW, exist_ok=True)
-    src = os.path.join(RAW, fid + '.png')
-    base = os.path.join(RAW, fid + ('-mid' if mid else ''))
+    base = raw_path(fid, view)[:-4]
     if os.path.exists(base + '.png') and not force:
-        return fid, 'kept'
-    if mid:
-        if not os.path.exists(src):
-            return fid, 'no first sheet to edit'
-        body, ctype = multipart({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': '1', 'output_format': 'png',
-                                 'background': 'transparent', 'input_fidelity': 'high'}, [('image[]', fid + '.png', open(src, 'rb').read())])
+        return fid, view, 'kept'
+    ref = raw_path(fid, 'side')
+    if view != 'side':
+        if not os.path.exists(ref):
+            return fid, view, 'no side strip to edit'
+        body, ctype = multipart({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': '1', 'output_format': 'png'},
+                                [('image[]', os.path.basename(ref), open(ref, 'rb').read())])
         url = EDIT_API
     else:
-        body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1, 'output_format': 'png',
-                           'background': 'transparent'}).encode()
+        body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1, 'output_format': 'png'}).encode()
         ctype, url = 'application/json', API
     err = ''
     for attempt in range(3):
         req = urllib.request.Request(url, data=body, method='POST',
                                      headers={'Authorization': 'Bearer ' + key, 'Content-Type': ctype})
         try:
-            with urllib.request.urlopen(req, timeout=400) as r:
+            with urllib.request.urlopen(req, timeout=900) as r:
                 j = json.load(r)
             img = base64.b64decode(j['data'][0]['b64_json'])
-            if os.path.exists(base + '.png'):   # --force: the sheet it replaces is kept aside with its sidecar, never lost
+            if os.path.exists(base + '.png'):   # --force: the strip it replaces is kept aside with its sidecar, never lost
                 stamp = int(time.time())
                 os.replace(base + '.png', base + '.prev-%d.png' % stamp)
                 if os.path.exists(base + '.json'):
@@ -218,43 +241,43 @@ def make(key, fid, prompt, force, mid=False):
             with open(base + '.png.tmp', 'wb') as f:
                 f.write(img)
             os.replace(base + '.png.tmp', base + '.png')
-            json.dump({'id': fid, 'prompt': prompt, 'model': MODEL, 'size': SIZE, 'quality': QUALITY, 'transparent': True,
-                       'edit_of': fid + '.png' if mid else None, 'poses': MID_POSES if mid else POSES, 'created': j.get('created'),
+            json.dump({'id': fid, 'view': view, 'prompt': prompt, 'model': MODEL, 'size': SIZE, 'quality': QUALITY,
+                       'edit_of': os.path.basename(ref) if view != 'side' else None, 'frames': FRAMES, 'created': j.get('created'),
                        'usage': j.get('usage')}, open(base + '.json', 'w'), indent=1)
-            return fid, 'made %d KB' % (len(img) // 1024)
+            return fid, view, 'made %d KB' % (len(img) // 1024)
         except urllib.error.HTTPError as e:
             msg = e.read().decode('utf-8', 'replace')[:300]
             if e.code in (400, 401, 403, 429):   # a refusal is not retried: every call is counted against a budget
-                return fid, 'refused %d: %s' % (e.code, msg)
+                return fid, view, 'refused %d: %s' % (e.code, msg)
             err = '%d %s' % (e.code, msg)
         except Exception as e:
             err = str(e)[:300]
         time.sleep(5 + 10 * attempt)
-    return fid, 'failed: ' + err
+    return fid, view, 'failed: ' + err
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--force', action='store_true')
     ap.add_argument('--only', default='')
+    ap.add_argument('--views', default=','.join(VIEWS))
     ap.add_argument('--list', action='store_true')
-    ap.add_argument('--workers', type=int, default=3)
-    ap.add_argument('--mid', action='store_true', help='the in-between sheets (<id>-mid.png), each an edit of its first sheet')
+    ap.add_argument('--workers', type=int, default=4)
     a = ap.parse_args()
     only = set(filter(None, a.only.split(',')))
-    todo = [j for j in jobs() if not only or j[0] in only]
-    if a.mid:
-        todo = [(fid, MID_SHEET.format(carry=MID_CARRY[fid])) for fid, _ in todo]
-    suf = '-mid' if a.mid else ''
+    views = [v for v in VIEWS if v in a.views.split(',')]
+    todo = [j for j in jobs(views) if not only or j[0] in only]
     if a.list:
-        for fid, prompt in todo:
-            print(fid + suf, SIZE, 'on disk' if os.path.exists(os.path.join(RAW, fid + suf + '.png')) else 'to make')
+        for fid, view, prompt in todo:
+            print(fid, view, SIZE, 'on disk' if os.path.exists(raw_path(fid, view)) else 'to make')
         return
     key = api_key()
-    print('%d %ssheets, model %s, %s, quality %s' % (len(todo), 'in-between ' if a.mid else '', MODEL, SIZE, QUALITY), flush=True)
-    with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
-        for fid, what in ex.map(lambda j: make(key, j[0], j[1], a.force, a.mid), todo):
-            print(fid, what, flush=True)
+    print('%d strips, model %s, %s, quality %s' % (len(todo), MODEL, SIZE, QUALITY), flush=True)
+    # the side strips first: the front and the back are edits of them
+    for group in ([j for j in todo if j[1] == 'side'], [j for j in todo if j[1] != 'side']):
+        with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
+            for fid, view, what in ex.map(lambda j: make(key, j[0], j[1], j[2], a.force), group):
+                print(fid, view, what, flush=True)
 
 
 if __name__ == '__main__':

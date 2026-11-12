@@ -47042,10 +47042,11 @@ float pinOccGate() {
   // as a unit vector on the ground, figure index, step phase 0 to 1, fade 0 to 1) for the walkers within R of the eye and
   // returns how many; nothing when the eye is PEOPLE.eyeMax over the ground. It allocates nothing, keys nothing by a
   // string, and traces at most PEOPLE.traceMs of new faces a call. __dbg.people() reports, __dbg.people(false) stops it.
-  const PEOPLE_ON = /[?&]people=(?:1|sharp)\b/.test(location.search) && !TIER2;   // sharp: a computer's twice-size atlas (PEOPLE_SHARP)
+  const PEOPLE_ON = /[?&]people=(?:1|sharp)\b/.test(location.search) && !TIER2;   // sharp: Round 227's twice-size atlas for a computer; since Round 242 the same as 1 (PEOPLE_SHARP)
   if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;   // nothing reads the walls: let the text go
   const PEOPLE_T0 = Date.UTC(2026, 0, 1);   // t counts real seconds from here, so the same instant gives the same street on any device
-  const PEOPLE = { live: PEOPLE_ON, ready: false, r: isTouch ? 80 : 150, cap: isTouch ? 150 : 600, stride: 8, figures: 12,
+  const PEOPLE = { live: PEOPLE_ON, ready: false, r: isTouch ? 80 : 150, cap: isTouch ? 150 : 600, stride: 8, figures: 120,   // a walker's figure id, taken modulo the drawn wardrobe's count (120: every count up to 6, and 8, 10 and 12, evenly)
+   
     minWalk: 1.4, wallGap: 0.8, setMin: 0.7, setMax: 2.0, lat: 0.35, streetClear: 0.1, strip: [2.5, 5, 7], faceCap: 1600, faceMax: 64, medianW: 8, eyeMax: 60, ahead: 40, cell: 64,
     traceMs: isTouch ? 1.0 : 1.5, keep: isTouch ? 2500 : 9000, t: null, rk: 1, frame: 0, ways: 0, boost: null, rec: null, trails: [], nPts: 0, nSlots: 0, flushes: 0, gen: 0, closedSig: 0, dowKey: 0, dow: 0,
     stat: { drawn: 0, present: 0, slots: 0, active: 0, pending: 0, traced: 0, dropped: 0, ms: 0, fills: 0 },
@@ -48283,19 +48284,23 @@ float pinOccGate() {
   // ---- people on the sidewalks: the drawing (Round 227. The walkers above, drawn: only under ?people=1, a look change
   // behind its flag until Mike has seen it). One InstancedMesh of unit quads, a card a walker, each turned about its own
   // vertical to the eye and never tilted, its feet on the drawn ground the fill hands it. The picture is a cell of
-  // PEOPLE_ART's one atlas (bake_people_art.py): a front, a back and a side view, each at the four moments of a step
-  // (Round 237: the contact, the down, the passing and the up; Round 227's two, a stride and a stand, read as a flip).
+  // PEOPLE_ART's atlas for the WARDROBE the temperature asks for (bake_people_art.py; Round 242: thirty figures, ten a
+  // wardrobe, cold, cool and warm, one atlas on the GPU at a time): a front, a back and a side view, each at the eight
+  // equal moments of a step (Round 237 had four, Round 227 two, a stride and a stand, which read as a flip).
   //   THE VIEW comes from the walker's heading against the line to the eye: the front inside 45 degrees of walking at
   // the eye, the back inside 45 of walking away, the side between, mirrored when the walker's way is toward the viewer's
   // left. No view snaps: across PPL.hand degrees either side of a line the two pictures hand over through a per-pixel
   // dither (both cells ride every instance). The plan asked for about 12 degrees in all; at 12 a passer 7 m to the side
   // stood half one picture and half the other for 0.8 s (the captures), so it is 6: a quick dissolve, not a ghost.
-  //   THE STEP: the fill's phase is one gait cycle of two steps, each the manifest's frames in order (contact, down,
-  // passing, up), so eight pictures a cycle, about seven a second at a walk. The second step is the other leg's: the front
-  // and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on one side (p01's tote
-  // must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet by PPL.bob metres,
-  // lowest at the down and tallest at the up (the phase the shader reads is shifted a sixteenth of a cycle for it), the
-  // feet never leaving the ground.
+  //   THE STEP: the fill's phase is one gait cycle of two steps, each the manifest's frames in order (the contact, the
+  // down at a quarter, the passing at a half, the up at three quarters), so sixteen pictures a cycle, about fourteen a
+  // second at a walk. The second step is the other leg's: the front and the back are mirrored for it (every figure is
+  // mirror-safe since Round 242, nothing carried on one side: fetch_people_art.py). The body stands still on its card
+  // (the bake places each picture by its head and trunk), and the card is stretched from its feet by PPL.bob metres,
+  // lowest at the down and tallest at the up (the phase the shader reads is shifted half a picture for it), the feet
+  // never leaving the ground.
+  //   THE WARDROBE: peopleWardrobe, from the live temperature while the model's date is today and from the normal for the
+  // model's date otherwise; a change loads the other atlas and the walkers change clothes when it lands.
   //   THE LIGHT is the tree cards': a MeshStandardMaterial with a soft normal round the body's axis, so a figure has a
   // sun side; the sun's shadow received on a computer (a walker in a building's shade is in shade); the lamps' pools at
   // night through lampLightPatch (called, never edited: its crown share is the card's own uniform here); the clouds'
@@ -48311,23 +48316,23 @@ float pinOccGate() {
   // Both are linked in the frames between Ready and the Enter tap, on a 1 by 1 texture and one collapsed instance, with
   // peopleInit beside them, so the first descent to a street stalls on neither; the atlas is asked for the first time a
   // fill returns anyone. ?people=sharp is a computer's twice-size atlas, for the side by side
-  const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\b/.test(location.search);
-  const PEOPLE_SYM = { p02: 1, p03: 1 };   // nothing carried on one side: the second stride may be the first one mirrored
+  const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\b/.test(location.search);   // since Round 242 no sharper atlas exists: reported, nothing else
   const PPL = { made: false, card: null, shade: null, blob: null, out: null, iv: null, ivb: null, fade: null, figs: null, n: 0, atlas: null, loading: false, retryAt: 0, failed: 0,
+    ward: null, want: null, wardAt: -1e9, wardPin: null, temp: null,
     hand: 3, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
     uTex: { value: null }, uPK: { value: new THREE.Vector4(0.03, 900, 256, 0.0) }, uPL: { value: new THREE.Vector4(0.42, 0.9, 0, 0) }, uPS: { value: new THREE.Vector4(0, 0.035, 0, 0) } };
   const PEOPLE_BAYER = 'float pBay(vec2 p) { vec2 cp = mod(floor(p), 4.0); float low = mod(mod(cp.x, 2.0) * 2.0 + mod(cp.y, 2.0) * 3.0, 4.0); float high = mod(floor(cp.x / 2.0) * 2.0 + floor(cp.y / 2.0) * 3.0, 4.0); return (low * 4.0 + high + 0.5) / 16.0; }';
   // every figure's cells as the shader reads them: view (front, back, side) by frame (the manifest's, a step's moments in
   // order), each u0, v0 (the feet's row), du, dv in a texture with its first row at the top of the image
   const PEOPLE_FR = (typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.frames) || 2;   // frames a step
-  const PEOPLE_PASS = PEOPLE_FR >> 1;   // the passing frame: 1 of two, 2 of four
-  function peopleCells() {
-    const A = PEOPLE_ART, W = A.atlas.w, H = A.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [], NF = PEOPLE_FR;
-    for (const f of A.figures) {
+  const PEOPLE_PASS = PEOPLE_FR >> 1;   // the passing frame: 1 of two, 2 of four, 4 of eight
+  function peopleCells(ward) {
+    const A = PEOPLE_ART, R = A.wardrobes[ward], W = R.atlas.w, H = R.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [], NF = PEOPLE_FR;
+    for (const f of R.figures) {
       const c = new Float32Array(12 * NF);
       for (let v = 0; v < 3; v++) for (let fr = 0; fr < NF; fr++) { const r = f.cells[V[v]][fr], o = (v * NF + fr) * 4; c[o] = r[0] / W; c[o + 1] = 1 - (r[1] + r[3]) / H; c[o + 2] = r[2] / W; c[o + 3] = r[3] / H; }
       const r0 = f.cells[V[0]][0];
-      F.push({ c, tall: f.tall, wide: f.tall * r0[2] / r0[3], sym: !!PEOPLE_SYM[f.id] });
+      F.push({ c, tall: f.tall, wide: f.tall * r0[2] / r0[3], sym: true });   // every figure mirror-safe (Round 242)
     }
     return F;
   }
@@ -48421,7 +48426,7 @@ float pinOccGate() {
   // the programs against the scene as it stands (its lights, its fog, the post target)
   function peopleDrawMake() {
     const D = PPL, t0 = performance.now(), cap = PEOPLE.cap;
-    D.figs = peopleCells();
+    D.figs = null;   // the wardrobe's, when its atlas lands
     D.out = new Float32Array(cap * PEOPLE.stride);
     D.iv = new Float32Array(cap * 16);    // a walker: the card's width, its height, the hand-over, the step's phase; then three cells (view A, view B, the sun's view)
     D.fade = new Float32Array(cap);
@@ -48471,11 +48476,41 @@ float pinOccGate() {
     D.made = true;
     D.warm.makeMs = +(performance.now() - t0).toFixed(1);
   }
-  function peopleAtlasLoad(now) {
-    const D = PPL, A = PEOPLE_ART.atlas;
+  // Round 242: the wardrobe by the temperature in degrees F. The live reading while the model's date is Philadelphia's
+  // today (a pinned ?wx= preset carries its own), else the normal for the model's date: PHL's 1991 to 2020 normal highs
+  // by month, less 4 for the hours people are out, eased between mid-months. The manifest's temps are the hand-overs
+  // (under the first cold, over the second warm), each with PEOPLE_HYST degrees of hysteresis, so a reading that hovers
+  // does not swap the atlas back and forth. __dbg.peopleTune({ ward }) pins one for the review
+  const PEOPLE_NORM = [41.3, 44.4, 52.9, 64.3, 74.3, 83.0, 87.8, 85.8, 78.8, 67.3, 56.0, 45.6], PEOPLE_HYST = 3;
+  function peopleNormal(m, d) {
+    const f = m - 1 + (d - 15.5) / 30.5, i = Math.floor(f), t = f - i, a = PEOPLE_NORM[(i + 12) % 12], b = PEOPLE_NORM[(i + 13) % 12];
+    return a + (b - a) * t - 4;
+  }
+  function peopleToday() {   // Philadelphia's date as y * 10000 + m * 100 + d (setClockToNow's two passes)
+    const now = new Date();
+    let off = tzOffsetMin(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate());
+    let loc = new Date(now.getTime() + off * 60000);
+    off = tzOffsetMin(loc.getUTCFullYear(), loc.getUTCMonth() + 1, loc.getUTCDate());
+    loc = new Date(now.getTime() + off * 60000);
+    return loc.getUTCFullYear() * 10000 + (loc.getUTCMonth() + 1) * 100 + loc.getUTCDate();
+  }
+  function peopleTemp() {
+    const md = clock.y * 10000 + clock.m * 100 + clock.d;
+    if ((clock.live || md === peopleToday()) && WX.temp != null) return WX.temp;
+    return peopleNormal(clock.m, clock.d);
+  }
+  function peopleWardrobe(cur) {
+    const A = PEOPLE_ART.wardrobes, T = PPL.temp = peopleTemp(), t = PEOPLE_ART.temps, H = PEOPLE_HYST;
+    if (PPL.wardPin && A[PPL.wardPin]) return PPL.wardPin;
+    let want = T < t[0] ? 'cold' : T > t[1] ? 'warm' : 'cool';
+    if (cur && A[cur] && want !== cur && (cur === 'cold' ? T < t[0] + H : cur === 'warm' ? T > t[1] - H : T >= t[0] - H && T <= t[1] + H)) want = cur;
+    return A[want] ? want : Object.keys(A)[0];
+  }
+  function peopleAtlasLoad(ward) {
+    const D = PPL, A = PEOPLE_ART.wardrobes[ward].atlas;
     D.loading = true;
-    // each a record's field with the record's own half beside it, so a phone can only ever be handed the half
-    (PEOPLE_SHARP ? artImage(artSrc(A.imgSharp, A.imgHalf)) : artImage(artSrc(A.img, A.imgHalf))).then((im) => {
+    // the record's own half beside it, so a phone can only ever be handed the half
+    artImage(artSrc(A.img, A.imgHalf)).then((im) => {
       D.loading = false;
       if (!im) { D.failed++; D.retryAt = performance.now() + 30000; return; }
       const t = new THREE.Texture(im), mips = renderer.capabilities.isWebGL2 === true;   // its size is no power of two: WebGL 2 mips it as it is
@@ -48485,8 +48520,9 @@ float pinOccGate() {
       const old = D.uTex.value;
       D.uTex.value = freeTexOnUpload(t);
       if (old) old.dispose();
-      D.uPK.value.z = Math.round(im.height * PEOPLE_ART.figures[0].cells[0][0][3] / A.h);
-      D.atlas = { w: im.width, h: im.height, bytes: Math.round(im.width * im.height * 4 * (mips ? 4 / 3 : 1)), sharp: PEOPLE_SHARP, half: im.width < A.w };
+      D.figs = peopleCells(ward); D.ward = ward;   // the cells change with the picture, in the same frame
+      D.uPK.value.z = Math.round(im.height * PEOPLE_ART.wardrobes[ward].figures[0].cells[0][0][3] / A.h);
+      D.atlas = { ward, w: im.width, h: im.height, bytes: Math.round(im.width * im.height * 4 * (mips ? 4 / 3 : 1)), sharp: PEOPLE_SHARP, half: im.width < A.w };
     });
   }
   // The fill's height is the drawn GROUND at the walker's line; what the walker stands on is whatever is laid over it: an
@@ -48503,11 +48539,12 @@ float pinOccGate() {
   // every frame, after the traffic: the walkers near the eye into the instance buffers
   function peopleStep(now) {
     const D = PPL;
-    if (!D.made) { if (PERF.ready !== undefined && typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.figures && PEOPLE_ART.figures.length) peopleDrawMake(); return; }
+    if (!D.made) { if (PERF.ready !== undefined && typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.wardrobes) peopleDrawMake(); return; }
     if (D.warm.frames < 2) { if (++D.warm.frames === 2) D.warm.p1 = renderer.info.programs ? renderer.info.programs.length : 0; else return; }   // the warm frame has been drawn
     const t0 = performance.now(), c = camera.position, out = D.out;
     const n = peopleFill(out, c.x, c.y, c.z);
-    if (n && !D.atlas && !D.loading && now >= D.retryAt) peopleAtlasLoad(now);
+    if (now - D.wardAt > 2000) { D.wardAt = now; D.want = peopleWardrobe(D.want); }   // every 2 s, as the trees' seasons
+    if (n && D.want !== D.ward && !D.loading && now >= D.retryAt) peopleAtlasLoad(D.want);   // the old clothes stay drawn until the new land
     const show = D.atlas ? n : 0;
     D.n = show;
     D.card.count = show; D.card.visible = show > 0;
@@ -48538,7 +48575,7 @@ float pinOccGate() {
         const u = p4 - Math.floor(p4);
         if (u > 1 - xf) { const nx = (fi + 1) % NC; frB = nx % NF; flipB = F.sym && nx >= NF && (NF > 2 || frB === 0); k = (u - 1 + xf) / xf; }
       }
-      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = NF > 2 ? ph - 0.0625 : ph;   // the bob's phase: with four frames the shader's low point lands on the down and its high on the up
+      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = NF > 2 ? ph - ((NF / 4 + 0.5) / NC - 0.125) : ph;   // the bob's phase: the shader's low point on the middle of the down (frame NF / 4) and its high on the up's
       for (let s = 0; s < 3; s++) {
         let v, f = fr, mir;
         if (s === 0) { v = vA; mir = v === 2 ? !right : flip; }
@@ -48563,16 +48600,17 @@ float pinOccGate() {
   // __dbg.people().draw: what is drawn, the atlas in use and its bytes on the GPU, the two programs' presence, the warm-up
   function peopleDrawDbg() {
     const D = PPL, P = (renderer.info.programs || []).map((p) => String(p.cacheKey || '')), has = (k) => P.some((s) => s.indexOf(k) >= 0);
-    return { made: D.made, drawn: D.n, sharp: PEOPLE_SHARP, atlas: D.atlas ? { ...D.atlas } : null, loading: D.loading, failed: D.failed, figures: D.figs ? D.figs.length : 0,
+    return { made: D.made, drawn: D.n, sharp: PEOPLE_SHARP, ward: D.ward, want: D.want, temp: D.temp == null ? null : +D.temp.toFixed(1), pin: D.wardPin, atlas: D.atlas ? { ...D.atlas } : null, loading: D.loading, failed: D.failed, figures: D.figs ? D.figs.length : 0,
       programs: { card: has('people-card'), shade: has('people-shade'), total: P.length }, shades: { sun: !!(D.shade && D.shade.visible), contact: !!(D.blob && D.blob.visible) },
       receive: D.card ? { card: D.card.receiveShadow, shade: !!(D.shade && D.shade.receiveShadow) } : null,
       warm: { ...D.warm, programs: D.warm.p1 - D.warm.p0 }, stepMs: +D.stepMs.toFixed(3), tune: { bob: D.bob, hand: D.hand, xfade: D.xfade, lamp: D.uPL.value.x, tone: D.uPL.value.y, lift: D.uPK.value.w, shade: D.uPS.value.x, up: [D.up0, D.up1] } };
   }
-  // __dbg.peopleTune({ bob, hand, xfade, lamp, tone, lift, shade }): the look's numbers at run time, for the review
+  // __dbg.peopleTune({ bob, hand, xfade, lamp, tone, lift, shade, ward }): the look's numbers at run time, for the review
   function peopleTune(o) {
     const D = PPL;
     if (o) {
       if (o.bob != null) D.bob = +o.bob; if (o.hand != null) D.hand = clamp(+o.hand, 0.5, 40); if (o.xfade != null) D.xfade = clamp(+o.xfade, 0, 0.9);
+      if (o.ward !== undefined) { D.wardPin = o.ward || null; D.wardAt = -1e9; }   // 'cold', 'cool', 'warm', or null to follow the temperature again
       if (o.lamp != null) D.uPL.value.x = +o.lamp; if (o.tone != null) D.uPL.value.y = +o.tone; if (o.lift != null) D.uPK.value.w = +o.lift; if (o.shade != null) D.uPS.value.x = +o.shade; if (o.up) { D.up0 = +o.up[0]; D.up1 = +o.up[1]; }
     }
     return peopleDrawDbg().tune;

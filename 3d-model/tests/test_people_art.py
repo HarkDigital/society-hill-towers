@@ -1,20 +1,21 @@
-"""Round 227 (Mike: "people on the sidewalks, walking"): the first figure art, three test pedestrians as card sprites.
+"""Round 227 (Mike: "people on the sidewalks, walking"), Round 242 (Mike: "make it smoother still and have many more
+different looking people. They should also be dressed specific to the season"): the figure art.
 
-fetch_people_art.py makes two character sheets a figure (six pictures of one person: front, back and side, each at the
-contact and the passing moment of a step; and since Round 237 an edit of it with the same three views at the down and the
-up, so a step is four frames) and bake_people_art.py packs every figure into one atlas with a phone's half
-and a computer's sharp copy. The walkers' drawing reads the manifest under ?people=1 (tests/test_people_draw.py); these checks hold the shape it
-is told it will find:
+fetch_people_art.py makes three strips a figure (eight pictures of one person, the eight moments of one step, seen from
+the side, from the front and from behind; the front and the back edits of the side) and bake_people_art.py packs each
+WARDROBE's figures (cold, cool, warm) into one atlas with a phone's half beside it. The walkers' drawing reads the
+manifest under ?people=1 (tests/test_people_draw.py); these checks hold the shape it is told it will find:
 
-- people_art.json's shape, key for key, and one figure a record of the fetch's FIGURES, in its order;
-- every cell an inner rect of 128 by 256 inside the atlas with its 8 px gutter, no two cells' gutters overlapping, every
+- people_art.json's shape, key for key, and one figure a record of the fetch's FIGURES, wardrobe by wardrobe in its order;
+- every figure mirror-safe (nothing carried on one side: the page mirrors the second step), ten or more a wardrobe;
+- every cell an inner rect of 128 by 256 inside its atlas with its 8 px gutter, no two cells' gutters overlapping, every
   edge on the 16 px grid (so the half and the mips stay on whole pixels);
-- the three files present, named by their content's hash, the half exactly half and the sharp exactly twice the full;
-- in each of the three pictures: nothing in the gutters, the figure's feet on its rect's bottom edge, its vertical axis
-  on the rect's centre line, the two frames of a view at one height, and the colour just beyond the edge the figure's
-  own (the page premultiplies and mips it, handoff's gotcha 16);
+- the two files a wardrobe present, named by their content's hash, the half exactly half the full;
+- in each picture: nothing in the gutters, the figure's feet on its rect's bottom edge, its body (head and trunk) on the
+  rect's centre line, a view's eight pictures at one scale, and the colour just beyond the edge the figure's own (the
+  page premultiplies and mips it, handoff's gotcha 16);
 - build.py inlines the manifest as PEOPLE_ART and guards its files with the rest of the art;
-- the app carries the half and neither the full nor the sharp picture: a phone can never ask for the sharp one."""
+- the app carries the halves and never the full pictures."""
 import hashlib
 import json
 from pathlib import Path
@@ -33,7 +34,8 @@ MAN = ROOT / 'people_art.json'
 PAGE = ROOT / 'society-hill-towers.html'
 NODE = shutil.which('node')
 CELL_W, CELL_H, GUTTER = 128, 256, 8
-COPIES = (('img', 1.0), ('imgHalf', 0.5), ('imgSharp', 2.0))
+COPIES = (('img', 1.0), ('imgHalf', 0.5))
+WARDS = ('cold', 'cool', 'warm')
 
 
 def webp_size(path):
@@ -52,131 +54,146 @@ class Manifest(unittest.TestCase):
 
     def test_the_shape(self):
         m = self.m
-        self.assertEqual(set(m), {'v', 'frames', 'views', 'atlas', 'figures'})
-        self.assertEqual((m['v'], m['frames'], m['views']), (1, 4, ['front', 'back', 'side']))
-        self.assertEqual(set(m['atlas']), {'img', 'imgHalf', 'imgSharp', 'w', 'h'})
-        self.assertGreaterEqual(len(m['figures']), 3)
-        for f in m['figures']:
-            self.assertEqual(set(f), {'id', 'tall', 'season', 'cells'}, f.get('id'))
-            self.assertRegex(f['id'], r'^p\d\d$')
-            self.assertIn(f['season'], ('cold', 'warm'))
-            self.assertEqual(len(f['cells']), len(m['views']))
-            for view in f['cells']:
-                self.assertEqual(len(view), m['frames'])
-                for rect in view:
-                    self.assertEqual(len(rect), 4)
-                    self.assertTrue(all(isinstance(v, int) for v in rect), rect)
+        self.assertEqual(set(m), {'v', 'frames', 'views', 'temps', 'wardrobes'})
+        self.assertEqual((m['v'], m['frames'], m['views'], m['temps']), (2, 8, ['front', 'back', 'side'], [50, 70]))
+        self.assertEqual(tuple(m['wardrobes']), WARDS)
+        for ward, w in m['wardrobes'].items():
+            self.assertEqual(set(w), {'atlas', 'figures'})
+            self.assertEqual(set(w['atlas']), {'img', 'imgHalf', 'w', 'h'})
+            self.assertGreaterEqual(len(w['figures']), 10, ward)
+            for f in w['figures']:
+                self.assertEqual(set(f), {'id', 'tall', 'cells'}, f.get('id'))
+                self.assertRegex(f['id'], r'^[cmw]\d\d$')
+                self.assertEqual(f['id'][0], ward[0] if ward != 'cool' else 'm')
+                self.assertEqual(len(f['cells']), len(m['views']))
+                for view in f['cells']:
+                    self.assertEqual(len(view), m['frames'])
+                    for rect in view:
+                        self.assertEqual(len(rect), 4)
+                        self.assertTrue(all(isinstance(v, int) for v in rect), rect)
 
     def test_the_figures_are_the_fetchs(self):
-        figs = fetch_people_art.FIGURES
-        self.assertEqual([f['id'] for f in self.m['figures']], [f[0] for f in figs])
-        self.assertEqual(len({f[0] for f in figs}), len(figs))
-        for f, (fid, who, tall, season) in zip(self.m['figures'], figs):
-            self.assertEqual(f['season'], season)
-            # the cell stands the person's height over the share of it the figure fills: a stride is wider than half a height
-            self.assertGreaterEqual(f['tall'], tall)
-            self.assertLess(f['tall'], tall / 0.75, fid)
-            self.assertTrue(1.45 <= tall <= 2.0, fid)
-        # the two sheets between them hold every view's frames once, each sheet view by view: the first the contact and the
-        # passing, the in-between sheet the down and the up
         F = fetch_people_art
-        views = self.m['views']
-        self.assertEqual(F.POSES, [(v, f) for v in views for f in (0, 2)])
-        self.assertEqual(F.MID_POSES, [(v, f) for v in views for f in (1, 3)])
-        self.assertEqual(sorted(F.POSES + F.MID_POSES, key=lambda p: (views.index(p[0]), p[1])), [(v, f) for v in views for f in range(self.m['frames'])])
-        self.assertEqual(set(F.MID_CARRY), {f[0] for f in figs})
+        figs = F.FIGURES
+        self.assertEqual(len({f[0] for f in figs}), len(figs))
+        for ward in WARDS:
+            got = self.m['wardrobes'][ward]['figures']
+            mine = [f for f in figs if f[3] == ward]
+            self.assertEqual([f['id'] for f in got], [f[0] for f in mine])
+            for f, (fid, who, tall, _, carry) in zip(got, mine):
+                # the cell stands the person's height over the share of it the figure fills: a stride is wider than half a
+                # height, and a backpack in profile wider again (w02 fills 0.746)
+                self.assertGreaterEqual(f['tall'], tall)
+                self.assertLess(f['tall'], tall / 0.72, fid)
+                self.assertTrue(1.45 <= tall <= 2.0, fid)
+                # mirror-safe: hands empty or a backpack on both shoulders, and nothing in the words that hangs on one side
+                self.assertIn(carry, F.CARRY, fid)
+                self.assertNotRegex(who, r'\b(tote|shoulder bag|crossbody|handbag|purse|umbrella|cup|phone)\b', fid)
+        self.assertEqual(set(F.WARDROBES), set(WARDS))
+        self.assertEqual((F.VIEWS, F.FRAMES), (['side', 'front', 'back'], self.m['frames']))
 
     def test_every_rect_sits_inside_the_atlas_with_its_gutter(self):
-        W, H = self.m['atlas']['w'], self.m['atlas']['h']
-        self.assertEqual((W % 16, H % 16), (0, 0))
-        rects = [r for f in self.m['figures'] for view in f['cells'] for r in view]
-        self.assertEqual(len(rects), 3 * self.m['frames'] * len(self.m['figures']))
-        for x, y, w, h in rects:
-            self.assertEqual((w, h), (CELL_W, CELL_H))
-            self.assertGreaterEqual(min(x, y), GUTTER)
-            self.assertLessEqual(x + w + GUTTER, W)
-            self.assertLessEqual(y + h + GUTTER, H)
-            # the padded cell is on the 16 px grid, so the half's cells and four levels of mips fall on whole pixels
-            self.assertEqual(((x - GUTTER) % 16, (y - GUTTER) % 16), (0, 0))
-        pad = [(x - GUTTER, y - GUTTER, x + w + GUTTER, y + h + GUTTER) for x, y, w, h in rects]
-        for i, a in enumerate(pad):
-            for b in pad[i + 1:]:
-                self.assertTrue(a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], 'two cells share a gutter: %s %s' % (a, b))
+        for ward, w in self.m['wardrobes'].items():
+            W, H = w['atlas']['w'], w['atlas']['h']
+            self.assertEqual((W % 16, H % 16), (0, 0))
+            self.assertLessEqual(max(W, H), 4096, ward)   # the full picture fits every WebGL 2 device's texture size
+            rects = [r for f in w['figures'] for view in f['cells'] for r in view]
+            self.assertEqual(len(rects), 3 * self.m['frames'] * len(w['figures']))
+            for x, y, cw, ch in rects:
+                self.assertEqual((cw, ch), (CELL_W, CELL_H))
+                self.assertGreaterEqual(min(x, y), GUTTER)
+                self.assertLessEqual(x + cw + GUTTER, W)
+                self.assertLessEqual(y + ch + GUTTER, H)
+                # the padded cell is on the 16 px grid, so the half's cells and four levels of mips fall on whole pixels
+                self.assertEqual(((x - GUTTER) % 16, (y - GUTTER) % 16), (0, 0))
+            pad = sorted((x - GUTTER, y - GUTTER, x + cw + GUTTER, y + ch + GUTTER) for x, y, cw, ch in rects)
+            for i, a in enumerate(pad):
+                for b in pad[i + 1:]:
+                    self.assertTrue(a[2] <= b[0] or b[2] <= a[0] or a[3] <= b[1] or b[3] <= a[1], 'two cells share a gutter: %s %s' % (a, b))
 
     def test_the_files_are_there_under_their_hashes_at_their_sizes(self):
-        at = self.m['atlas']
-        for key, s in COPIES:
-            p = at[key]
-            name = {'img': 'people', 'imgHalf': 'people-half', 'imgSharp': 'people-sharp'}[key]
-            m = re.fullmatch(r'art/people/%s\.([0-9a-f]{10})\.webp' % name, p)
-            self.assertTrue(m, p)
-            self.assertEqual(hashlib.sha256((ROOT / p).read_bytes()).hexdigest()[:10], m.group(1), p)
-            self.assertEqual(webp_size(ROOT / p), (int(at['w'] * s), int(at['h'] * s)), key)
-        self.assertEqual(at['w'] % 2 + at['h'] % 2, 0, 'the half is exactly half')
-        self.assertEqual({f.name for f in (ROOT / 'art' / 'people').iterdir()}, {Path(at[k]).name for k, _ in COPIES})
+        names = set()
+        for ward, w in self.m['wardrobes'].items():
+            at = w['atlas']
+            for key, s in COPIES:
+                p = at[key]
+                name = 'people-' + ward + ('-half' if key == 'imgHalf' else '')
+                m = re.fullmatch(r'art/people/%s\.([0-9a-f]{10})\.webp' % name, p)
+                self.assertTrue(m, p)
+                self.assertEqual(hashlib.sha256((ROOT / p).read_bytes()).hexdigest()[:10], m.group(1), p)
+                self.assertEqual(webp_size(ROOT / p), (int(at['w'] * s), int(at['h'] * s)), key)
+                names.add(Path(p).name)
+            self.assertEqual(at['w'] % 2 + at['h'] % 2, 0, 'the half is exactly half')
+        self.assertEqual({f.name for f in (ROOT / 'art' / 'people').iterdir()}, names)
 
 
 class Pictures(unittest.TestCase):
-    """The three pictures, read as they ship."""
+    """The pictures, read as they ship."""
     @classmethod
     def setUpClass(cls):
         from PIL import Image
         cls.m = json.loads(MAN.read_text())
-        cls.im = {k: Image.open(ROOT / cls.m['atlas'][k]).convert('RGBA') for k, _ in COPIES}
+        cls.im = {(w, k): Image.open(ROOT / cls.m['wardrobes'][w]['atlas'][k]).convert('RGBA') for w in WARDS for k, _ in COPIES}
         for im in cls.im.values():
             im.load()
 
-    def cells(self, s):
-        for f in self.m['figures']:
+    def cells(self, ward, s):
+        for f in self.m['wardrobes'][ward]['figures']:
             for v, view in enumerate(f['cells']):
                 for fr, (x, y, w, h) in enumerate(view):
                     yield f['id'], v, fr, (int(x * s), int(y * s), int((x + w) * s), int((y + h) * s))
 
     def test_nothing_lies_in_the_gutters(self):
-        from PIL import Image
-        for key, s in COPIES:
-            a = self.im[key].getchannel('A')
-            for _, _, _, box in self.cells(s):
-                a.paste(0, box)
-            self.assertIsNone(a.getbbox(), key + ': alpha outside the cells')
+        for ward in WARDS:
+            for key, s in COPIES:
+                a = self.im[(ward, key)].getchannel('A')
+                for _, _, _, box in self.cells(ward, s):
+                    a.paste(0, box)
+                self.assertIsNone(a.getbbox(), '%s %s: alpha outside the cells' % (ward, key))
 
-    def test_feet_on_the_bottom_edge_and_the_axis_on_the_centre_line(self):
-        from PIL import Image
-        for key, s in COPIES:
-            tall = {}
-            for fid, v, fr, box in self.cells(s):
-                a = self.im[key].crop(box).getchannel('A')
-                w, h = a.size
-                solid = a.point(lambda t: 255 if t > 127 else 0).getbbox()
-                self.assertIsNotNone(solid, (key, fid, v, fr))
-                self.assertGreaterEqual(solid[3], h - 1, '%s %s view %d frame %d: the feet are off the bottom edge' % (key, fid, v, fr))
-                if key == 'imgSharp':   # drawn with a pixel to spare each side: a stride that touched its rect's edge was cut by it
-                    self.assertGreater(solid[0], 0, 'the figure touches its rect\'s left edge')
-                    self.assertLess(solid[2], w, 'the figure touches its rect\'s right edge')
-                self.assertGreater(solid[3] - solid[1], 0.75 * h, 'the figure fills too little of its cell')
-                col = list(a.resize((w, 1), Image.BOX).getdata())
-                axis = sum((i + 0.5) * c for i, c in enumerate(col)) / sum(col)
-                self.assertLess(abs(axis - w / 2), 0.02 * w + 0.5, '%s %s view %d frame %d: the axis is %.1f px off the centre line' % (key, fid, v, fr, axis - w / 2))
-                tall[(fid, v, fr)] = solid[3] - solid[1]
-            for (fid, v, fr), t in tall.items():   # one scale a figure: the six poses within 4% and a pixel of one another
-                top = max(u for (g, _, _), u in tall.items() if g == fid)
-                self.assertGreaterEqual(t, 0.96 * top - 1, (key, fid, v, fr))
+    def test_feet_on_the_bottom_edge_and_the_body_on_the_centre_line(self):
+        for ward in WARDS:
+            for key, s in COPIES:
+                tall = {}
+                for fid, v, fr, box in self.cells(ward, s):
+                    a = self.im[(ward, key)].crop(box).getchannel('A')
+                    w, h = a.size
+                    solid = a.point(lambda t: 255 if t > 127 else 0).getbbox()
+                    self.assertIsNotNone(solid, (key, fid, v, fr))
+                    self.assertGreaterEqual(solid[3], h - 1, '%s %s view %d frame %d: the feet are off the bottom edge' % (key, fid, v, fr))
+                    self.assertGreater(solid[3] - solid[1], 0.7 * h, 'the figure fills too little of its cell')
+                    # the body: the head and the trunk's band (the bake's BODY, 0.06 to 0.42 of the figure from its top)
+                    fh = solid[3] - solid[1]
+                    band = a.crop((0, solid[1] + int(0.06 * fh), w, solid[1] + int(0.42 * fh))).point(lambda t: 1 if t > 127 else 0)
+                    col = [sum(band.crop((i, 0, i + 1, band.height)).getdata()) for i in range(w)]
+                    axis = sum((i + 0.5) * c for i, c in enumerate(col)) / sum(col)
+                    self.assertLess(abs(axis - w / 2), 0.03 * w + 1, '%s %s %s view %d frame %d: the body is %.1f px off the centre line' % (ward, key, fid, v, fr, axis - w / 2))
+                    tall[(fid, v, fr)] = fh
+                for (fid, v, fr), t in tall.items():   # one scale a view: its eight pictures within 8% and a pixel of its tallest
+                    top = max(u for (g, vv, _), u in tall.items() if g == fid and vv == v)
+                    self.assertGreaterEqual(t, 0.92 * top - 1, (ward, key, fid, v, fr))
 
     def test_the_colour_beyond_the_edge_is_the_figures_own(self):
         # the page uploads the picture premultiplied and mips it, and a lossy WebP smears chroma across an edge: the clear
         # pixels round a figure must hold its colour, never black or white (handoff's gotcha 16; the tree cards' path)
         from PIL import ImageChops, ImageFilter, ImageStat
-        for key, _ in COPIES:
-            im = self.im[key]
+        for (ward, key), im in self.im.items():
             a = im.getchannel('A')
             solid = a.point(lambda t: 255 if t > 200 else 0)
             clear = a.point(lambda t: 255 if t == 0 else 0)
             ring = ImageChops.multiply(clear, a.point(lambda t: 255 if t > 0 else 0).filter(ImageFilter.MaxFilter(5)))   # clear, within 2 px of the figure
             rim = ImageChops.multiply(solid, clear.filter(ImageFilter.MaxFilter(9)))                                     # solid, within 4 px of the clear
-            self.assertGreater(ImageStat.Stat(ring).sum[0], 255 * 500, key)
+            self.assertGreater(ImageStat.Stat(ring).sum[0], 255 * 500, (ward, key))
             lum = im.convert('L')
             out, inn = ImageStat.Stat(lum, ring).mean[0], ImageStat.Stat(lum, rim).mean[0]
-            self.assertLess(abs(out - inn), 14, '%s: the clear pixels round the figures average %.0f against %.0f just inside' % (key, out, inn))
+            self.assertLess(abs(out - inn), 14, '%s %s: the clear pixels round the figures average %.0f against %.0f just inside' % (ward, key, out, inn))
+
+    def test_no_chroma_green_on_the_edge(self):
+        # a strip that came back on its green screen is keyed by the bake: no green fringe survives round a figure
+        for (ward, key), im in self.im.items():
+            px = [p for p in im.getdata() if 40 < p[3] < 250]
+            green = sum(1 for r, g, b, _ in px if g > max(r, b) + 60)
+            self.assertLess(green / max(1, len(px)), 0.01, (ward, key))
 
 
 class Wiring(unittest.TestCase):
@@ -194,7 +211,7 @@ class Wiring(unittest.TestCase):
 
     def test_the_bake_writes_through_art_files_and_never_inlines(self):
         s = (ROOT / 'bake_people_art.py').read_text()
-        self.assertEqual(s.count("art_files.write("), 3)
+        self.assertEqual(s.count("art_files.write("), 2)
         self.assertIn("art_files.prune('people')", s)
         self.assertIn('exact=True', s)   # the colour under the clear pixels is kept by the encoder
         self.assertNotIn('data:image/', MAN.read_text())
@@ -203,27 +220,25 @@ class Wiring(unittest.TestCase):
         s = (ROOT / 'fetch_people_art.py').read_text()
         self.assertIn("os.environ.get('OPENAI_API_KEY')", s)
         self.assertIn("os.path.expanduser('~/.config/philly3d/openai.env')", s)
-        uses = ("def make(key, fid, prompt, force, mid=False):", "'Authorization': 'Bearer ' + key", "key = api_key()", "make(key, j[0], j[1], a.force, a.mid)")
+        uses = ("def make(key, fid, view, prompt, force):", "'Authorization': 'Bearer ' + key", "key = api_key()", "make(key, j[0], j[1], j[2], a.force)")
         for line in s[s.index('def api_key'):].split('\n'):
             if re.search(r'\bkey\b', line):
                 self.assertTrue(any(u in line for u in uses), 'a new use of the key: ' + line.strip())
                 self.assertNotRegex(line, r'print\(|json\.dump\(|\.write\(|open\(')
 
     @unittest.skipUnless(NODE, 'node is not installed')
-    def test_the_app_carries_the_half_and_never_the_sharp(self):
-        at = json.loads(MAN.read_text())['atlas']
+    def test_the_app_carries_the_halves_and_never_the_full(self):
+        w = json.loads(MAN.read_text())['wardrobes']
         js = ("import('" + (ROOT.parent / 'app' / 'scripts' / 'art-touch.mjs').as_uri() + "').then((M) => { const n = JSON.parse(process.argv[1]); "
-              "console.log(JSON.stringify({ now: M.artTouch(n), kept: M.artTouch(n, new Set(['people'])) })); })")
-        named = sorted([at['img'], at['imgHalf'], at['imgSharp'], 'art/fronts/row-a.0123456789.webp', 'art/glass/rooms.0123456789.webp'])
-        r = subprocess.run([NODE, '-e', js, json.dumps(named)], capture_output=True, text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        got = json.loads(r.stdout)
+              "console.log(JSON.stringify({ now: M.artTouch(n) })); })")
+        full = sorted(w[k]['atlas']['img'] for k in WARDS)
+        half = sorted(w[k]['atlas']['imgHalf'] for k in WARDS)
         others = ['art/fronts/row-a.0123456789.webp', 'art/glass/rooms.0123456789.webp']
-        self.assertEqual(sorted(got['now']['carry']), sorted(others + [at['imgHalf']]))
-        self.assertEqual(sorted(got['now']['leave']), sorted([at['img'], at['imgSharp']]))
-        # a kind that keeps its full-size files (KEEP_FULL) brings back the full picture and never the sharp one
-        self.assertEqual(sorted(got['kept']['carry']), sorted(others + [at['img'], at['imgHalf']]))
-        self.assertEqual(got['kept']['leave'], [at['imgSharp']])
+        r = subprocess.run([NODE, '-e', js, json.dumps(sorted(full + half + others))], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)['now']
+        self.assertEqual(sorted(got['carry']), sorted(others + half))
+        self.assertEqual(sorted(got['leave']), full)
 
 if __name__ == '__main__':
     unittest.main()

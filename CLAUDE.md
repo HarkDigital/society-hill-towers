@@ -308,7 +308,7 @@ the signals are Philadelphia mast arms from `furnJunctions` / `furnJunction` (th
 each street a strip at its DRAWN width from the road grid, a divided street's other carriageway found as its twin), every
 pole checked by `streetPush` and `furnMedian` (no pole on a street or a median: `__dbg.signals('survey')` must read
 `inRoad` 0 and `inMed` 0); a new kind of furniture goes on the END of `FURN_KINDS`, whose index is each row's kind.
-`?people=1` draws the walking people (Round 227, a first look, OFF by default and refused at tier 2); `?people=sharp` the same with a computer's sharper atlas; `__dbg.people()`, `__dbg.people(false)`, `__dbg.peopleAt(t)`, `__dbg.peopleTune({...})`.
+`?people=1` draws the walking people (Round 227, a first look, OFF by default and refused at tier 2); `?people=sharp` is the same since Round 242 (no sharper atlas); `__dbg.people()`, `__dbg.people(false)`, `__dbg.peopleAt(t)`, `__dbg.peopleTune({...})` (`ward` pins a wardrobe).
 Stage 1's second batch (Round 229) adds: `?veilcity=1` (on by default on a computer since Round 234, Mike's pick; `?veilcity=0` turns it off and a touch device takes it only with `?veilcity=1`: every flush behind the veil is presented, so the veil shows the city rising; `__dbg.PERF.veilCity`), `?cold=<n>` (a cold load on demand, n of 1 or more, without `?dev` too: every fragment shader is salted so the browser's and the system's shader caches miss; take a new n for each cold run, since the same n twice is a cold then a warm load of the same programs; each run leaves about 200 programs in those caches; it beacons `cs`; `__dbg.PERF.salt`), `?coldms=<n>` (the median program's ms over which a load reads cold, 60 by default; 0 reads every load cold, which keeps the link timers through the first frame and runs the link probe) and `?probe=1|0` (the link probe forced on any load, or refused; left alone it runs on a load that reads cold, once a device and build, once a week in the app; `pp` and `ppk` on the ready beacon, `__dbg.PERF.linkProbe(o)`, `__dbg.PERF.lp.last`). None of the three is saved and Copy Link strips them. `tests/prelink_gpu.html?n=8` (add `&ext=1` for the extension's rows) is the scratch page that runs the same probe over eight programs on a built page staged outside Dropbox and prints the table. Probes: `__dbg.PERF.wxHook` (`over` must read 0) and `PERF.prog` (`f1`; under `?dev` `lost`, which must be empty), `PERF.lit`, `PERF.enterBy` and `PERF.enterTimer` (the Enter button), `PERF.link`, `PERF.meas` and `PERF.programs()` (the link timers and round two's facts), `__dbg.colStats().wideColK` (111,992, the count a repack of wide.b64 must leave as it was).
 
 ## The landmark rounds (Rounds 195 to 200)
@@ -491,19 +491,23 @@ comments say Round 226. The rules it leaves:
 
 ## The people (Round 227, behind `?people=1`)
 
-Mike asked for people walking; this is the first look, three test figures, and nothing is on by default until he says.
-Devlog Round 227 has the measurements and what is not built. Its rules:
+Mike asked for people walking; nothing is on by default until he says. Devlog Round 227 has the measurements and what is
+not built, Round 242 the thirty figures and the wardrobes. Its rules:
 - With the flag off nothing exists: no mesh, material, program, texture or per-frame work (`tests/test_people_draw.py`),
   and no existing program's text may change for it.
 - Walkers are slots on their own block graph (`peopleCross`, not the traffic's `conn`, which lets a walker cross 6,818
   intersections), placed by `people_walk.b64` (`bake_people_walk.py`, keyed by way index and distance along the way: the
   page's run order cannot be baked). Re-bake it after any change to traffic.b64 or the packed footprints; it stores
   centreline-to-wall, and the page subtracts its own drawn half width.
-- Art is two sheets a figure at quality high (`fetch_people_art.py`, `bake_people_art.py`): the first the contact and the
-  passing of each view, the second (Round 237, `--mid`) an EDIT of the first with the down and the up, so a step is four
-  frames (`PEOPLE_ART.frames`). The bake orders a profile's two in-betweens by how far apart the feet are and matches
-  their colour to the first sheet's; look at every new sheet before keeping it. The `-sharp` atlas is never in the app or
-  asked for by a phone.
+- Art (Round 242) is three strips a figure from gpt-image-2.6 (`fetch_people_art.py`): eight pictures of one step seen
+  from the side (made from words), the front and the back (EDITS of the side strip, so one person), on transparency or a
+  chroma green the bake keys. Thirty figures, ten a WARDROBE (cold, cool, warm), one atlas a wardrobe with its half
+  (`bake_people_art.py`, `PEOPLE_ART.wardrobes`, no sharp atlas any more); the page draws one wardrobe at a time by the
+  temperature (`peopleWardrobe`: the live reading on the model's today, PHL's normal for another date, hand-overs at 50
+  and 70 F with 3 F of hysteresis, `__dbg.peopleTune({ ward })` pins one). Every figure is MIRROR-SAFE (hands empty or a
+  backpack on both shoulders): the page mirrors the second step from the front and behind. The bake places each picture
+  by its head and trunk (`BODY`), never by its whole mass. Look at every new strip before keeping it; gpt-image-1.5 could
+  not hold a moment of the step (Rounds 227 and 237, devlog 242).
 - Nothing that moves casts into the depth pass; the cards are left out of the mirror (`userData.reflK = 0`) and the pins'
   capture, and take Float32 streams only.
 

@@ -14464,3 +14464,58 @@ the bake does, without its extra metre, and asks for none inside and 97% of the 
 knows the twelve classes.
 
 Suite: 1,507 tests, OK (one skip, one expected failure, both as before).
+
+## Round 242 — thirty people, eight pictures a step, dressed for the weather (Nov 12)
+
+Mike, after flying Round 237's walk: "The walking is smoother but I would like to make it smoother still and have many
+more different looking people. They should also be dressed specific to the season if that is not already happening."
+It was not: the three figures carried a `season` field the page never read, and all three wore November coats every day.
+
+What was tried for smoothness before the recipe that shipped (each in the scratchpad, none kept):
+- Optical flow (OpenCV DIS, a scratch venv) between Round 237's four pictures to make eight: fair from the front and
+  behind, ghost legs from the side, where a leg swings about 30 px between pictures. Stronger flow settings did not help.
+- A sixteen-picture Muybridge cycle from gpt-image-1.5 as an edit of a figure's sheet: nineteen strides, no passing, a
+  cartoon face.
+- gpt-image-2.6-sunburst, a single row of eight: the eight equal moments of one step in order (contact, roll, down,
+  push-off, passing, swing, reach, contact), the passing narrowest, one person in all eight, photographic. Its strips
+  come back cut out on transparency when the prompt asks for a flat chroma green ground; a third came back on the green
+  instead, which the bake keys (`chroma`, the spill taken out of the edge only, so an olive parka keeps its green).
+
+The art (`fetch_people_art.py`, rewritten): three strips a figure, side, front and back, eight pictures each; the side
+from words, the front and the back EDITS of the side strip, so all three are one person. Thirty figures, ten a wardrobe:
+cold (coats, puffers, knit caps, scarves), cool (windbreakers, a denim jacket, sweaters, a hoodie, one wool coat, one
+T-shirt) and warm (T-shirts, shorts, a sundress, linen, a polo), adults from about eighteen to about seventy-five, every
+build and skin. Every figure is MIRROR-SAFE: hands empty or a backpack on both shoulders, so the page can draw the second
+step of a cycle as the first one mirrored; the old shoulder tote is gone. 90 strips, every one looked at before keeping
+it, none made again; about 1,370 output tokens a strip (the old sheets were 6,208).
+
+The bake (`bake_people_art.py`, rewritten): eight pieces a strip (the alpha's pieces, or the emptiest columns near the
+eighths keeping only the figure's own pieces); one scale a strip, its tallest picture at the full height; each picture
+placed by its HEAD AND TRUNK (`BODY`, 0.06 to 0.42 of the figure from the top), not by its whole mass, so the body glides
+on at an even pace while the legs move about it (Round 227's mass centre pulled the body back and forth a few
+centimetres a picture). One atlas a wardrobe with its half, no sharp atlas (the strips' figures stand about 440 px, which
+the 256 px cell already holds): each 3456 by 2720, 50.1 MB on a computer's GPU with mips, 12.5 MB for a phone's half, one
+wardrobe on the GPU at a time (Round 237's one atlas: 7.5 and 1.9 MB). On disk 1.39 to 1.50 MB a wardrobe, 0.59 to 0.67
+for a half. Every side strip's feet-apart sequence reads in step order (the bake reports it).
+
+The page (app.js, the people's drawing, under `?people=1` only):
+- `PEOPLE_FR` 8: sixteen pictures a cycle, about fourteen a second at a walk; the second step mirrored from the front and
+  behind for every figure; the bob's phase shifted half a picture so its low point is the down's middle and its high the
+  up's; the sun's side view takes the passing, frame 4.
+- `peopleWardrobe`: the live temperature while the model's date is Philadelphia's today (a `?wx=` preset carries its
+  own), else PHL's 1991 to 2020 normal high for the model's date less 4 F, eased between mid-months; under 50 F cold,
+  over 70 warm, 3 F of hysteresis at each hand-over, re-judged every 2 s. A change loads the other atlas and the walkers
+  change clothes when it lands, cells and picture in the same frame. Today at 53 F: cool. `__dbg.peopleTune({ ward })`
+  pins one; `__dbg.people().draw` reports `ward`, `want`, `temp`, `pin`.
+- `PEOPLE.figures` 120 (the fill's figure id, taken modulo the wardrobe's ten, evenly).
+- `?people=sharp` stays accepted and draws the full atlas.
+
+Checked: the three wardrobes on one street pose (`ward-*.jpg`); 60-frame clips from the side and the front against the
+deployed page (the live walk holds a stride, stands still four frames, then jumps; the new one opens and closes the legs
+a little every frame). Tests: `test_people_art.py` holds the v2 manifest (three wardrobes of ten, mirror-safe words, the
+body on the centre line, no green on an edge, the app carrying the halves only); `test_people_draw.py` the eight-frame
+step, the bob, the wardrobe rule and its hysteresis, and an atlas swap. Suite: 1,510 tests, OK (one expected failure).
+
+Known: walkers still cross lawns where no sidewalk is drawn and pass through each other; feet still slide a little
+within a picture; figures walking toward the eye face the lens (the front strips were asked for the face to the camera). The memory is the new
+cost: a phone carries 12.5 MB for the people where it carried 1.9 (the flag is still off by default and refused at tier 2).

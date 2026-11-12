@@ -8,11 +8,15 @@ page's text and not a copy of it:
     collapsed instance (the programs' warm-up) and calls peopleInit beside it;
   - the static rules: every instance stream is 4-byte floats (WebKit pads a 1- or 3-byte stream), every mesh carries
     reflK 0, casts nothing and has no depth material, no program of the section writes gl_FragDepth, and the art is
-    asked for through artImage(artSrc(...)) alone, the sharp copy by a computer under ?people=sharp and nobody else;
+    asked for through artImage(artSrc(...)) alone, the wardrobe's full picture with its half beside it (Round 242: no
+    sharp copy any more);
   - the view: the front inside 45 degrees of walking at the eye, the back inside 45 of walking away, the side between,
     mirrored when the walker's way is toward the viewer's left, and both cells with a share between them across the
-    hand-over; the step: stride, pass, stride, pass, the second stride mirrored only for a figure PEOPLE_SYM names;
-    the sun's view for the shadow, from the side always the passing pose; the figure index taken modulo the figures;
+    hand-over; the step: eight frames in order, the second step mirrored from the front and behind (every figure is
+    mirror-safe since Round 242); the sun's view for the shadow, from the side always the passing pose; the figure index
+    taken modulo the wardrobe's figures;
+  - the wardrobe (Round 242): by the live temperature while the model's date is today, by the normal for the model's
+    date otherwise, with hysteresis at each hand-over, a pin for the review, and the atlas swapped when the new one lands;
   - the patches land: every anchor the card's and the shadow's patches replace is in r149's shaders, under the
     realistic look and under ?real=0, the lamps' share is the card's own uniform in its own text, the shared patch
     functions are called and never rewritten, and each program stays far under sixteen samplers."""
@@ -43,6 +47,7 @@ function make(OPT) {
   const body = `
 const PEOPLE_ON = !!OPT.on, isTouch = !!OPT.touch, REAL = OPT.real !== false, location = { search: OPT.search || '' };
 const PEOPLE = { cap: isTouch ? 150 : 600, stride: 8, ready: false }, PEOPLE_ART = OPT.art === undefined ? ART : OPT.art, PERF = { ready: undefined };
+const clock = { y: 2026, m: 11, d: 12, minutes: 720, live: OPT.live !== false }, WX = { temp: OPT.temp === undefined ? 60 : OPT.temp }, tzOffsetMin = () => -300;
 const performance = { now: () => 0 }, clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 const renderer = { info: { programs: [] }, domElement: { height: 900 }, capabilities: { isWebGL2: true } };
 const camera = { position: { x: 0, y: 1.7, z: 0 } }, sunDir = { x: 1, y: 0.5, z: 0 };
@@ -57,7 +62,8 @@ let ROWS = [];
 const peopleFill = (out) => { log.fills++; for (let i = 0; i < ROWS.length; i++) out.set(ROWS[i], i * 8); return ROWS.length; };
 const inCore = (x, z) => !!OPT.core, sidewalkAt = (x, z) => x > 1000;
 const artSrc = (full, half) => { asked.push([full, half]); return isTouch && half ? half : full; };
-const artImage = (s) => ({ then: (f) => { PENDING.push(() => f(OPT.noArt ? null : { width: OPT.imW || ART.atlas.w, height: OPT.imH || ART.atlas.h, src: s })); } });
+const atOf = (s) => Object.values(ART.wardrobes).map((w) => w.atlas).find((a) => a.img === s || a.imgHalf === s), sz = (s, k) => atOf(s)[k] / (atOf(s).img === s ? 1 : 2);
+const artImage = (s) => ({ then: (f) => { PENDING.push(() => f(OPT.noArt ? null : { width: OPT.imW || sz(s, 'w'), height: OPT.imH || sz(s, 'h'), src: s })); } });
 const PENDING = [], anisoOf = (n) => n, freeTexOnUpload = (t) => t;
 const lampMapU = { uLampMap: { value: null }, uLampBox: { value: null }, uLampOn: { value: 0 }, uLampFade: { value: null }, uLampNear: { value: null }, uLampNearBox: { value: null }, uLampNearFade: { value: null }, uLampReal: { value: null } };
 const LAMP_SHOULDER = 0.5, LAMP_WX_DECL = 'uniform sampler2D uLampMap; uniform vec4 uLampBox;';
@@ -65,14 +71,15 @@ const cloudShU = { uCloudOff: {}, uCloudCov: {}, uCloudSh: {}, uCloudSlant: {} }
 ${lamp}
 ${cloud}
 ${draw}
-return { PPL, PEOPLE, PERF, camera, sunDir, made, asked, added, log, PENDING, peopleStep, peopleCells, peopleCardPatch, peopleShadeMaterial, peopleDrawDbg, peopleTune, PEOPLE_SHARP, PEOPLE_SYM,
+return { PPL, PEOPLE, PERF, camera, sunDir, made, asked, added, log, PENDING, peopleStep, peopleCells, peopleCardPatch, peopleShadeMaterial, peopleDrawDbg, peopleTune, PEOPLE_SHARP, peopleWardrobe, peopleNormal, clock, WX,
   rows: (r) => { ROWS = r; }, moon: () => moonNoRecv, has: { step: typeof peopleStep } };`;
   return new Function('OPT', 'ART', 'THREE', 'REALTHREE', 'made', 'asked', 'added', 'log', body)(OPT, ART, THREE, REALTHREE, made, asked, added, log);
 }
 // the page's frames after Ready: the make frame, the second warm frame, then the frames that fill
 function warm(A) { A.PERF.ready = 1; A.peopleStep(0); A.peopleStep(16); }
 function land(A) { while (A.PENDING.length) A.PENDING.shift()(); }
-const cell = (fig, view, frame) => { const A = ART.atlas, V = ['front', 'back', 'side'].map((v) => ART.views.indexOf(v)), r = ART.figures[fig].cells[V[view]][frame]; return [r[0] / A.w, 1 - (r[1] + r[3]) / A.h, r[2] / A.w, r[3] / A.h]; };
+const COOL = ART.wardrobes.cool, NFIG = COOL.figures.length;   // the harness's 60 F is the cool wardrobe
+const cell = (fig, view, frame) => { const A = COOL.atlas, V = ['front', 'back', 'side'].map((v) => ART.views.indexOf(v)), r = COOL.figures[fig % NFIG].cells[V[view]][frame]; return [r[0] / A.w, 1 - (r[1] + r[3]) / A.h, r[2] / A.w, r[3] / A.h]; };
 const near = (a, b) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) < 1e-5);
 '''
 
@@ -114,13 +121,13 @@ o.atlas = P.atlas; o.count = [P.card.count, P.shade.count, P.blob.count]; o.vis 
 const iv = P.iv, rd = (i, s) => Array.from(iv.slice(i * 16 + 4 + s * 4, i * 16 + 8 + s * 4)), mir = (c) => [c[0] + c[2], c[1], -c[2], c[3]];
 const which = (r, fig) => { for (let v = 0; v < 3; v++) for (let f = 0; f < ART.frames; f++) { const c = cell(fig, v, f); if (near(r, c)) return 'FBS'[v] + f; if (near(r, mir(c))) return 'FBS'[v] + f + 'm'; } return '?'; };
 o.views = H.map((d, i) => [d, which(rd(i, 0), 1), which(rd(i, 1), 1), +iv[i * 16 + 2].toFixed(3)]);
-o.size = [iv[0], iv[1], ART.figures[1].tall];
-// the step: figure 0 (p01, carries a tote: never mirrored) and figure 1 (p02), walking at the eye and away, by phase
-const PH = [0.05, 0.17, 0.3, 0.42, 0.55, 0.67, 0.8, 0.92];   // one eighth of a cycle each: every frame of both steps
-A.rows([].concat(...[0, 1, 2, 4].map((fig) => PH.map((ph) => row(0, -10, 0, 1, fig, ph))), PH.map((ph) => row(0, -10, 0, -1, 1, ph)), PH.map((ph) => row(0, -10, 1, 0, 1, ph))));
+o.size = [iv[0], iv[1], COOL.figures[1].tall];
+// the step: figures 0 and 1 and the fill's 11 (figure 1 of the wardrobe's ten), walking at the eye and away, by phase
+const PH = Array.from({ length: 16 }, (_, k) => (k + 0.5) / 16);   // one sixteenth of a cycle each: every frame of both steps
+A.rows([].concat(...[0, 1, NFIG + 1].map((fig) => PH.map((ph) => row(0, -10, 0, 1, fig, ph))), PH.map((ph) => row(0, -10, 0, -1, 1, ph)), PH.map((ph) => row(0, -10, 1, 0, 1, ph))));
 A.peopleStep(80);
-o.step = [0, 1, 2, 4].map((fig, a) => PH.map((ph, b) => which(rd(a * 8 + b, 0), fig % 3)));
-o.stepBack = PH.map((ph, b) => which(rd(32 + b, 0), 1)); o.stepSide = PH.map((ph, b) => which(rd(40 + b, 0), 1));
+o.step = [0, 1, NFIG + 1].map((fig, a) => PH.map((ph, b) => which(rd(a * 16 + b, 0), fig)));
+o.stepBack = PH.map((ph, b) => which(rd(48 + b, 0), 1)); o.stepSide = PH.map((ph, b) => which(rd(64 + b, 0), 1));
 o.bob = PH.map((ph, b) => +iv[b * 16 + 3].toFixed(4));
 // the sun stands east (sunDir.x 1): its view of a walker by the walker's heading, for the shadow
 A.rows([[1, 0], [-1, 0], [0, 1], [0, -1]].map((h) => row(0, -10, h[0], h[1], 1, 0.05)).concat([[0, 1], [0, -1]].map((h) => row(0, -10, h[0], h[1], 1, 0.55))));
@@ -134,7 +141,7 @@ o.place = [[me[12], +me[13].toFixed(4), me[14]], +me[16 + 13].toFixed(4), +me[32
 o.ranges = [P.card.instanceMatrix.updateRange.count, P.ivb.updateRange.count, P.card.geometry.attributes.aCarFade.updateRange.count];
 A.rows([]); A.peopleStep(128); o.empty = [P.card.count, P.card.visible, P.shade.visible, P.blob.visible];
 // the hand-over's width and the cross-dissolve of the poses are the review's knobs
-A.peopleTune({ hand: 2, xfade: 0.5 }); A.rows([row(0, -10, R(41)[0], R(41)[1], 1, 0.3), row(0, -10, 0, 1, 1, 0.22)]); A.peopleStep(144);
+A.peopleTune({ hand: 2, xfade: 0.5 }); A.rows([row(0, -10, R(41)[0], R(41)[1], 1, 0.27), row(0, -10, 0, 1, 1, 0.22)]); A.peopleStep(144);
 o.tuned = [which(rd(0, 1), 1), +iv[2].toFixed(3), which(rd(1, 0), 1), which(rd(1, 1), 1), iv[16 + 2] > 0 && iv[16 + 2] < 1];
 // the art: asked once whatever the frames; a computer under ?people=sharp, a phone, and an answer that never comes
 const S = make({ on: true, search: '?dev=1&people=sharp' }); warm(S); S.rows([row(0, -10, 0, 1, 0, 0.1)]); S.peopleStep(32); land(S);
@@ -142,6 +149,18 @@ const T = make({ on: true, touch: true, search: '?people=sharp' }); warm(T); T.r
 const N = make({ on: true, noArt: true }); warm(N); N.rows([row(0, -10, 0, 1, 0, 0.1)]); N.peopleStep(32); land(N); N.peopleStep(48); N.peopleStep(20000); N.peopleStep(40000);
 o.art = { plain: A.asked, sharp: S.asked, sharpOn: S.PEOPLE_SHARP, touch: T.asked, touchSharp: T.PEOPLE_SHARP, lost: { asked: N.asked.length, failed: N.PPL.failed, count: N.PPL.card.count, atlas: N.PPL.atlas } };
 o.dbg = Object.keys(A.peopleDrawDbg()).join();
+// the wardrobe: the live reading on the model's today, the normal on another day, the hysteresis, the pin
+const W = make({ on: true }), wd = (t, cur, live, m) => { W.WX.temp = t; W.clock.live = live !== false; W.clock.m = m || 11; W.clock.y = live === false ? 2027 : 2026; return W.peopleWardrobe(cur); };
+o.ward = { live: [wd(30), wd(49.9), wd(50), wd(70), wd(70.1), wd(95), wd(null)], hyst: [wd(48, 'cool'), wd(46.9, 'cool'), wd(52, 'cold'), wd(53.1, 'cold'), wd(68, 'warm'), wd(66.9, 'warm'), wd(72, 'cool'), wd(73.1, 'cool')],
+  other: [1, 4, 5, 7, 10, 11, 12].map((m) => wd(95, null, false, m)), normals: [[1, 15], [7, 15], [11, 12], [12, 31], [1, 1]].map(([m, d]) => +W.peopleNormal(m, d).toFixed(2)) };
+W.peopleTune({ ward: 'warm' }); o.ward.pin = wd(20); W.peopleTune({ ward: null }); o.ward.unpin = wd(20);
+// a change of wardrobe: the new atlas asked for, the old clothes drawn until it lands, then the cells and the picture swap together
+const X = make({ on: true }); warm(X); X.rows([row(0, -10, 0, 1, 0, 0.1)]); X.peopleStep(32); land(X); X.peopleStep(48);
+const was = [X.PPL.ward, X.PPL.figs, X.PPL.uTex.value];
+X.WX.temp = 85; X.peopleStep(3000);
+o.swap = { was: was[0], want: X.PPL.want, during: [X.PPL.ward, X.PPL.figs === was[1], X.PPL.card.count, X.PPL.loading], asked: X.asked.map((q) => q[0]) };
+land(X); X.peopleStep(3016);
+o.swap.after = [X.PPL.ward, X.PPL.figs !== was[1], X.PPL.uTex.value !== was[2], X.PPL.atlas.ward];
 console.log(JSON.stringify(o));
 '''
 
@@ -263,9 +282,9 @@ class Text(unittest.TestCase):
         # no tap, no pin: nothing of the picking or the pins is named
         for word in ('pinMesh', 'pinTexture', 'bldgPick', 'pickOccluded', 'addEventListener', 'vehinfo'):
             self.assertNotIn(word, c, word)
-        # the art: one request, the full or the sharp picture with the record's half beside it
-        self.assertEqual(len(re.findall(r'\bartImage\(', c)), 2)
-        self.assertIn('    (PEOPLE_SHARP ? artImage(artSrc(A.imgSharp, A.imgHalf)) : artImage(artSrc(A.img, A.imgHalf))).then((im) => {', c)
+        # the art: one request a wardrobe, its full picture with the record's half beside it
+        self.assertEqual(len(re.findall(r'\bartImage\(', c)), 1)
+        self.assertIn('    artImage(artSrc(A.img, A.imgHalf)).then((im) => {', c)
         self.assertIn('t.premultiplyAlpha = true;', c)
 
     def test_no_dashes_or_middots(self):
@@ -342,30 +361,30 @@ class View(unittest.TestCase):
         cls.art = json.loads((ROOT / 'people_art.json').read_text())
 
     def test_nobody_is_drawn_before_the_picture_and_it_is_asked_for_once(self):
-        o, A = self.o, self.art['atlas']
+        o, A = self.o, self.art['wardrobes']['cool']['atlas']
         self.assertEqual(o['beforeArt'], {'count': 0, 'vis': False, 'asked': [[A['img'], A['imgHalf']]], 'loading': True})
         self.assertEqual(o['askedOnce'], 1)
         self.assertEqual(o['count'], [16, 16, 16])
         self.assertEqual(o['vis'], [True, True, True])
-        self.assertEqual(o['atlas'], {'w': A['w'], 'h': A['h'], 'bytes': round(A['w'] * A['h'] * 4 * 4 / 3), 'sharp': False, 'half': False})
+        self.assertEqual(o['atlas'], {'ward': 'cool', 'w': A['w'], 'h': A['h'], 'bytes': round(A['w'] * A['h'] * 4 * 4 / 3), 'sharp': False, 'half': False})
         self.assertEqual(o['cellPx'], 256)
         self.assertEqual(o['empty'], [0, False, False, False])
 
     def test_the_view_by_the_heading_against_the_eye(self):
         got = {d: (a, b, k) for d, a, b, k in self.o['views']}
-        # phase 0.3 is the passing pose (frame 2 of four); F front, B back, S side, m mirrored
+        # phase 0.3 is the passing pose (frame 4 of eight); F front, B back, S side, m mirrored
         for d in (0, 30, 38.9):
-            self.assertEqual(got[d], ('F2', 'F2', 0), d)
+            self.assertEqual(got[d], ('F4', 'F4', 0), d)
         for d in (51.1, 60, 90, 120, 128.9):
-            self.assertEqual(got[d], ('S2', 'S2', 0), d)       # toward the viewer's right: the picture as drawn
+            self.assertEqual(got[d], ('S4', 'S4', 0), d)       # toward the viewer's right: the picture as drawn
         for d in (141.1, 150, 180):
-            self.assertEqual(got[d], ('B2', 'B2', 0), d)
-        self.assertEqual(got[-90], ('S2m', 'S2m', 0))          # toward the viewer's left: mirrored
-        self.assertEqual(got[-120], ('S2m', 'S2m', 0))
+            self.assertEqual(got[d], ('B4', 'B4', 0), d)
+        self.assertEqual(got[-90], ('S4m', 'S4m', 0))          # toward the viewer's left: mirrored
+        self.assertEqual(got[-120], ('S4m', 'S4m', 0))
         # on a line both pictures ride the instance, half and half
-        self.assertEqual(got[45], ('F2', 'S2', 0.5))
-        self.assertEqual(got[135], ('S2', 'B2', 0.5))
-        self.assertEqual(got[-45], ('F2', 'S2m', 0.5))
+        self.assertEqual(got[45], ('F4', 'S4', 0.5))
+        self.assertEqual(got[135], ('S4', 'B4', 0.5))
+        self.assertEqual(got[-45], ('F4', 'S4m', 0.5))
         # the card's size is the figure's cell: its height the manifest's tall, its width by the cell's shape
         w, h, tall = self.o['size']
         self.assertAlmostEqual(h, tall, places=5)
@@ -373,26 +392,28 @@ class View(unittest.TestCase):
 
     def test_the_step(self):
         s = self.o['step']
-        # Round 237: a step is four frames (contact, down, passing, up), eight a cycle
-        self.assertEqual(s[0], ['F0', 'F1', 'F2', 'F3', 'F0', 'F1', 'F2', 'F3'])           # p01 carries a tote on one shoulder: never mirrored
-        self.assertEqual(s[1], ['F0', 'F1', 'F2', 'F3', 'F0m', 'F1m', 'F2m', 'F3m'])   # p02: the second step is the other leg's
-        self.assertEqual(s[2], s[1])                           # p03
-        self.assertEqual(s[3], s[1])                           # figure 4 of the fill's twelve is figure 1 of the three here
-        self.assertEqual(self.o['stepBack'], ['B0', 'B1', 'B2', 'B3', 'B0m', 'B1m', 'B2m', 'B3m'])
-        self.assertEqual(self.o['stepSide'], ['S0', 'S1', 'S2', 'S3'] * 2)   # a side is mirrored by its way alone
+        # Round 242: a step is eight frames (the contact, the down at 2, the passing at 4, the up at 6), sixteen a cycle,
+        # and every figure is mirror-safe: the second step is the other leg's, the first one mirrored
+        one = ['F%d' % f for f in range(8)]
+        self.assertEqual(s[0], one + [f + 'm' for f in one])
+        self.assertEqual(s[1], s[0])
+        self.assertEqual(s[2], s[1])                           # the fill's figure 11 is figure 1 of the wardrobe's ten
+        self.assertEqual(self.o['stepBack'], ['B%d' % f for f in range(8)] + ['B%dm' % f for f in range(8)])
+        self.assertEqual(self.o['stepSide'], ['S%d' % f for f in range(8)] * 2)   # a side is mirrored by its way alone
 
     def test_the_bob_is_lowest_at_the_down_and_highest_at_the_up(self):
         # the shader stretches the card by 0.5 - 0.5 cos(4 pi (w - 0.125)) of the bob, w the phase it is handed: lowest at
-        # w 0.125, highest at 0.375. With four frames the page hands the phase a sixteenth early
+        # w 0.125, highest at 0.375. With eight frames the page hands the phase half a picture early, so the low point is
+        # the middle of the down (frames 2 and 10 of the cycle's sixteen) and the high the middle of the up (6 and 14)
         import math
         lift = [0.5 - 0.5 * math.cos(4 * math.pi * (w - 0.125)) for w in self.o['bob']]
-        self.assertLess(max(lift[1], lift[5]), 0.1)            # the down (0.17, 0.67)
-        self.assertGreater(min(lift[3], lift[7]), 0.9)         # the up (0.42, 0.92)
+        self.assertLess(max(lift[2], lift[10]), 0.01)
+        self.assertGreater(min(lift[6], lift[14]), 0.99)
 
     def test_the_suns_view_for_the_shadow(self):
         # the sun stands east: a walker heading east shows it the front, west the back; north and south a side, and
         # from the side always the passing pose (a stride's feet would stand apart from the card's own)
-        self.assertEqual(self.o['sun'], ['F0', 'B0', 'S2m', 'S2', 'S2m', 'S2'])
+        self.assertEqual(self.o['sun'], ['F0', 'B0', 'S4m', 'S4', 'S4m', 'S4'])
 
     def test_the_place_the_lift_and_the_fade(self):
         o = self.o
@@ -405,19 +426,38 @@ class View(unittest.TestCase):
 
     def test_the_knobs(self):
         b, k, a1, b1, mid = self.o['tuned']
-        self.assertEqual(b, 'F2')                              # 41 degrees is outside a 2 degree hand-over
+        self.assertEqual(b, 'F4')                              # 41 degrees is outside a 2 degree hand-over
         self.assertEqual(k, 0)
-        self.assertEqual((a1, b1, mid), ('F1', 'F2', True))    # the tail of the down dissolving into the passing pose
+        self.assertEqual((a1, b1, mid), ('F3', 'F4', True))    # the tail of one picture dissolving into the next
 
     def test_the_art(self):
-        A, a = self.art['atlas'], self.o['art']
+        A, a = self.art['wardrobes']['cool']['atlas'], self.o['art']
         self.assertEqual(a['plain'], [[A['img'], A['imgHalf']]])
-        self.assertEqual((a['sharp'], a['sharpOn']), ([[A['imgSharp'], A['imgHalf']]], True))
+        self.assertEqual((a['sharp'], a['sharpOn']), ([[A['img'], A['imgHalf']]], True))   # Round 242: no sharper picture exists
         self.assertEqual((a['touch'], a['touchSharp']), ([[A['img'], A['imgHalf']]], False))   # artSrc hands a phone the half
         # a picture that never comes: nobody drawn, asked again only after the wait
         self.assertEqual(a['lost'], {'asked': 2, 'failed': 1, 'count': 0, 'atlas': None})
-        for k in ('made', 'drawn', 'atlas', 'programs', 'warm', 'shades'):
+        for k in ('made', 'drawn', 'atlas', 'programs', 'warm', 'shades', 'ward', 'want', 'temp', 'pin'):
             self.assertIn(k, self.o['dbg'].split(','))
+
+    def test_the_wardrobe(self):
+        w = self.o['ward']
+        # the model's date is today: the live reading, cold under 50 F and warm over 70; no reading falls to the normal (Nov 12: cool)
+        self.assertEqual(w['live'], ['cold', 'cold', 'cool', 'cool', 'warm', 'warm', 'cool'])
+        # three degrees of hysteresis either side of each hand-over
+        self.assertEqual(w['hyst'], ['cool', 'cold', 'cold', 'cool', 'warm', 'cool', 'cool', 'warm'])
+        # another day: the normal for its date, whatever the live reading (January and December cold, April and October
+        # and November cool, May cool, July warm)
+        self.assertEqual(w['other'], ['cold', 'cool', 'cool', 'warm', 'cool', 'cool', 'cold'])
+        self.assertEqual(w['normals'], [37.37, 83.72, 53.3, 39.41, 39.34])   # Jan 15, Jul 15, Nov 12, Dec 31, Jan 1: the month's normal high less 4
+        self.assertEqual((w['pin'], w['unpin']), ('warm', 'cold'))
+
+    def test_a_change_of_wardrobe(self):
+        s, A = self.o['swap'], self.art['wardrobes']
+        self.assertEqual((s['was'], s['want']), ('cool', 'warm'))
+        self.assertEqual(s['during'], ['cool', True, 1, True])    # the cool clothes stay drawn while the warm load
+        self.assertEqual(s['asked'], [A['cool']['atlas']['img'], A['warm']['atlas']['img']])
+        self.assertEqual(s['after'], ['warm', True, True, 'warm'])
 
 
 @unittest.skipUnless(have(), 'needs node and three.min.js')

@@ -79,8 +79,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   the app carries only the art a phone can ask for. Headless on an M2 Max: Ready 35 s to 26 s. Coda: the server caches
   art for a year and gives the gzip page to visitors behind a proxy.
 - **Round 226**: the pins draw from half a mile again (Mike's call; not part of the plan).
-- **Round 227** (the people, a first look): three test figures walking, OFF by default. `?people=1`, or
-  `?people=sharp` on a computer. See "The people" below.
+- **Round 227** (the people, a first look): three test figures walking, OFF by default. `?people=1`. Round 237 gave
+  them four poses a step; Round 242 thirty figures, eight pictures a step, dressed by the temperature. See "The people"
+  below.
 - **Round 228**: the Vine Street Expressway's cut carried to the tunnel under 20th Street and the Parkway, a portal at
   each mouth (Mike's bug report; not part of the plan).
 - **Round 230**: the last see-through slivers beside the expressway's west approach cuts closed (a floor and risers
@@ -136,9 +137,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
    other half (the straighter day toe, shader text, Stage 2), shown on a test build first; the yellow-green haze toward a
    low sun at 16:10, seen in every variant, not yet looked into. (The glass calibration it moved was re-measured as
    Round 235.)
-2. **The people, after Mike's first look.** He found the walk disjointed (Nov 11); Round 237 gave each step four poses
-   in place of two. He is to fly `philly3d.com/?people=sharp` on the Mac and `?people=1` in Safari on the iPhone again
-   and say whether to generate the full figure set. Do not generate it before he answers.
+2. **The people, after Mike's second look.** He found the walk disjointed (Nov 11; Round 237, four poses a step) and then
+   asked for smoother still, many more people and clothes for the season (Nov 12): Round 242 made thirty figures, eight
+   pictures a step, in three wardrobes chosen by the temperature. He is to fly `philly3d.com/?people=1` on the Mac and the
+   iPhone and say what is next (see "The people" below).
 3. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
    after Ready on cold loads, programs linked per flush, the link probe's ratio by engine, the memory crumbs after
    Enter on the phone.
@@ -190,19 +192,20 @@ Philadelphia's roofs toward the sun; not on the train unless he asks again.
 - **6, the Mac's frame:** one unbroken multisampled pass, four hardware shadow lookups for sixteen, the cloud deck's
   pre-march, pin reads spaced, and for slow public machines only the pieces that touch no rule.
 
-## The people (Round 227): where it stands and what is next
+## The people (Rounds 227, 237, 242): where it stands and what is next
 
-Shipped, behind `?people=1` / `?people=sharp`, off by default, refused at tier 2:
+Shipped, behind `?people=1` (`?people=sharp` is the same since Round 242), off by default, refused at tier 2:
 - Walkers are slots on their own block graph, placed by `people_walk.b64` (the centreline-to-wall distance per way
-  side), about 83% of ordinary-street kerb length walkable; three figures from one six-pose sheet each; a card, the
-  figure's own sun shadow and a contact blob; two new programs made only under the flag.
+  side), about 83% of ordinary-street kerb length walkable; a card, the figure's own sun shadow and a contact blob; two
+  new programs made only under the flag.
+- Round 242: thirty figures (gpt-image-2.6 strips, eight pictures of a step in each of three views), ten a wardrobe
+  (cold, cool, warm) by the live temperature or the date's normal, one atlas on the GPU at a time: 50.1 MB on a
+  computer, 12.5 MB on a phone (7.5 and 1.9 before).
 - Standing cost with the flag off: about 92 KB of the page's gzip (the walk-line blob).
 
 Known in the first look (devlog Round 227 has the detail):
-- Inside about 10 m the walk WAS two poses flipping: since Round 237 it is four a step (contact, down, passing, up,
-  about seven pictures a second at a walk). Feet still slide a little between pictures, and a profile's contact and
-  down read alike (the model draws the down nearly as wide). Figures walking toward the eye look into the lens; three
-  figures means twins.
+- The walk: eight pictures a step since Round 242 (about fourteen a second at a walk), the body held still on its card.
+  Feet still slide a little within a picture. Figures walking toward the eye face the lens.
 - From 25 to 55 m up the 150 m reach shows: people stop at the first crossing while cars run on.
 - Narrow rowhouse streets carry nobody (drawn 7 m wide between rows 8 to 9 m apart: no room for a walk line).
 - Walkers pass through each other, low tree crowns and poles; some feet float 10 to 17 cm; a walker turns round in one
@@ -210,18 +213,16 @@ Known in the first look (devlog Round 227 has the detail):
 - Nobody has watched it on a real phone.
 
 The next pass, once Mike has looked:
-1. The full figure set (the plan said 12 figures in two wardrobes; about $24 now, two sheets a figure at the quality
-   that held one person across six poses), and no figure looking at the lens.
+1. Done in Round 242 (thirty figures, three wardrobes). Open: rain gear and umbrellas (not mirror-safe as drawn), and a
+   phone memory check of the 12.5 MB atlas on the real device.
 2. A real height for the walk surface (the lift is a bias today), and a reach that grows with eye height.
 3. Standers at SEPTA stops, shop doors, open markets and a short list of crowd points; tier 2 gets standers only.
-4. The storefront density hook (`PEOPLE.boost`), wardrobes by season, dodging trees and poles.
+4. The storefront density hook (`PEOPLE.boost`), dodging trees and poles.
 5. Crossing at corners only after the junctions pick (signals) exists.
 
 His decisions for the people: whether they stay at all after the first look; the narrow streets (draw them narrower, or
-let people use the road's edge); the sharp atlas on a computer (15 MB for three figures; it scales with the count);
-walkers on bare ground where no sidewalk is drawn; an About line saying the people are invented; a layer switch. A
-softer change of picture is ready to try (`__dbg.peopleTune({ xfade: 0.35 })` dithers the tail of each pose into the
-next) if four poses still read as steps.
+let people use the road's edge); walkers on bare ground where no sidewalk is drawn; an About line saying the people
+are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
 
 ## Realism picks still to come (each its own round, in the order Mike chooses)
 
@@ -237,7 +238,7 @@ next) if four poses still read as steps.
 
 ## What is waiting on Mike
 
-1. The people: his first look, then the list of decisions above.
+1. The people: his look at Round 242's thirty, then the list of decisions above.
 2. Three minutes of flying the site on his Mac, then once with `?dpr=1` (Stage 6 cannot be planned without it).
 3. May the beacon name the graphics chip on website computers (one sentence in the privacy policy)?
 4. The veil: a computer's veil shows the city rising since Round 234 (his pick). Still his: may it name the compile wait,
