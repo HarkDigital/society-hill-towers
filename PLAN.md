@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 239 (Philadelphia's mast-arm signals).
+Last updated: Nov 12, 2026, after Round 240 (no parked car in a junction or on its crosswalks).
 
 ## The ask
 
@@ -117,6 +117,12 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   a drawn street or median anywhere in the city (surveyed: `__dbg.signals('survey')`). `?signals=old` keeps the old
   poles. Phone: +3 draw calls, +0.2k to 2.4k triangles, +0.1 MB GPU, frame time in the noise. JavaScript only; no
   shader text, no new program.
+- **Round 240** (Mike: "I am still seeing lots of parked cars blocking intersections"): a parked row was kept off a
+  junction only at its traffic run's listed ends, so it ran through every crossing a run is not cut at (37,190 slots
+  in a junction box or on a zebra citywide, 86% in a run's middle). Each run now finds the drawn streets that cross it
+  and parks 6 m clear of their kerb lines, with a per-car backstop for the streets that never meet its centre line:
+  9 left citywide, 7% of the slots gone, about 0.8 ms more a fresh lay on a computer. `?parkjx=0` the old rows.
+  JavaScript only.
 
 ## In flight (finish these first)
 

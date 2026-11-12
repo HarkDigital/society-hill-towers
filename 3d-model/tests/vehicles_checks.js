@@ -32,7 +32,7 @@ const OLD = '?parked=old&carscale=1';
 const make = (touch, art, furn, coreHw, search = '') => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', 'SEARCH', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + roadGrid + traffic +
   'return {CAR_MODELS,carArtGeom,vehLoft,VART,trafficRuns,trafficCreateFleet,trafficFleet,PARKED,parkedInit,parkedLay,carSample,runHydrants,parkHalfW,FURN,furnInit,furnCell,TRAFFIC,camera,setReady:()=>{trafficReady=true;},' +
   'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms,' +
-  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom,septaRoadAdd,SRG,PARK_MED,PARK_MED_GAP,PARK_TWIN_GAP,FURN_KINDS,FURN_ARM,streetInside,furnMedian};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
+  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom,septaRoadAdd,SRG,PARK_MED,PARK_MED_GAP,PARK_TWIN_GAP,FURN_KINDS,FURN_ARM,streetInside,furnMedian,PARK_JX_CLR};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
 // the cars: every kind's near and far body at its real size, every uv inside the atlas
 for (const touch of [false, true]) {
   const a = make(touch, true);
@@ -237,6 +237,39 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
     return { kerbs, med: P.PARK_MED, gaps: [P.PARK_MED_GAP, P.PARK_TWIN_GAP], drawn: P.SRG.n };
   };
   out.median = Object.assign(lay(''), { old: lay('?parkmid=1') });
+}
+// Round 240 (Mike: "I am still seeing lots of parked cars blocking intersections"): four eastbound one-way residential
+// streets, 300 m each, one run apiece with no junction at either end listed (so no end trim), and a street drawn across
+// each at x = 0 that the run is not cut at:
+// - through: a street straight across (both kerbs clear of it);
+// - tee: a street from the south only, ending on the centre line (the south kerb, the run's right, clear; the north keeps its row);
+// - skew: a street across at 45 degrees;
+// - short: a street from the south that stops 2 m short of the centre line (the run's crossings miss it; the per-car
+//   backstop does not).
+// Each kerb's slots within 8 m of x = 0 (the crossing and its zebras) and on the whole street are counted
+{
+  const streets = [['through', 500, [[0, 440, 0, 560]]], ['tee', 700, [[0, 700, 0, 820]]], ['skew', 900, [[-60, 840, 60, 960]]], ['short', 1100, [[0, 1102, 0, 1220]]]];
+  const lay = (search, car = true) => {
+    const P = make(false, false, undefined, undefined, search);
+    for (const [, z] of streets) P.trafficRuns.push(run([[-150, z], [150, z]], 5, true));
+    for (const r of P.trafficRuns) P.septaRoadAdd(r.xs[0], r.zs[0], r.xs[1], r.zs[1], P.parkHalfW(r), r.cls);
+    for (const [, , segs] of streets) for (const [x0, z0, x1, z1] of segs) P.septaRoadAdd(x0, z0, x1, z1, 3.5, 5);
+    P.PARKED.jxCar = car;
+    P.camera.position.set(0, 40, 800); P.camera.updateMatrixWorld();   // the four within the parked rows' reach
+    P.trafficCreateFleet(); P.setReady(); P.parkedInit(); P.parkedLay(0);
+    const kerbs = {};
+    streets.forEach(([g, z], ri) => {
+      const hw = P.parkHalfW(P.trafficRuns[ri]);
+      for (const side of [1, -1]) {
+        const zk = z + side * (hw - 1.0);
+        let near = 0, all = 0;
+        for (const rows of P.PARKED.slots.values()) for (let i = 0; i < rows.length; i += 7) if (Math.abs(rows[i + 2] - zk) < 0.35 && Math.abs(rows[i]) < 151) { all++; if (Math.abs(rows[i]) < 8 + (g === 'skew' ? 6 : 0)) near++; }
+        kerbs[g + (side > 0 ? 'R' : 'L')] = [near, all];
+      }
+    });
+    return { kerbs, jx: P.PARKED.jx, clr: P.PARK_JX_CLR };
+  };
+  out.junctions = Object.assign(lay(''), { old: lay('?parkjx=0'), runsOnly: lay('', false) });
 }
 // the vehicles' own lamp share, written by their own patch on the materials' real shaders (review: a text replace on
 // another patch's output matched nothing once that output changed)

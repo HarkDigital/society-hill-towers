@@ -44588,7 +44588,7 @@ float pinOccGate() {
   // a section with a car's tumblehome or a coach's upright sides, the wheels where the side view has them, and every face
   // wearing the view it faces. The boxes stay behind ?real=0 and ?vart=0 (the second keeps the rest of the realistic look)
   const VART = REAL && typeof VEHICLE_ART !== 'undefined' && VEHICLE_ART && VEHICLE_ART.cars && !/[?&]vart=0\b/.test(location.search) ? VEHICLE_ART : null;
-  const VSTAT = { tris: {}, parked: 0, parkedNear: 0, lay: 0, layMs: 0, lamps: 0 };   // __dbg.vehicles()
+  const VSTAT = { tris: {}, parked: 0, parkedNear: 0, lay: 0, layMs: 0, jxMs: 0, jxRuns: 0, lamps: 0 };   // __dbg.vehicles()
   // the ships', the ferry's and the airliner's vertex colours were stored for the old look's lift (a stored 0.13 showed as a
   // mid slate, a navy hull read pale grey under the sky): behind REAL they are read as the sRGB they were meant as and taken
   // to linear, so a navy hull is navy and a white house is no longer chalk
@@ -46232,7 +46232,9 @@ float pinOccGate() {
         if (fire) continue;
         if (PARK_MED && parkedOnMedian(r, sl, side, hw)) continue;   // a kerb on a median or in another carriageway (Round 236)
         const kind = parkedKind(hash01(roll * 17.3)), u = hw - parkKerbIn(kind);
+        if (PARKED.jx && parkedAtJunction(r, sl, side, u, CAR_MODELS[kind].l)) continue;   // a junction or its crosswalks (Round 240)
         carSample(r, sl, dir, r.oneway ? side * u : u, _pkS);
+        if (PARKED.jx && PARKED.jxCar && !parkedCarClear(r, _pkS.x, _pkS.z, _pkS.yaw, CAR_MODELS[kind].l)) continue;   // and the car itself clear of every street across it
         if (parkedNearStop(_pkS.x, _pkS.z)) continue;
         const key = Math.floor(_pkS.x / C) * 100003 + Math.floor(_pkS.z / C);
         let a = PARKED.slots.get(key); if (!a) PARKED.slots.set(key, a = []);
@@ -46240,6 +46242,155 @@ float pinOccGate() {
         PARKED.slotN++;
       }
     }
+  }
+  // Round 240 (Mike, Nov 11, over Center City: "I am still seeing lots of parked cars blocking intersections"). A row was
+  // kept off a junction only at its run's ends: PARK_TRIM where conn lists a run meeting there, else 3 m, and nothing in a
+  // run's middle. The traffic's runs are not cut at every crossing street (a street the traffic graph does not join there,
+  // a crossing in a run's middle, ends that fall outside the linker's tolerance), so rows ran on through the junction box
+  // and its crosswalks: measured over the whole city (__dbg.parkJunctions), 14,378 of 687,482 slots had their car's centre
+  // inside another street's roadway and 22,812 more stood on its zebra, 86% of them 40 m or more from either end of their run.
+  // Now each slot also asks the streets that cross its run (parkedJunctions, once a run, from the drawn road grid SRG that
+  // every tier writes; never a motorway, on its deck or in its cut, nor the run's own street round a bend under 60 degrees,
+  // though a sharper corner or a dogleg across a cross street is one; up to PARK_JX_END past either end, since a run can
+  // stop short of the street it meets): a car parks only where its nearer end stands PARK_JX_CLR past the crossing street's
+  // kerb line (the zebra ends 3.8 m past it and the stop bar is at 5), that line taken at the kerb's own offset across a
+  // skewed crossing. A street that meets the run from one side (a T) keeps that side's kerb clear and leaves the far kerb
+  // alone. That leaves 153 (Logan Circle, Penn Square's curve, a merge at a slant: a street that passes the car without
+  // meeting its run's centre line where the run is drawn), and the per-car backstop (parkedCarClear, over the street pieces
+  // within PARK_JX_NEAR of the run that cross it but never meet it) leaves 9, scattered (one north of City Hall); 48,431 slots
+  // (7.0%) go. A lay that opens new cells takes about 0.8 ms more on a computer (median of twelve fresh spots, 3.0 to 3.8).
+  // ?parkjx=0 lays the rows as before; __dbg.parkJxRun(ri) shows one run's crossings
+  PARKED.jx = PARK2 && !/[?&]parkjx=0\b/.test(location.search);
+  PARKED.jxCar = true;   // the per-car backstop (parkedCarClear), which the survey turns off to count what the run's crossings alone leave
+  const PARK_JX_CLR = 6, PARK_JX_SIN = 0.5, PARK_JX_BEND = 0.866, PARK_JX_OWN = 2, PARK_JX_EXT = 1.5, PARK_JX_END = 15, PARK_JX_NEAR = 8;
+  // is a drawn segment (its middle (x, z), its heading (dx, dz)) run r's own street: within PARK_JX_OWN of the run's
+  // nearest piece and along it (a bend's next piece is; a crossing street's short stub at the junction is not)
+  function parkedRunOwn(r, x, z, dx, dz) {
+    let best = Infinity, bj = -1;
+    for (let j = 0; j + 1 < r.xs.length; j++) {
+      const ax = r.xs[j], az = r.zs[j], ex = r.xs[j + 1] - ax, ez = r.zs[j + 1] - az, L2 = ex * ex + ez * ez;
+      const t = L2 > 1e-6 ? clamp(((x - ax) * ex + (z - az) * ez) / L2, 0, 1) : 0, d = Math.hypot(ax + ex * t - x, az + ez * t - z);
+      if (d < best) { best = d; bj = j; }
+    }
+    if (bj < 0 || best > PARK_JX_OWN) return false;
+    const lj = r.cum[bj + 1] - r.cum[bj] || 1;
+    return Math.abs((r.xs[bj + 1] - r.xs[bj]) / lj * dz - (r.zs[bj + 1] - r.zs[bj]) / lj * dx) < PARK_JX_SIN;
+  }
+  // the streets that cross run r, once: [s where the crossing street's centre line meets the run's, its half width along
+  // the run (hw / sin), the sides it reaches (1 the right of the run's heading, 2 the left), cot] each (r.pkJ); and the
+  // street pieces within PARK_JX_NEAR of the run at 30 degrees or more to a piece of it that never meet its centre line,
+  // for the per-car backstop (r.pkN: its box grown by the farthest a car can reach, a, its unit heading, length, half width
+  // and own street's flag)
+  let _pkStamp = null, _pkStampN = 0;   // which drawn pieces this run's scan has met already (a stamp a run: no Set, no Map)
+  function parkedJunctions(r) {
+    if (r.pkJ) return r.pkJ;
+    if (!SRG.off) septaRoadFreeze();   // the grid's arrays are replaced when it freezes: read them after
+    const tJ = performance.now(), C = SEPTA_RG_CELL, a = SRG.seg, ids = SRG.ids, n = r.xs.length, out = [], near = [], M = PARK_JX_NEAR;
+    if (!_pkStamp || _pkStamp.length < SRG.n) { _pkStamp = new Uint32Array(SRG.n + 1024); _pkStampN = 0; }
+    const st = ++_pkStampN, bb = new Float32Array(n * 4);   // each piece's box, grown by M (PARK_JX_END at the run's two ends)
+    for (let j = 0; j + 1 < n; j++) {
+      const g = j && j + 2 < n ? M : Math.max(M, PARK_JX_END);   // the end pieces out to PARK_JX_END, for a street just past the run's end
+      bb[j * 4] = Math.min(r.xs[j], r.xs[j + 1]) - g; bb[j * 4 + 1] = Math.max(r.xs[j], r.xs[j + 1]) + g;
+      bb[j * 4 + 2] = Math.min(r.zs[j], r.zs[j + 1]) - g; bb[j * 4 + 3] = Math.max(r.zs[j], r.zs[j + 1]) + g;
+    }
+    for (let jc = 0; jc + 1 < n; jc++) for (let gx = Math.floor(bb[jc * 4] / C); gx <= Math.floor(bb[jc * 4 + 1] / C); gx++) for (let gz = Math.floor(bb[jc * 4 + 2] / C); gz <= Math.floor(bb[jc * 4 + 3] / C); gz++) {
+      const [q0, q1] = septaRoadCell(gx, gz);
+      for (let q = q0; q < q1; q++) {
+        const k = ids[q];
+        if (_pkStamp[k] === st) continue;
+        _pkStamp[k] = st;
+        if (!SRG.cls[k]) continue;   // a motorway
+        const ax = a[k * 4], az = a[k * 4 + 1], bx = a[k * 4 + 2], bz = a[k * 4 + 3], L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.5) continue;
+        const dx = (bx - ax) / L, dz = (bz - az) / L, sx0 = Math.min(ax, bx), sx1 = Math.max(ax, bx), sz0 = Math.min(az, bz), sz1 = Math.max(az, bz);
+        let own = -1, close = false, met = false;
+        for (let j = 0; j + 1 < n; j++) {
+          if (sx0 > bb[j * 4 + 1] || sx1 < bb[j * 4] || sz0 > bb[j * 4 + 3] || sz1 < bb[j * 4 + 2]) continue;   // nowhere near this piece
+          const lj = r.cum[j + 1] - r.cum[j];
+          if (lj < 0.01) continue;
+          const px = r.xs[j], pz = r.zs[j], hx = (r.xs[j + 1] - px) / lj, hz = (r.zs[j + 1] - pz) / lj, den = hx * dz - hz * dx;
+          if (Math.abs(den) < PARK_JX_SIN) continue;   // along the run, or crossing it at under 30 degrees
+          close = true;   // a candidate for the backstop: within the piece's box grown by PARK_JX_NEAR, across it
+          const wx = ax - px, wz = az - pz, t = (wx * dz - wz * dx) / den, v = (wx * hz - wz * hx) / den;
+          if (t < (j ? -PARK_JX_EXT : -PARK_JX_END) || t > lj + (j + 2 < n ? PARK_JX_EXT : PARK_JX_END) || v < -PARK_JX_EXT || v > L + PARK_JX_EXT) continue;   // past either end too: a run can stop short of the street it meets
+          if (own < 0) own = parkedRunOwn(r, (ax + bx) / 2, (az + bz) / 2, dx, dz) ? 1 : 0;
+          if (own && Math.abs(den) < PARK_JX_BEND) continue;   // the run's own street round a bend under 60 degrees (a sharper corner or a dogleg is a junction)
+          const X = px + hx * t, Z = pz + hz * t, sa = (ax - X) * -hz + (az - Z) * hx, sb = (bx - X) * -hz + (bz - Z) * hx;
+          const sides = (sa > 0.5 || sb > 0.5 ? 1 : 0) | (sa < -0.5 || sb < -0.5 ? 2 : 0);
+          out.push(r.cum[j] + t, SRG.hw[k] / 10 / Math.abs(den), sides || 3, Math.abs(hx * dx + hz * dz) / Math.abs(den));
+          met = true;
+        }
+        if (close && !met) {   // a piece that meets the run is the junction rule's; the backstop takes the rest, its box grown by the farthest a car can reach past its kerb line
+          const w = SRG.hw[k] / 10, g = w + PARK_JX_CLR + 3.5;
+          near.push(sx0 - g, sx1 + g, sz0 - g, sz1 + g, ax, az, dx, dz, L, w, own < 0 ? (parkedRunOwn(r, (ax + bx) / 2, (az + bz) / 2, dx, dz) ? 1 : 0) : own);
+        }
+      }
+    }
+    r.pkN = Float32Array.from(near);
+    VSTAT.jxMs += performance.now() - tJ; VSTAT.jxRuns++;
+    return (r.pkJ = Float32Array.from(out));
+  }
+  // a car len long at arc s of run r, on its kerb side (1 the right of the run's heading), u off the centre line: within
+  // PARK_JX_CLR of a crossing street's kerb line on that side
+  function parkedAtJunction(r, s, side, u, len) {
+    const J = parkedJunctions(r), bit = side > 0 ? 1 : 2;
+    for (let i = 0; i < J.length; i += 4) if ((J[i + 2] & bit) && Math.abs(s - J[i]) < J[i + 1] + u * J[i + 3] + PARK_JX_CLR + len / 2) return true;
+    return false;
+  }
+  // the car itself (its centre (x, z), heading (hx, hz), length len) against one street piece (a to b, half width w, own:
+  // run r's own street) that crosses it at 30 degrees or more and that it stands beside, not past the end of (a T's far
+  // kerb): 2 where its centre is inside that piece's roadway, 1 where its nearer end comes within clr of the piece's kerb
+  // line along its own street (as the lane paint lays the zebra), else 0; never run r's own street round a bend under
+  // 60 degrees
+  function parkedCross(ax, az, bx, bz, w, own, x, z, hx, hz, len, clr) {
+    const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz);
+    if (L < 0.5) return 0;
+    const sn = Math.abs(hx * dz - hz * dx) / L;
+    if (sn < PARK_JX_SIN) return 0;
+    const t = ((x - ax) * dx + (z - az) * dz) / (L * L);
+    if (t < 0 || t > 1) return 0;
+    const d = Math.abs((x - ax) * dz - (z - az) * dx) / L;
+    if ((d - w) / sn - len / 2 >= clr) return 0;
+    if (sn < PARK_JX_BEND && own) return 0;   // its own street round a gentle bend
+    return d < w ? 2 : 1;
+  }
+  // parkedExpand's backstop, at PARK_JX_CLR over the run's own candidates (r.pkN), for the junctions whose street does not
+  // meet the run's centre line where the run is drawn (Logan Circle, Penn Square's curve, a merge at a slant)
+  function parkedCarClear(r, x, z, yaw, len) {
+    parkedJunctions(r);
+    const N = r.pkN, hx = Math.cos(yaw), hz = -Math.sin(yaw);
+    for (let i = 0; i < N.length; i += 11) {
+      if (x < N[i] || x > N[i + 1] || z < N[i + 2] || z > N[i + 3]) continue;   // out of its reach
+      const ux = N[i + 6], uz = N[i + 7], sn = Math.abs(hx * uz - hz * ux);
+      if (sn < PARK_JX_SIN || (sn < PARK_JX_BEND && N[i + 10])) continue;
+      const qx = x - N[i + 4], qz = z - N[i + 5], t = qx * ux + qz * uz;
+      if (t < 0 || t > N[i + 8]) continue;
+      if ((Math.abs(qx * uz - qz * ux) - N[i + 9]) / sn - len / 2 < PARK_JX_CLR) return false;
+    }
+    return true;
+  }
+  // the same test over every drawn street piece within a cell of the car (never a motorway), not the run's candidates:
+  // __dbg.parkJunctions' own measure, at the zebra's 3.8 m (PARKED.jxK the piece it last found)
+  function parkedInStreet(r, x, z, yaw, len, clr) {
+    if (!SRG.off) septaRoadFreeze();
+    const C = SEPTA_RG_CELL, a = SRG.seg, hx = Math.cos(yaw), hz = -Math.sin(yaw), gx = Math.floor(x / C), gz = Math.floor(z / C);
+    let res = 0;
+    for (let i = gx - 1; i <= gx + 1; i++) for (let j = gz - 1; j <= gz + 1; j++) {
+      const [q0, q1] = septaRoadCell(i, j);
+      for (let q = q0; q < q1; q++) {
+        const k = SRG.ids[q];
+        if (!SRG.cls[k]) continue;
+        const ax = a[k * 4], az = a[k * 4 + 1], bx = a[k * 4 + 2], bz = a[k * 4 + 3], L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.5) continue;
+        let v = parkedCross(ax, az, bx, bz, SRG.hw[k] / 10, 0, x, z, hx, hz, len, clr);
+        if (v && Math.abs(hx * (bz - az) - hz * (bx - ax)) / L < PARK_JX_BEND && parkedRunOwn(r, (ax + bx) / 2, (az + bz) / 2, (bx - ax) / L, (bz - az) / L)) v = 0;
+        if (!v) continue;
+        PARKED.jxK = k;
+        if (v === 2) return 2;
+        res = 1;
+      }
+    }
+    return res;
   }
   // the kerbs that park, from the moving lanes they must leave clear: a parked car's centre stands 1.12 m in from the kerb
   // and must be PARK_CLEAR (the widest van's 2.05 m and the kerb's 1.12) clear of the outermost lane's centre, so a side
@@ -46581,6 +46732,7 @@ float pinOccGate() {
   }
   function parkedLay(now) {
     const t0 = performance.now();
+    VSTAT.jxMs = 0; VSTAT.jxRuns = 0;   // Round 240: the share of this lay that went on the runs' crossings (parkedJunctions)
     const ex = camera.position.x, ey = camera.position.y, ez = camera.position.z, R = Math.min(PARKED.r, NEAR_R), C = PARKED.cell;
     for (const p of PARKED.meshes) p.n = 0;
     const h = clock.minutes / 60, night = h < 6 || h >= 20, small = h >= 2 && h < 6;
@@ -46641,7 +46793,7 @@ float pinOccGate() {
       p.fade.updateRange.offset = 0; p.fade.updateRange.count = p.n; p.fade.needsUpdate = true;
       if (p.ext) { p.ext.updateRange.offset = 0; p.ext.updateRange.count = p.n * 2; p.ext.needsUpdate = true; }
     }
-    VSTAT.parked = total; VSTAT.parkedNear = near; VSTAT.lay++; VSTAT.layMs = +(performance.now() - t0).toFixed(1);
+    VSTAT.parked = total; VSTAT.parkedNear = near; VSTAT.lay++; VSTAT.layMs = +(performance.now() - t0).toFixed(1); VSTAT.jxMs = +VSTAT.jxMs.toFixed(1);
     PARKED.lx = ex; PARKED.ly = ey; PARKED.lz = ez;
   }
   function updateParked(now) {
@@ -46715,6 +46867,45 @@ float pinOccGate() {
       for (let k = 0; k < SRG.n; k++) wide[SRG.cls[k]] = Math.max(wide[SRG.cls[k]], SRG.hw[k] / 10);
       return { ms: Math.round(performance.now() - t0), kerbKm: +(kerb / 1000).toFixed(1), ruleKm: km(rule), gaps: [PARK_MED_GAP, PARK_TWIN_GAP], cells: +(cells / n).toFixed(2), wide,
         hist: Object.keys(hist).map(Number).sort((a, b) => a - b).map((b) => [b, +(hist[b] / 1000).toFixed(1)]), kind: km(kind), band, ex };
+    };
+    // Round 240: every slot the city lays, run by run, without the junction rule, with the run's crossings alone (runs) and
+    // with the per-car backstop too (after), against parkedInStreet at the zebra's 3.8 m:
+    // a car whose centre lies inside another street's drawn roadway (box), or whose nearer end comes within 3.8 m of that
+    // street's kerb line along its own street (xwalk: on its zebra). Counts by class, and up to twelve that remain each way
+    if (window.__dbg && !window.__dbg.parkJunctions) window.__dbg.parkJunctions = () => {
+      if (!SRG.off) septaRoadFreeze();
+      const t0 = performance.now(), keep = [PARKED.slots, PARKED.expanded, PARKED.slotN, PARKED.jx], a = SRG.seg;
+      const test = (r, x, z, yaw, len) => parkedInStreet(r, x, z, yaw, len, 3.8);
+      const tally = (jx, car) => {
+        const o = { slots: 0, box: 0, xwalk: 0, byCls: {}, ex: [] };
+        PARKED.jx = jx; PARKED.jxCar = car; PARKED.expanded = new Uint8Array(trafficRuns.length);
+        for (let ri = 0; ri < trafficRuns.length; ri++) {
+          if (trafficRuns[ri].cls < 2) continue;   // parkedInit lists no other run
+          PARKED.slots = new Map(); PARKED.slotN = 0;
+          parkedExpand(ri);
+          for (const rows of PARKED.slots.values()) for (let i = 0; i < rows.length; i += 7) {
+            const v = test(trafficRuns[ri], rows[i], rows[i + 2], rows[i + 3], CAR_MODELS[rows[i + 4]].l), c = trafficRuns[ri].cls;
+            o.slots++;
+            if (!v) continue;
+            { const r = trafficRuns[ri], m = r.xs.length - 1, de = Math.min(Math.hypot(rows[i] - r.xs[0], rows[i + 2] - r.zs[0]), Math.hypot(rows[i] - r.xs[m], rows[i + 2] - r.zs[m])); o.endD = o.endD || [0, 0, 0, 0, 0]; o.endD[Math.min(4, Math.floor(de / 10))]++; }
+            o[v === 2 ? 'box' : 'xwalk']++;
+            const b = o.byCls[c] || (o.byCls[c] = [0, 0]); b[v - 1]++;
+            const k = PARKED.jxK;
+            if (o.ex.length < 12 && (car || hash01(ri * 0.731 + i) < 0.2)) o.ex.push([Math.round(rows[i]), Math.round(rows[i + 2]), ri, c, v, SRG.cls[k], SRG.hw[k] / 10, [0, 1, 2, 3].map((q) => Math.round(a[k * 4 + q]))]);
+          }
+        }
+        return o;
+      };
+      const before = tally(false, false), runs = tally(true, false), after = tally(true, true);
+      [PARKED.slots, PARKED.expanded, PARKED.slotN, PARKED.jx] = keep;
+      PARKED.jxCar = true;
+      return { ms: Math.round(performance.now() - t0), clr: PARK_JX_CLR, before, runs, after };
+    };
+    // one run's crossings and line, for a look at a slot the survey lists
+    if (window.__dbg && !window.__dbg.parkJxRun) window.__dbg.parkJxRun = (ri) => {
+      const r = trafficRuns[ri], hw = parkHalfW(r);
+      return { cls: r.cls, oneway: r.oneway, len: +r.len.toFixed(1), hw, sides: parkedSides(r, hw), conn: r.conn.map((c) => c.length / 2), jx: Array.from(parkedJunctions(r)).map((v) => +v.toFixed(2)),
+        pts: Array.from(r.xs).map((x, j) => [Math.round(x * 10) / 10, Math.round(r.zs[j] * 10) / 10]) };
     };
     const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + Math.floor(clock.minutes / 60) + ':' + SCORES.games.length;
     const moved = Math.hypot(camera.position.x - PARKED.lx, camera.position.y - PARKED.ly, camera.position.z - PARKED.lz);

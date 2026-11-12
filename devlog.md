@@ -14385,3 +14385,49 @@ five-section heads); wide-median boulevards lose an approach's signal where both
 
 Suite: 1,505 tests, OK (one skip, one expected failure, both as before).
 
+
+## Round 240 — no parked car in a junction or on its crosswalks (Nov 12)
+
+Mike, after Rounds 233, 236 and 238: "I am still seeing lots of parked cars blocking intersections"
+(https://philly3d.com/#p=-1444.9,18.3,-479.6,-1.463,-0.466&l=146811, a Center City crossing near 13th Street). Every
+car in that junction was a parked one: with `?parked=0` the crossing stood empty.
+
+The cause: a row was kept off a junction only at its run's ends, `PARK_TRIM` (15 m on an arterial, 12 m on a smaller
+street) where the run's `conn` lists another run meeting there, else 3 m, and nothing in a run's middle. The traffic's
+runs are not cut at every crossing street: a street the traffic graph does not join there, a crossing in the middle of
+a run, ends that fall outside the linker's tolerance. So rows ran on through the junction box and over its zebras.
+Measured over the whole city with a new survey, `__dbg.parkJunctions()` (every slot every run lays, against the drawn
+road grid SRG, a street crossing the car at 30 degrees or more and the car beside it): 14,378 of 687,482 slots had their
+car's centre inside another street's roadway and 22,812 more had a bumper on its zebra (within 3.8 m of its kerb line,
+measured along the car's own street, as the lane paint lays the zebra). 86% of those stood 40 m or more from either end
+of their run: the junction in a run's middle was the bug.
+
+What the round does (JavaScript only; no shader text, no data):
+- `parkedJunctions(r)`, once a run: the drawn streets that cross it (SRG, every tier; never a motorway, on its deck or
+  in its cut; never the run's own street round a bend under 60 degrees, though a sharper corner, or a dogleg where the
+  run jogs along a cross street, is a junction), found where they meet the run's centre line, out to 15 m past either
+  end of the run (a run can stop short of the street it meets), with the sides each reaches. A slot parks only where
+  its car's nearer end stands `PARK_JX_CLR` 6 m past the crossing street's kerb line on its own kerb's side (the zebra
+  ends 3.8 m past it, the stop bar 5), the line taken at the kerb's offset across a skewed crossing. A street that
+  meets the run from one side (a T) clears that side's kerb and leaves the far kerb its row.
+- That leaves 153 slots, where a street passes the car without meeting its run's centre line as the run is drawn (Logan
+  Circle, Penn Square's curve, merges at a slant). `parkedCarClear`, a per-car backstop over the street pieces within
+  8 m of the run that cross it but never meet it, leaves 9 citywide, scattered (one north of City Hall).
+- 48,431 slots go (7.0% of the kerb). `?parkjx=0` lays the rows as before. `__dbg.parkJxRun(ri)` shows one run's
+  crossings and line; `__dbg.vehicles()` carries `jxMs` and `jxRuns`, the lay's share spent finding crossings.
+
+The cost: a lay that opens new cells takes about 0.8 ms more on a computer (median of twelve fresh spots, a run each,
+one build at a time: 2.95 and 3.0 before, 3.65 and 4.0 after; the worst fresh lay 11.3 and 11.9 ms against 5.9 and 8.4).
+The first cut, which asked the grid's cells round every car, cost about 2.5 ms; a list of each run's crossings built once, a stamp in
+place of a Set and the backstop's list limited to the pieces the run rule cannot see brought it down.
+
+Checked: Mike's link before and after, the same crossing straight down, Penn Square, Logan Circle, a South Philly
+block (unchanged but for the cars nearest its junctions) and South Broad's median row (unchanged: its blocks have their
+own noses). The harness (`vehicles_checks.js`, `junctions`) lays four 300 m streets with a street drawn across each
+that the run is not cut at: straight across, a T from one side, at 45 degrees, and one that stops 2 m short of the
+centre line. No kerb parks within 8 m of the crossing, save the T's far kerb, and every kerb keeps 37 to 43 slots;
+`?parkjx=0` parks 2 to 5 at every crossing; the street that stops short is the backstop's alone. Writing the harness
+caught a bug the page could meet: the new scan read the road grid's arrays before the grid was frozen (freezing
+replaces them), which only the order of the existing calls had hidden.
+
+Suite: 1,506 tests, OK (one skip, one expected failure, both as before).

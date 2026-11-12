@@ -188,6 +188,29 @@ class Runtime(unittest.TestCase):
         self.assertIn("const PARK_MED = PARK2 && !/[?&]parkmid=1\\b/.test(location.search);", SRC)
         self.assertIn('if (PARK_MED && parkedOnMedian(r, sl, side, hw)) continue;', SRC)
 
+    def test_parked_rows_keep_clear_of_junctions(self):
+        # Round 240 (Mike: "I am still seeing lots of parked cars blocking intersections"): a row kept off a junction only at
+        # its run's listed ends ran on through every crossing a run is not cut at. Four streets with a street drawn across
+        # each that their runs are not cut at: no kerb parks within 8 m of it, save a T's far kerb, every kerb still parks
+        # its street; ?parkjx=0 parks across all of them; the street that stops short is the per-car backstop's alone
+        j = self.r['junctions']
+        self.assertTrue(j['jx'])
+        self.assertEqual(j['clr'], 6)
+        k = j['kerbs']
+        for name in ('throughR', 'throughL', 'teeR', 'skewR', 'skewL', 'shortR'):
+            self.assertEqual(k[name][0], 0, (name, k))
+        for name in ('teeL', 'shortL'):
+            self.assertGreater(k[name][0], 0, (name, k))   # the far kerb, across from a street that meets from one side
+        for name, (near, total) in k.items():
+            self.assertGreater(total, 30, (name, k))
+        o = j['old']
+        self.assertFalse(o['jx'])
+        self.assertTrue(all(v[0] > 0 for v in o['kerbs'].values()), o['kerbs'])
+        self.assertGreater(j['runsOnly']['kerbs']['shortR'][0], 0)
+        self.assertIn('if (PARKED.jx && parkedAtJunction(r, sl, side, u, CAR_MODELS[kind].l)) continue;', SRC)
+        self.assertIn('if (PARKED.jx && PARKED.jxCar && !parkedCarClear(r, _pkS.x, _pkS.z, _pkS.yaw, CAR_MODELS[kind].l)) continue;', SRC)
+        self.assertIn("PARKED.jx = PARK2 && !/[?&]parkjx=0\\b/.test(location.search);", SRC)
+
     def test_vehicle_lamp_share_lands(self):
         L = self.r['lampShare']
         self.assertEqual((L['car'], L['bus'], L['train']), ('0.35', '0.35', '0.35'))
