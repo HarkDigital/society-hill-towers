@@ -14431,3 +14431,36 @@ caught a bug the page could meet: the new scan read the road grid's arrays befor
 replaces them), which only the order of the existing calls had hidden.
 
 Suite: 1,506 tests, OK (one skip, one expected failure, both as before).
+
+## Round 241 — no street name in a junction (Nov 12)
+
+Mike, at the South Broad link of Round 239 (https://philly3d.com/#p=-1835.2,13.9,579.2,-2.936,-0.363&l=146811): "in this
+same link, the street names are now intersecting in the intersection. i dont want that to happen in any intersection".
+(The same message repeated his ask for overhead signals, which Round 239 had shipped: the mast arms are live at that
+link.)
+
+The cause: `bake_street_labels.py` puts a station every 220 to 600 m along each named street and only slides it (by up
+to 62 m) to keep its text off the elevated decks. A name is long: 54 m at the median, a major street's up to 149 m
+(the text 7 m high), against city blocks of 65 to 140 m. Measured with the page's own glyph widths (street_sdf.json)
+against every drawn street crossing at 30 degrees or more (its half width plus 4 m for its zebra): 1,832 of the 3,774
+names passed through a junction box or over a zebra.
+
+What the round does: the bake slides each station along its street, up to 96 m in 8 m steps, to the nearest spot
+where its text clears every deck and every junction (plus a metre the whole-metre, whole-degree output can take
+back); where no block in reach is long enough, it tries the name at 0.75, 0.6 and 0.45 of its height, and drops the
+station only when even that does not fit. 4,158 stations: 3,316 at full size, 322 at 0.75, 181 at 0.6, 197 at 0.45,
+142 dropped; 3,655 labels after the same-name dedupe (3,774 before). The smaller sizes are new classes (cls + 3, + 6,
++ 9), which `STREET_TEXT_HEIGHT` now carries (twelve heights); nothing else in the page reads the class. The names keep
+the order the shipped file gives them, so the atlas (street_sdf.json) stays aligned and was not re-baked. Fifteen
+short streets no longer show a name, none of their blocks being long enough at any size: nine small courts and
+places (Alexander, Cambridge, Independence, Ogden, Custis, Betsy Ross, Patrick Henry, Saratoga, Valley Forge), East
+Penn Square, South Washington Square, Lombard Circle, East Laurel, East Jefferson and West Colona Streets.
+
+Checked: before and after at Mike's link, South Broad from the air, 13th and Sansom straight down (13th's name had lain
+across Sansom's), a South Philly grid (16th Street's across its cross street), Society Hill (South 3rd Street's), and
+Catharine and Fitzwater at Broad. The page draws 3,654 of the 3,655 (one buried, as before; no atlas misses; 24 warped
+against 27). `test_audits.test_street_labels_keep_out_of_junctions` measures every label against the drawn streets as
+the bake does, without its extra metre, and asks for none inside and 97% of the names still lettered; the deck test
+knows the twelve classes.
+
+Suite: 1,507 tests, OK (one skip, one expected failure, both as before).

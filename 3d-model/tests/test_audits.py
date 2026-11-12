@@ -142,7 +142,7 @@ class LabelAudit(unittest.TestCase):
         along its bearing) must not pass within w/2 + 1 of an elevated chain that crosses it
         (|cos| < 0.72). bake_street_labels.py shifts or drops such labels; sliced == 0."""
         C.require(self, 'street_labels.json', 'overpasses.json')
-        TH = [7.0, 5.6, 4.4]
+        TH = [h * k for k in (1, 0.75, 0.6, 0.45) for h in (7.0, 5.6, 4.4)]   # Round 241: cls + 3, + 6, + 9 the smaller sizes
         COS_CROSS = 0.72
         d = C.load_json('street_labels.json')
         names, flat = d['names'], d['l']
@@ -160,7 +160,7 @@ class LabelAudit(unittest.TestCase):
         for li in range(len(flat) // 5):
             ni, x, z, b, cls = flat[li * 5:li * 5 + 5]
             self.assertTrue(0 <= ni < len(names), 'label nameIdx out of range')
-            self.assertIn(cls, (0, 1, 2))
+            self.assertIn(cls, range(12))
             half = len(names[ni]) * 0.31 * TH[cls]
             ang = math.radians(b)
             ux, uz = math.cos(ang), math.sin(ang)
@@ -173,6 +173,49 @@ class LabelAudit(unittest.TestCase):
                     sliced.append((names[ni], x, z, c))
                     break
         self.assertEqual([], sliced, '%d of %d labels are sliced by crossing decks: %s' % (len(sliced), len(flat) // 5, sliced[:12]))
+
+    def test_street_labels_keep_out_of_junctions(self):
+        """Round 241 (Mike: "i dont want that [the street names in the intersection] to happen in any intersection"): no
+        label's text (its own glyph width from street_sdf.json at its class's height, along its bearing) passes within a
+        crossing street's half width plus its zebra (4 m) of that street's centre line. The crossing streets are the drawn
+        ones: the core's (service included) and the wide and south sets' drivable ways, within 30 degrees of the label's
+        bearing counting as along it, not across. Every name the atlas holds stays in the names list in its order, and
+        nearly every street keeps a label."""
+        C.require(self, 'street_labels.json', 'street_sdf.json', 'scene.json', 'scene_wide.json')
+        TH = [h * k for k in (1, 0.75, 0.6, 0.45) for h in (7.0, 5.6, 4.4)]
+        d, sdf = C.load_json('street_labels.json'), C.load_json('street_sdf.json')
+        names, flat, rects = d['names'], d['l'], sdf['rects']
+        self.assertEqual(len(names), len(rects), 'the atlas and the names list are out of step')
+        drive = {'trunk', 'primary', 'secondary', 'tertiary', 'residential', 'unclassified', 'living_street'}
+        grid = C.SegGrid(60.0)
+        for fn, core in (('scene.json', True), ('scene_wide.json', False), ('scene_south.json', False)):
+            if not (C.MODEL / fn).exists():
+                continue
+            for r in C.load_json(fn)['roads']:
+                if not (r.get('t') in drive or (core and r.get('t') == 'service')):
+                    continue
+                for a, b in zip(r['pts'], r['pts'][1:]):
+                    L = math.hypot(b[0] - a[0], b[1] - a[1])
+                    if L > 0.3:
+                        grid.add(a[0], a[1], b[0], b[1], r.get('w', 7) / 2 + 4.0, ((b[0] - a[0]) / L, (b[1] - a[1]) / L, r.get('w', 7) / 2 + 4.0, r.get('name', '')))
+        inside, labelled = [], set()
+        for li in range(len(flat) // 5):
+            ni, x, z, b, cls = flat[li * 5:li * 5 + 5]
+            labelled.add(ni)
+            if not rects[ni]:
+                continue
+            half = TH[cls] * rects[ni][2] / sdf['fs'] / 2
+            ux, uz = math.cos(math.radians(b)), math.sin(math.radians(b))
+            p1x, p1z, p2x, p2z = x - ux * half, z - uz * half, x + ux * half, z + uz * half
+            for idx in grid.in_bbox(min(p1x, p2x), max(p1x, p2x), min(p1z, p2z), max(p1z, p2z)):
+                ax, az, bx, bz, (sux, suz, th, nm) = grid.segs[idx]
+                if abs(ux * sux + uz * suz) > 0.866:
+                    continue
+                if C.seg_seg_dist(p1x, p1z, p2x, p2z, ax, az, bx, bz) < th:
+                    inside.append((names[ni], x, z, cls, nm))
+                    break
+        self.assertEqual([], inside, '%d of %d labels lie in a junction: %s' % (len(inside), len(flat) // 5, inside[:12]))
+        self.assertGreater(len(labelled), 0.97 * len(names))
 
 
 class SuppressionAudit(unittest.TestCase):

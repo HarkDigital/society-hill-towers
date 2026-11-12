@@ -4863,7 +4863,10 @@
   }
   // Keep only road triangles beneath baked label footprints while the city builds.
   // Sampling the DEM alone misses the lifted, mitered and bank-supported pavement.
-  const STREET_TEXT_HEIGHT = [7, 5.6, 4.4], STREET_TEXT_CLEARANCE = 0.18;
+  // the label's class: 0 a major street, 1 a minor, 2 the core's; + 3, + 6 and + 9 the same at 0.75, 0.6 and 0.45 of its
+  // height (Round 241, Mike: "i dont want that [street names in the intersection] to happen in any intersection":
+  // bake_street_labels.py slides a name along its street to a block it fits in, else letters it smaller)
+  const STREET_TEXT_HEIGHT = [1, 0.75, 0.6, 0.45].flatMap((k) => [7, 5.6, 4.4].map((h) => +(h * k).toFixed(3))), STREET_TEXT_CLEARANCE = 0.18;
   let streetSurfaceIndex = null, streetFootprints = [];
   function initStreetSurfaces() {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS) return;

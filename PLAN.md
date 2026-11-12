@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 12, 2026, after Round 240 (no parked car in a junction or on its crosswalks).
+Last updated: Nov 12, 2026, after Round 241 (no street name in a junction).
 
 ## The ask
 
@@ -123,6 +123,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   and parks 6 m clear of their kerb lines, with a per-car backstop for the streets that never meet its centre line:
   9 left citywide, 7% of the slots gone, about 0.8 ms more a fresh lay on a computer. `?parkjx=0` the old rows.
   JavaScript only.
+- **Round 241** (Mike: "the street names are now intersecting in the intersection. i dont want that to happen in any
+  intersection"): 1,832 of 3,774 baked names crossed a junction box or a zebra. The bake now slides each along its
+  street to a block it fits in, else letters it at 0.75, 0.6 or 0.45 of its height: none in a junction, 3,655 names,
+  fifteen tiny streets without one. Data and twelve text heights in the page; the atlas unchanged.
 
 ## In flight (finish these first)
 

@@ -5,7 +5,19 @@ The wide/far packed road formats carry no names, so labels are computed here
 from the source scenes (scene.json core + scene_wide.json + scene_south.json)
 and shipped as a small const via build.py. Each label: [nameIdx, x, z,
 bearingDeg, cls] with cls 0 = major (motorway/trunk/primary/secondary),
-1 = minor, 2 = core-detail streets (lower lift, denser spacing).
+1 = minor, 2 = core-detail streets (lower lift, denser spacing); cls + 3 is the
+same street lettered at 0.75 of its height, cls + 6 at 0.6 and cls + 9 at 0.45
+(Round 241: a name too long for every block within reach; app.js
+STREET_TEXT_HEIGHT holds all twelve).
+
+Round 241 (Mike: "the street names are now intersecting in the intersection. i
+dont want that to happen in any intersection"): no label's text may pass within
+a crossing street's half width plus its zebra (JX_ZEBRA) of that street's
+centre line. A station slides along its street up to 96 m to the nearest block
+its text fits in, then tries the smaller sizes, else it is dropped. Spans are
+measured from street_sdf.json's own glyph widths when it is present, and the
+names keep the order the previous street_labels.json gave them, so the atlas
+stays aligned with them (rebake the atlas only when a name is new).
 
 Rerun after refetching any scene json:  python3 bake_street_labels.py
 """
@@ -117,25 +129,107 @@ def near_way(way_pts, x, z, tol=5.0):
             return True
     return False
 
-def clear_station(x, z, bdeg, name, cls, way_pts):
-    """Shift a station along its bearing until the text clears every crossing;
-    the shifted point must still lie on the street (bearing drifts on curves)."""
-    half_len = len(name) * 0.34 * TH[cls]
-    if not span_sliced(x, z, bdeg, half_len):
-        return x, z
+# ---- Round 241: the streets a label's text must keep out of (the drawn ones:
+# ---- the wide and south sets carry no service way, the core draws its own)
+DRIVE = {"trunk", "primary", "secondary", "tertiary", "residential", "unclassified", "living_street"}
+JX_ZEBRA = 4.0            # past a crossing street's kerb line: its zebra ends 3.8 m out (app.js lane paint)
+JX_ROUND = 1.0            # and a metre more, which the whole-metre position and whole-degree bearing written out can take back
+JX_COS = 0.866            # a street within 30 degrees of the label's bearing runs along it, not across it
+JX_OFFS = [0] + [s * k for k in range(8, 104, 8) for s in (1, -1)]
+JX_SIZES = (1.0, 0.75, 0.6, 0.45)
+jx_segs = []              # (ax, az, bx, bz, half width)
+for _fn, _core in (("scene.json", True), ("scene_wide.json", False), ("scene_south.json", False)):
+    _p = ROOT / _fn
+    if not _p.exists():
+        continue
+    for _r in json.loads(_p.read_text()).get("roads", []):
+        if not (_r.get("t") in DRIVE or (_core and _r.get("t") == "service")):
+            continue
+        for a, b in zip(_r["pts"], _r["pts"][1:]):
+            if math.hypot(b[0] - a[0], b[1] - a[1]) > 0.3:
+                jx_segs.append((a[0], a[1], b[0], b[1], _r.get("w", 7) / 2))
+jx_grid = {}
+for si, (ax, az, bx, bz, hw) in enumerate(jx_segs):
+    for gx in range(int(min(ax, bx)) // 60 - 1, int(max(ax, bx)) // 60 + 2):
+        for gz in range(int(min(az, bz)) // 60 - 1, int(max(az, bz)) // 60 + 2):
+            jx_grid.setdefault((gx, gz), []).append(si)
+
+def seg_dist(p1x, p1z, p2x, p2z, ax, az, bx, bz):
+    """The least distance between two segments (0 where they cross)."""
+    def pd(px, pz, qx, qz, rx, rz):
+        dx, dz = rx - qx, rz - qz
+        L2 = dx * dx + dz * dz or 1e-9
+        t = max(0.0, min(1.0, ((px - qx) * dx + (pz - qz) * dz) / L2))
+        return math.hypot(qx + dx * t - px, qz + dz * t - pz)
+    def side(ox, oz, px, pz, qx, qz):
+        return (qx - ox) * (pz - oz) - (qz - oz) * (px - ox)
+    if (side(p1x, p1z, p2x, p2z, ax, az) > 0) != (side(p1x, p1z, p2x, p2z, bx, bz) > 0) and \
+       (side(ax, az, bx, bz, p1x, p1z) > 0) != (side(ax, az, bx, bz, p2x, p2z) > 0):
+        return 0.0
+    return min(pd(p1x, p1z, ax, az, bx, bz), pd(p2x, p2z, ax, az, bx, bz),
+               pd(ax, az, p1x, p1z, p2x, p2z), pd(bx, bz, p1x, p1z, p2x, p2z))
+
+def span_in_junction(x, z, bdeg, half_len):
+    """Does a label span centred at (x, z) come within a crossing street's half
+    width plus JX_ZEBRA of its centre line (its junction box or a zebra)?"""
     b = math.radians(bdeg)
     ux, uz = math.cos(b), math.sin(b)
-    for off in (22, -22, 42, -42, 62, -62):
-        nx, nz = x + ux * off, z + uz * off
-        if not near_way(way_pts, nx, nz):
-            continue
-        if not span_sliced(nx, nz, bdeg, half_len):
-            return nx, nz
+    p1x, p1z, p2x, p2z = x - ux * half_len, z - uz * half_len, x + ux * half_len, z + uz * half_len
+    seen = set()
+    for gx in range(int(min(p1x, p2x)) // 60, int(max(p1x, p2x)) // 60 + 1):
+        for gz in range(int(min(p1z, p2z)) // 60, int(max(p1z, p2z)) // 60 + 1):
+            for si in jx_grid.get((gx, gz), ()):
+                if si in seen:
+                    continue
+                seen.add(si)
+                ax, az, bx, bz, hw = jx_segs[si]
+                L = math.hypot(bx - ax, bz - az)
+                if abs(((bx - ax) * ux + (bz - az) * uz) / L) > JX_COS:
+                    continue             # along the label: its own street, or one beside it
+                if seg_dist(p1x, p1z, p2x, p2z, ax, az, bx, bz) < hw + JX_ZEBRA + JX_ROUND:
+                    return True
+    return False
+
+# the glyph widths the page letters with (street_sdf.json, in the names' order), else an estimate
+_sdf_path = ROOT / "street_sdf.json"
+_sdf = json.loads(_sdf_path.read_text()) if _sdf_path.exists() else None
+
+def half_length(name, cls):
+    est = len(name) * 0.34 * TH[cls]
+    i = name_idx.get(name)
+    if _sdf and i is not None and i < len(_sdf["rects"]) and _sdf["rects"][i]:
+        return TH[cls] * _sdf["rects"][i][2] / _sdf["fs"] / 2, est
+    return est, est
+
+def clear_station(x, z, bdeg, name, cls, way_pts):
+    """Slide a station along its bearing to the nearest place its text clears every
+    deck and every junction (the slid point must still lie on the street: the bearing
+    drifts on curves), at the full size, then 0.75 and 0.6 of it. (x, z, size) or None."""
+    full, est = half_length(name, cls)
+    b = math.radians(bdeg)
+    ux, uz = math.cos(b), math.sin(b)
+    for size, k in enumerate(JX_SIZES):
+        for off in JX_OFFS:
+            nx, nz = x + ux * off, z + uz * off
+            if off and not near_way(way_pts, nx, nz):
+                continue
+            if span_sliced(nx, nz, bdeg, max(full, est) * k):
+                continue
+            if span_in_junction(nx, nz, bdeg, full * k):
+                continue
+            return nx, nz, size
     return None
 
 names, name_idx = [], {}
+# Round 241: the names in the order the shipped file gives them (the atlas, street_sdf.json, is aligned with it)
+_prev = ROOT / "street_labels.json"
+if _prev.exists():
+    for _nm in json.loads(_prev.read_text()).get("names", []):
+        name_idx[_nm] = len(names)
+        names.append(_nm)
 placed = {}   # name -> list of (x, z) for the 90 m same-name dedupe
 out = []
+stats = {"stations": 0, "sizes": [0, 0, 0, 0], "dropped": 0}
 
 def add(name, x, z, b, cls):
     key = name
@@ -161,10 +255,13 @@ for r in core.get("roads", []):
     for x, z, b in place(r["pts"], 220, 40):
         if east_of_delaware(x, z):
             continue
+        stats["stations"] += 1
         cs = clear_station(x, z, b, nm, 2, r["pts"])
         if cs is None:
+            stats["dropped"] += 1
             continue
-        add(nm, cs[0], cs[1], b, 2)
+        stats["sizes"][cs[2]] += 1
+        add(nm, cs[0], cs[1], b, 2 + 3 * cs[2])
 
 # --- wide + south: drivable named streets, outside the core box ---
 for fn in ("scene_wide.json", "scene_south.json"):
@@ -185,12 +282,17 @@ for fn in ("scene_wide.json", "scene_south.json"):
         for x, z, b in place(r["pts"], interval, min_len):
             if in_core(x, z) or east_of_delaware(x, z):
                 continue
+            stats["stations"] += 1
             cs = clear_station(x, z, b, nm, cls, r["pts"])
             if cs is None:
+                stats["dropped"] += 1
                 continue
-            add(nm, cs[0], cs[1], b, cls)
+            stats["sizes"][cs[2]] += 1
+            add(nm, cs[0], cs[1], b, cls + 3 * cs[2])
 
 data = {"names": names, "l": [v for lbl in out for v in lbl]}
 (ROOT / "street_labels.json").write_text(json.dumps(data, separators=(",", ":")))
 print(f"street_labels.json: {len(out)} labels, {len(names)} unique names, "
-      f"{(ROOT / 'street_labels.json').stat().st_size / 1024:.0f} KB")
+      f"{(ROOT / 'street_labels.json').stat().st_size / 1024:.0f} KB; "
+      f"{stats['stations']} stations: {stats['sizes'][0]} full size, {stats['sizes'][1]} at 0.75, "
+      f"{stats['sizes'][2]} at 0.6, {stats['sizes'][3]} at 0.45, {stats['dropped']} with no block their name fits")

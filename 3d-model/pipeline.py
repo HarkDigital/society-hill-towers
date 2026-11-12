@@ -257,7 +257,7 @@ STAGES = [
     S('bake_street_labels', 'bake_street_labels.py',
       inputs=['scene.json', 'scene_wide.json?', 'scene_south.json?', 'overpasses.json?'],
       outputs=['street_labels.json'], needs=['process_core', 'process_wide', 'process_south', 'bake_overpasses'],
-      note='rerun after any scene refetch or overpass rebake'),
+      note='rerun after any scene refetch or overpass rebake; keeps the names in street_labels.json\'s order and measures each from street_sdf.json (Round 241), so rebake the atlas only when a name is new'),
     S('bake_street_sdf', 'bake_street_sdf.py',
       inputs=['street_labels.json', 'MontserratItalic.ttf'], outputs=['street_sdf.json'], needs=['bake_street_labels'],
       note='numpy / Pillow'),
