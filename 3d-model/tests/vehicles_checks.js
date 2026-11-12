@@ -7,6 +7,8 @@ const src = fs.readFileSync(path.join(ROOT, 'app.js'), 'utf8');
 const cut = (a, b) => { const i = src.indexOf(a); if (i < 0) throw new Error('missing ' + a); return src.slice(i, src.indexOf(b, i)); };
 const helpers = cut('  function septaMerge(', '  function septaVehGeom(');
 const traffic = cut('  // ---------------------------------------------------------------- traffic', '  // ---------------------------------------------------------------- streetlights');
+// the drawn road grid every tier writes (Round 236: a parked row asks it for a street alongside its kerb)
+const roadGrid = cut('  const SEPTA_RG_CELL = 36;', '  function septaSnapRoad(');
 const VEHICLE_ART = JSON.parse(fs.readFileSync(path.join(ROOT, 'vehicle_art.json'), 'utf8'));
 const setup = `
 const V3=THREE.Vector3,document={getElementById:()=>null,createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:(t,k)=>k==='measureText'?()=>({width:10}):()=>{} ,set:()=>true})})},step=()=>{},syncLayerBtn=()=>{},postRaw=m=>m;
@@ -27,10 +29,10 @@ const renderer={domElement:{height:800}},CORE_EXT={x0:-640,x1:770,z0:-520,z1:850
 const out = {};
 // SEARCH: the page's query (Round 233: '?parked=old&carscale=1' is Round 188's parking and real-size cars, '' the new plan)
 const OLD = '?parked=old&carscale=1';
-const make = (touch, art, furn, coreHw, search = '') => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', 'SEARCH', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + traffic +
+const make = (touch, art, furn, coreHw, search = '') => new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'CORE_HW', 'SEARCH', setup.replace('TOUCH', touch ? 'true' : 'false') + helpers + roadGrid + traffic +
   'return {CAR_MODELS,carArtGeom,vehLoft,VART,trafficRuns,trafficCreateFleet,trafficFleet,PARKED,parkedInit,parkedLay,carSample,runHydrants,parkHalfW,FURN,furnInit,furnCell,TRAFFIC,camera,setReady:()=>{trafficReady=true;},' +
   'carArtMaterial,transitArtMaterial,carMapPatch,CARMAP,parkedSides,parkedShift,carOffset,carLaneCount,CAR_OFFW,PARK_CLEAR,trafficDraw,trafficHold,VEH_SHADOWS,vehShadowSync,vehShadowMaterial,vehShadowU,CAR_LOD_D,CAR_SHADE_D,furnGeoms,' +
-  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
+  'CAR_K,PARK2,PARK_BOTH,PARK_AIR,PARK_KERB,PARK_PITCH,PARK_FILL,parkKerbIn,carGeom,carLightGeom,septaRoadAdd,SRG,PARK_MED,PARK_MED_GAP,PARK_TWIN_GAP};')(THREE, art ? VEHICLE_ART : undefined, furn, coreHw === undefined ? null : coreHw, search);
 // the cars: every kind's near and far body at its real size, every uv inside the atlas
 for (const touch of [false, true]) {
   const a = make(touch, true);
@@ -195,6 +197,46 @@ const run = (pts, cls, oneway) => { let len = 0; const cum = [0]; for (let i = 1
     sideFillMean: +(sideFill.reduce((s, v) => s + v, 0) / sideFill.length).toFixed(3), kerbOk, nOffs: offs.length,
     tertBoth: cnt.t.filter((c) => c[0] && c[1]).length, tertFill: +(tCars / tSlots).toFixed(3), resSlots: slotN.r.flat().reduce((s, v) => s + v, 0),
     knobs: (() => { const q = make(false, false, undefined, undefined, '?parkboth=0&parkfill=1.25&carscale=0.92'); return { both: q.PARK_BOTH, fill: q.PARK_FILL.k, k: q.CAR_K }; })() };
+}
+// Round 236 (Mike: "Parked cars in the middle of city streets is not [natural]"): a divided street mapped as two one-way
+// ways parks its outer kerbs only. Six groups of 300 m streets, each drawn into the road grid as the page draws it (its
+// own half width and class), laid at 14:30 and every kerb's slots counted (the slots, so no fill draw decides a count):
+// - overlap: two primaries (2 lanes, 6.5 m to the kerb) 11 m apart, driven opposite ways (the drawn halves overlap);
+// - median: the same 24 m apart (an 11 m median, under PARK_TWIN_GAP);
+// - wide: the same 30 m apart (a 17 m median: a boulevard that keeps its inner kerbs);
+// - tertiaries: two two-way tertiaries 19 m apart (10 m between kerbs, over PARK_MED_GAP: both park every kerb);
+// - right: a one-way primary with a two-way primary 24 m off its right kerb (the twin rule is the left kerb's only);
+// - motorway: a one-way secondary with a motorway's drawn edge over its left kerb (never the street alongside)
+{
+  const groups = [
+    ['overlap', [[-150, -300, 150, -300, 2, true], [150, -311, -150, -311, 2, true]]],
+    ['median', [[-150, -200, 150, -200, 2, true], [150, -224, -150, -224, 2, true]]],
+    ['wide', [[-150, -100, 150, -100, 2, true], [150, -130, -150, -130, 2, true]]],
+    ['tertiaries', [[-150, 0, 150, 0, 4, false], [-150, 19, 150, 19, 4, false]]],
+    ['right', [[-150, 100, 150, 100, 2, true], [-150, 124, 150, 124, 2, false]]],
+    ['motorway', [[-150, 200, 150, 200, 3, true]]],
+  ];
+  const lay = (search) => {
+    const P = make(false, false, undefined, undefined, search);
+    for (const [, rs] of groups) for (const [x0, z0, x1, z1, cls, ow] of rs) P.trafficRuns.push(run([[x0, z0], [x1, z1]], cls, ow));
+    for (const r of P.trafficRuns) P.septaRoadAdd(r.xs[0], r.zs[0], r.xs[1], r.zs[1], P.parkHalfW(r), r.cls);
+    P.septaRoadAdd(-150, 192, 150, 192, 8, 0);   // the motorway, 8 m to its edge, over the secondary's left kerb
+    P.trafficCreateFleet(); P.setReady(); P.parkedInit(); P.parkedLay(0);
+    // each kerb's slots: the run (eastbound or westbound, so its right kerb is south or north of it) and the side
+    const kerbs = {};
+    let ri = 0;
+    for (const [g, rs] of groups) rs.forEach(([x0, z0, x1], j) => {
+      const r = P.trafficRuns[ri++], hw = P.parkHalfW(r), east = x1 > x0;
+      for (const side of [1, -1]) {
+        const zk = z0 + (east ? side : -side) * (hw - 1.0);   // a parked car's centre about a metre in from the kerb
+        let n = 0;
+        for (const rows of P.PARKED.slots.values()) for (let i = 0; i < rows.length; i += 7) if (Math.abs(rows[i + 2] - zk) < 0.35 && Math.abs(rows[i]) < 151) n++;
+        kerbs[g + j + (side > 0 ? 'R' : 'L')] = n;
+      }
+    });
+    return { kerbs, med: P.PARK_MED, gaps: [P.PARK_MED_GAP, P.PARK_TWIN_GAP], drawn: P.SRG.n };
+  };
+  out.median = Object.assign(lay(''), { old: lay('?parkmid=1') });
 }
 // the vehicles' own lamp share, written by their own patch on the materials' real shaders (review: a text replace on
 // another patch's output matched nothing once that output changed)

@@ -45783,6 +45783,7 @@ float pinOccGate() {
         let fire = false;
         for (let h = 0; h < hy.length && !fire; h += 2) fire = hy[h + 1] === side && Math.abs(hy[h] - sl) < 4.6;   // a hydrant's 15 feet
         if (fire) continue;
+        if (PARK_MED && parkedOnMedian(r, sl, side, hw)) continue;   // a kerb on a median or in another carriageway (Round 236)
         const kind = parkedKind(hash01(roll * 17.3)), u = hw - parkKerbIn(kind);
         carSample(r, sl, dir, r.oneway ? side * u : u, _pkS);
         if (parkedNearStop(_pkS.x, _pkS.z)) continue;
@@ -45809,6 +45810,62 @@ float pinOccGate() {
     if (one && hw >= 2.6) return [hash01(r.mx * 0.731 + r.mz * 1.37) < 0.5 ? 1 : -1];
     return [];
   }
+  // Round 236 (Mike, Nov 11: "Traffic bunching at intersections is natural. Parked cars in the middle of city streets is
+  // not"): OSM maps a divided street as two one-way ways, and each parked both its kerbs, so the inner kerb's row stood
+  // along the median (Columbus Boulevard) or down the middle of the asphalt where the two drawn carriageways overlap
+  // (Girard Avenue at Frankford, South Broad Street). A slot asks the drawn road grid (SRG, every tier) for the nearest
+  // street beyond its kerb that runs alongside its own (parallel within PARK_MED_COS, its centreline more than
+  // PARK_MED_OWN off the slot's on the kerb's side, so never the slot's own street), and parks nothing (parkedOnMedian):
+  // - on any kerb, where that street's near edge is closer than PARK_MED_GAP (an overlap, or a median a car would fill);
+  // - on a one-way street's left kerb, where it is closer than PARK_TWIN_GAP and of the same class or a bigger one: the
+  //   other half of a divided street lies on the left (driving on the right), and the survey (__dbg.parkMedian) found
+  //   an opposite one-way run there on 92% of the left kerbs that close (137 km of 149), falling to background past 14 m
+  //   while the right kerbs and the two-way streets stayed at background all the way.
+  // A motorway is never that street: SRG has no heights, and I-95 and the Vine Street Expressway stand on decks or in
+  // cuts beside the streets that park under or along them. Measured on Nov 11: 5,309 km of kerb parks; the first rule
+  // takes 234.5 km of it, the second 37.4 km more (5.1% in all, 95% of it left kerbs of one-way runs); a lay that opens
+  // new cells takes about 0.6 ms more on a computer (median). ?parkmid=1 parks every kerb as Round 233 did
+  const PARK_MED = PARK2 && !/[?&]parkmid=1\b/.test(location.search);
+  const PARK_MED_GAP = 6, PARK_TWIN_GAP = 14, PARK_MED_OWN = 3, PARK_MED_COS = 0.94;
+  // the gap from a kerb hw off the centreline point (cx, cz), the street heading (hx, hz), on side s (1 the right), to the
+  // near edge of the nearest parallel drawn street beyond it (negative where the two overlap), Infinity where none is;
+  // PARKED.gapK is that street's record in SRG. Only the grid's cells along the kerb's side are read: a centreline out
+  // to PARK_MED_REACH beyond the kerb (every class but a stray residential way is drawn 8 m or less to its edge), its
+  // nearest point up to 13 m along the street from the slot's (20 degrees over that reach); 5.3 cells a slot where a
+  // square round it read 9, which took a lay that opens new cells from 2.3 to 4.0 ms (median, a computer; now 2.85)
+  const PARK_MED_REACH = PARK_TWIN_GAP + 16;
+  function parkedKerbGap(cx, cz, hx, hz, s, hw) {
+    const C = SEPTA_RG_CELL, nx = -hz * s, nz = hx * s, R = hw + PARK_MED_REACH, fx = cx + nx * R, fz = cz + nz * R;
+    const gx0 = Math.floor((Math.min(cx, fx) - 13) / C), gx1 = Math.floor((Math.max(cx, fx) + 13) / C);
+    const gz0 = Math.floor((Math.min(cz, fz) - 13) / C), gz1 = Math.floor((Math.max(cz, fz) + 13) / C);
+    let best = Infinity;
+    PARKED.gapK = -1;
+    for (let cx2 = gx0; cx2 <= gx1; cx2++) for (let cz2 = gz0; cz2 <= gz1; cz2++) {
+      const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids, H = SRG.hw;
+      for (let q = q0; q < q1; q++) {
+        const k = ids[q], i = k * 4;
+        if (!SRG.cls[k]) continue;   // a motorway
+        const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az, L2 = dx * dx + dz * dz;
+        if (L2 < 0.25) continue;
+        const along = dx * hx + dz * hz;
+        if (along * along < PARK_MED_COS * PARK_MED_COS * L2) continue;
+        const t = ((cx - ax) * dx + (cz - az) * dz) / L2;
+        if (t < 0 || t > 1) continue;
+        const lat = (ax + dx * t - cx) * nx + (az + dz * t - cz) * nz;
+        if (lat <= PARK_MED_OWN) continue;
+        const gap = lat - H[k] / 10 - hw;
+        if (gap < best) { best = gap; PARKED.gapK = k; }
+      }
+    }
+    return best;
+  }
+  // a slot at arc s of run r on kerb side (1 the right of the run's own heading, either way it is driven) parks nothing
+  function parkedOnMedian(r, s, side, hw) {
+    carSample(r, s, 1, 0, _pkM);
+    const g = parkedKerbGap(_pkM.x, _pkM.z, Math.cos(_pkM.yaw), -Math.sin(_pkM.yaw), side, hw);
+    return g < PARK_MED_GAP || (g < PARK_TWIN_GAP && r.oneway && side < 0 && SRG.cls[PARKED.gapK] <= r.cls);
+  }
+  const _pkM = {};
   // the moving lane's sideways shift on a one-lane one-way street that parks one kerb: to the middle of what the parked row
   // leaves, 1.07 m off the centreline away from it, once per run and the same whether or not the eye is near (a car must
   // not step sideways when the row is laid)
@@ -45900,10 +45957,61 @@ float pinOccGate() {
         for (let j = 0; j < r.xs.length; j++) { const d = Math.hypot(r.xs[j] - x, r.zs[j] - z); if (d < best) { best = d; bj = j; } }
         if (best > rad) return;
         const j1 = Math.min(bj + 1, r.xs.length - 1), j0 = j1 - 1, hw = parkHalfW(r);
-        out.push({ ri, d: Math.round(best), cls: r.cls, oneway: !!r.oneway, lanes: carLaneCount(r), hw: +hw.toFixed(2), sides: r.closed || !parkedRunOK(r) ? [] : parkedSides(r, hw), len: Math.round(r.len),
+        const sides = r.closed || !parkedRunOK(r) ? [] : parkedSides(r, hw), med = [];
+        // Round 236: each kerb's share of its run that parkedOnMedian takes, sampled every 5 m, and its nearest gap
+        if (PARK_MED) for (const side of sides) { let n = 0, c = 0, g = Infinity; for (let s = 5; s < r.len - 5; s += 5, n++) { if (parkedOnMedian(r, s, side, hw)) c++; g = Math.min(g, parkedKerbGap(_pkM.x, _pkM.z, Math.cos(_pkM.yaw), -Math.sin(_pkM.yaw), side, hw)); } med.push([side, n ? +(c / n).toFixed(2) : 0, +g.toFixed(1)]); }
+        out.push({ ri, d: Math.round(best), cls: r.cls, oneway: !!r.oneway, lanes: carLaneCount(r), hw: +hw.toFixed(2), sides, med, len: Math.round(r.len),
           at: [Math.round(r.xs[bj]), +r.ys[bj].toFixed(1), Math.round(r.zs[bj])], yaw: +Math.atan2(r.xs[j1] - r.xs[j0], -(r.zs[j1] - r.zs[j0])).toFixed(3), core: inCore(r.mx, r.mz) });
       });
       return out.sort((a, b) => a.d - b.d);
+    };
+    // Round 236: every kerb that parks (as Round 233 laid them), sampled every step metres: kerb km by the gap (1 m bins)
+    // to the nearest parallel drawn street beyond it (parkedKerbGap), the km parkedOnMedian takes by rule (gap: under
+    // PARK_MED_GAP; twin: a one-way left kerb under PARK_TWIN_GAP) and by the run's class, one-way or two-way, lanes and
+    // kerb (R, L), and over the 0 to 30 m band the one-way left kerbs with an opposite one-way run there (T) or not (n);
+    // a few places a bin as [x, z, run, class, one-way, side, gap, the street's class]
+    if (window.__dbg && !window.__dbg.parkMedian) window.__dbg.parkMedian = (step = 10) => {
+      const t0 = performance.now(), km = (o) => { for (const k in o) o[k] = +(o[k] / 1000).toFixed(1); return o; };
+      const hist = {}, kind = {}, ex = {}, band = {}, rule = { gap: 0, twin: 0 };
+      let kerb = 0, cells = 0, n = 0;
+      trafficRuns.forEach((r, ri) => {
+        if (r.cls < 2 || r.closed || !parkedRunOK(r)) return;
+        const hw = parkHalfW(r);
+        for (const side of parkedSides(r, hw)) for (let s = 15; s < r.len - 15; s += step) {
+          const cut = parkedOnMedian(r, s, side, hw), nk = PARKED.gapK, ncls = nk >= 0 ? SRG.cls[nk] : -1;
+          const g = parkedKerbGap(_pkM.x, _pkM.z, Math.cos(_pkM.yaw), -Math.sin(_pkM.yaw), side, hw), b = clamp(Math.floor(g), -12, 30);
+          kerb += step; hist[b] = (hist[b] || 0) + step;
+          { const C = SEPTA_RG_CELL, R = hw + PARK_MED_REACH, fx = _pkM.x + Math.sin(_pkM.yaw) * side * R, fz = _pkM.z + Math.cos(_pkM.yaw) * side * R;
+            cells += (Math.floor((Math.max(_pkM.x, fx) + 13) / C) - Math.floor((Math.min(_pkM.x, fx) - 13) / C) + 1) * (Math.floor((Math.max(_pkM.z, fz) + 13) / C) - Math.floor((Math.min(_pkM.z, fz) - 13) / C) + 1); n++; }
+          if (cut) {
+            rule[g < PARK_MED_GAP ? 'gap' : 'twin'] += step;
+            const kk = r.cls + (r.oneway ? 'o' : 't') + carLaneCount(r) + (side > 0 ? 'R' : 'L'); kind[kk] = (kind[kk] || 0) + step;
+          }
+          if (g >= 0 && g < 30 && r.oneway && side < 0) {
+            const hx = Math.cos(_pkM.yaw), hz = -Math.sin(_pkM.yaw), at = g + hw + SRG.hw[nk] / 10;
+            let opp = false;
+            for (const r2i of PARKED.cells.get(Math.floor(_pkM.x / PARKED.cell) * 100003 + Math.floor(_pkM.z / PARKED.cell)) || []) {
+              const r2 = trafficRuns[r2i];
+              if (r2i !== ri && r2.oneway) for (let j = 0; j + 1 < r2.xs.length && !opp; j++) {
+                const dx = r2.xs[j + 1] - r2.xs[j], dz = r2.zs[j + 1] - r2.zs[j], L2 = dx * dx + dz * dz;
+                if (L2 < 0.25 || dx * hx + dz * hz > -PARK_MED_COS * Math.sqrt(L2)) continue;
+                const tt = ((_pkM.x - r2.xs[j]) * dx + (_pkM.z - r2.zs[j]) * dz) / L2;
+                if (tt >= 0 && tt <= 1 && Math.abs((r2.xs[j] + dx * tt - _pkM.x) * hz - (r2.zs[j] + dz * tt - _pkM.z) * hx - at) < 4) opp = true;
+              }
+              if (opp) break;
+            }
+            const bb = band[b] || (band[b] = {}), tag = (ncls === r.cls ? '=' : ncls < r.cls ? '<' : '>') + (opp ? 'T' : 'n');
+            bb[tag] = (bb[tag] || 0) + step;
+          }
+          const e = ex[b] || (ex[b] = []);
+          if (e.length < 8 && hash01(ri * 0.37 + s * 0.011) < 0.05) e.push([Math.round(_pkM.x), Math.round(_pkM.z), ri, r.cls, r.oneway ? 1 : 0, side, +g.toFixed(1), ncls]);
+        }
+      });
+      for (const b in band) km(band[b]);
+      const wide = [0, 0, 0, 0, 0, 0];   // the widest drawn half width a class
+      for (let k = 0; k < SRG.n; k++) wide[SRG.cls[k]] = Math.max(wide[SRG.cls[k]], SRG.hw[k] / 10);
+      return { ms: Math.round(performance.now() - t0), kerbKm: +(kerb / 1000).toFixed(1), ruleKm: km(rule), gaps: [PARK_MED_GAP, PARK_TWIN_GAP], cells: +(cells / n).toFixed(2), wide,
+        hist: Object.keys(hist).map(Number).sort((a, b) => a - b).map((b) => [b, +(hist[b] / 1000).toFixed(1)]), kind: km(kind), band, ex };
     };
     const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + Math.floor(clock.minutes / 60) + ':' + SCORES.games.length;
     const moved = Math.hypot(camera.position.x - PARKED.lx, camera.position.y - PARKED.ly, camera.position.z - PARKED.lz);

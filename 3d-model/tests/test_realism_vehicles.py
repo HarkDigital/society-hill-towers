@@ -164,6 +164,30 @@ class Runtime(unittest.TestCase):
         self.assertIn("PARK_BOTH = PARK2 ? clamp(parkQ('parkboth', 1), 0, 1) : 1;", SRC)
         self.assertIn("k: PARK2 ? clamp(parkQ('parkfill', 1.25), 0, 1.6) : 1,", SRC)
 
+    def test_divided_streets_park_their_outer_kerbs(self):
+        # Round 236 (Mike: "Parked cars in the middle of city streets is not"): the two one-way halves of a divided street
+        # park nothing on their inner kerbs where the drawn halves overlap or the median is under PARK_TWIN_GAP; a wider
+        # boulevard, two-way neighbours, a street off the right kerb and a motorway alongside change nothing
+        m = self.r['median']
+        self.assertTrue(m['med'])
+        self.assertEqual(m['gaps'], [6, 14])
+        k = m['kerbs']
+        for g in ('overlap', 'median'):
+            for j in '01':
+                self.assertEqual(k[g + j + 'L'], 0, (g, j, k))
+                self.assertGreater(k[g + j + 'R'], 30, (g, j, k))
+        for name, n in k.items():
+            if not (name.startswith('overlap') or name.startswith('median')) or name.endswith('R'):
+                self.assertGreater(n, 30, (name, k))
+        # ?parkmid=1 parks every kerb as Round 233 did (the overlapping halves' inner rows lie on one line, both counted)
+        o = m['old']
+        self.assertFalse(o['med'])
+        self.assertTrue(all(n > 30 for n in o['kerbs'].values()), o['kerbs'])
+        self.assertEqual({n: v for n, v in o['kerbs'].items() if not n.startswith(('overlap', 'median'))},
+                         {n: v for n, v in k.items() if not n.startswith(('overlap', 'median'))})
+        self.assertIn("const PARK_MED = PARK2 && !/[?&]parkmid=1\\b/.test(location.search);", SRC)
+        self.assertIn('if (PARK_MED && parkedOnMedian(r, sl, side, hw)) continue;', SRC)
+
     def test_vehicle_lamp_share_lands(self):
         L = self.r['lampShare']
         self.assertEqual((L['car'], L['bus'], L['train']), ('0.35', '0.35', '0.35'))

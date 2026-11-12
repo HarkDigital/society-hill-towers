@@ -14152,3 +14152,51 @@ change to the light (CLAUDE.md says to re-run after any of them). Folding `tower
 towers into it would catch the first two at the price of a six-minute run after every such edit; not done without
 Mike's say. The four dark-glass towers past or at their bound are the price of the fill he picked; the straighter day
 toe (Stage 2) is the next thing that moves them, and it must be measured with this file.
+
+## Round 236 — no parked cars down the middle of divided streets (Nov 11)
+
+Mike, after Round 233 shipped: "Traffic bunching at intersections is natural. Parked cars in the middle of city streets
+is not." The moving traffic's queues stay as they are.
+
+The cause: OpenStreetMap maps a divided street as two one-way ways, and Round 233's rules (like Round 188's) treat
+each as its own street and park both its kerbs. The inner kerb's row then stood along the median (Columbus Boulevard,
+whose drawn median runs 2 to 11 m) or down the middle of the asphalt where the two drawn halves overlap (Girard Avenue
+at Frankford, South Broad Street, Spring Garden Street, a run of South 25th Street four cars abreast).
+
+Measured with a new survey, `__dbg.parkMedian(step)`: every kerb that parks, sampled every 10 m, by the gap from the
+kerb to the near edge of the nearest parallel drawn street beyond it (the road grid every tier writes, SRG; parallel
+within 20 degrees, its centreline more than 3 m off the slot's on the kerb's side, so never the slot's own street).
+5,309 km of kerb parks. Below 6 m (an overlap, or a median a car would fill) there are 234.5 km. Between 6 and 14 m
+the mass is on the left kerbs of one-way runs with a street of their class or bigger there, and for those the survey
+checked the traffic runs: on 92% of them (137 km of 149) an opposite one-way run lies there, the other half of a
+divided street (driving on the right puts it on the left). Past 14 m that falls to background, and the right kerbs and
+the two-way streets stay at background (0.1 to 0.5 km a metre of gap) all the way.
+
+What the round does (JavaScript only; no shader text, no data): `parkedOnMedian` takes a slot (`parkedExpand`, before
+its kind is drawn) where that street's edge is under `PARK_MED_GAP` 6 m from any kerb, or under `PARK_TWIN_GAP` 14 m
+from a one-way run's left kerb and the street is of its class or bigger. A motorway is never that street: SRG has no
+heights, and I-95 and the Vine Street Expressway stand on decks or in cuts beside streets that park under or along
+them. The two rules take 234.5 and 37.4 km, 5.1% of the kerb, 95% of it left kerbs of one-way runs. `?parkmid=1`
+parks every kerb as Round 233 did. `__dbg.parkedAt` reports each kerb's share taken (`med`) and its nearest gap.
+
+The cost: the gap is asked once a slot, when a cell's runs are first expanded. Reading the 3 by 3 cells round the slot
+took a lay that opens new cells from 2.3 to 4.0 ms (median of twelve fresh spots, a computer, two runs each, one build
+at a time); reading only the cells along the kerb's side (5.3 a slot) brought it to 2.85 ms against 2.2 (the medians
+of two runs each: 2.05 and 2.35 before, 2.8 and 2.9 after; the worst fresh lay 6.5 and 7.8 ms against 4.4 and 5.2). The cut is the same both
+ways (234.5 and 37.4 km).
+
+Before and after, same build and clock (Oct 12, 13:00), at Girard and Frankford, three places on Columbus Boulevard,
+South Broad, South 25th, North 5th at Spring Garden, West Girard, Spring Garden, and two streets that must not change
+(a Center City block, Washington Avenue at 11th): the inner rows are gone, the outer kerbs keep theirs, the two are
+unchanged. A 17 m boulevard median keeps its inner rows (over the 14 m line). The moving traffic
+is spawned live and differs between columns. The harness (`vehicles_checks.js`, `median`) lays six pairs of 300 m
+streets into the real road grid: the overlapping and 11 m median pairs park 0 slots on their inner kerbs and 42 to 44
+on the outer, every other kerb (the 17 m median, two-way tertiaries 10 m apart, a street 11 m off a right kerb, a
+motorway over a left kerb) keeps its 40 to 45, and `?parkmid=1` gives them all back.
+
+Not done: South Broad's real median parking, a Philadelphia habit, is gone with the rest; the model draws no median
+there for it to stand on. The pairs of parallel streets 6 to 14 m apart with a thin row of houses between, where a
+one-way left kerb loses its row though no median is there, are at most about 11 km (the 8% for which the survey found
+no opposite run; some of those are the halves of trunk roads, whose runs the check does not read).
+
+Suite: 1,495 tests, OK (one skip, one expected failure, both as before).

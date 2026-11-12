@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 235 (the glass calibration re-measured).
+Last updated: Nov 11, 2026, after Round 236 (no parked cars down the middle of divided streets).
 
 ## The ask
 
@@ -102,6 +102,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   a fill per block side, a 6.5 m pitch. Mike picked the fuller column of his side-by-side page
   (https://claude.ai/artifact/Ubu7Mfhyobf1cTi4McvbBy): every narrow block on both kerbs and the fills 1.25 times the
   plan's means, about 82% of the cars there were. JavaScript only; no shader text changed.
+- **Round 236** (Mike's ask, outside the stages: "Parked cars in the middle of city streets is not [natural]"): the
+  two one-way halves of a divided street no longer park their inner kerbs (Columbus Boulevard, Girard Avenue, South
+  Broad Street, Spring Garden Street): 272 km of the city's 5,309 km of parking kerb, `?parkmid=1` the old rows.
+  JavaScript only; no shader text changed. Traffic queueing at junctions stays as it is (Mike: natural).
 
 ## In flight (finish these first)
 
