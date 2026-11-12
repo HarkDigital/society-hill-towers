@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 234 (the side-by-side page's picks).
+Last updated: Nov 11, 2026, after Round 235 (the glass calibration re-measured).
 
 ## The ask
 
@@ -109,8 +109,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
    sky's fill at 1.2 (said in chat) and the city behind the loading screen (saved on the page) shipped as Round 234. He
    made no pick on the roofs' sheen or the far-map switch, so both stay as they were. Still to do from it: the light's
    other half (the straighter day toe, shader text, Stage 2), shown on a test build first; the yellow-green haze toward a
-   low sun at 16:10, seen in every variant, not yet looked into; and the glass calibration, which has drifted on main
-   (below, Stage 1's remainder).
+   low sun at 16:10, seen in every variant, not yet looked into. (The glass calibration it moved was re-measured as
+   Round 235.)
 2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
    `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
    answers.
@@ -126,10 +126,12 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   360 m; and the `?veilcity=1` veil. This page decides what Stage 2 turns on.
 - The service worker and the reload: Round 229's navigation fields must first confirm that a reload under the worker
   downloads the whole page again; only then let Chromium navigations bypass the relay in `sw.js`.
-- **The glass calibration has drifted on main** (re-measured Nov 11 with `glass_calibrate.py`, fill 1.8): the W's median
-  colour error is 12.9 against the 11.5 its recorded gap allows, 34 of 118 measures fail, and pose `twopenn-50` no
-  longer records Two Penn at all. `tests/glass_calibration.json` is the old measure, so the test passes on it. Re-baseline
-  it (and find what moved, Rounds 222 to 233) before the Stage 2 train changes any glass.
+- ~~The glass calibration had drifted on main~~ Re-measured as Round 235 (Nov 11): nothing in the glass broke. The Oct 14
+  merge brought in the Liberty remodel (both towers about 5 levels brighter, within bounds) and Round 198's One Parkway,
+  which stood in front of pose `twopenn-50` (moved 70 m west); Round 234's fill lifted every glass 1 to 3 L*. The file
+  is current on Round 234's page, DiBona (1901 Market) joins the open towers and Two Penn left the swatches (not glass
+  since Round 198). The calibration's fingerprint sees only the glass's shaders and systems, so re-run
+  `glass_calibrate.py` after any change to the towers round the swatched ones too, or to the light.
 - The deploy's two verify lines for the server config (the art's cache header; gzip through a `Via` header).
 - Round 229's open findings (its devlog entry lists them under "Known, open"): a computer's second and third frames still link programs
   under a lit button; tier 2 still links about ten weather programs in its first frame; `beacons.py`'s engine line

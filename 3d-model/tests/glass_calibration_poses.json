@@ -1,7 +1,7 @@
 {
  "Comcast Center": [
-  "skyline-sw-day",
   "lowflight-day",
+  "south-day",
   "rittenhouse-north",
   "market-south-low",
   "comcast-north-150",
@@ -19,9 +19,7 @@
   "ctc-mid",
   "comcast-north-150",
   "comcast-south-100",
-  "market-west-60",
-  "chestnut2116-50",
-  "walnut1706-50"
+  "market-west-60"
  ],
  "One Liberty Place": [
   "skyline-sw-day",
@@ -31,6 +29,7 @@
   "broad-south",
   "market-north",
   "comcast-north-150",
+  "market-west-60",
   "twopenn-50"
  ],
  "Two Liberty Place": [
@@ -109,7 +108,8 @@
  ],
  "Arthaus (301-311 S Broad)": [
   "south-day",
-  "broad-south"
+  "broad-south",
+  "twopenn-50"
  ],
  "PNC Bank Building (1600 Market)": [
   "rittenhouse-north",
@@ -134,7 +134,6 @@
  "1706 Rittenhouse": [
   "walnut1706-50"
  ],
- "Two Penn Center (1500 JFK)": [],
  "Ten Penn Center (1801 Market)": [
   "market-south-low",
   "rittenhouse-60",

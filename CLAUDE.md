@@ -451,8 +451,10 @@ What Round 229 added (Stage 1's second batch):
   run; `--first-live` restores the old behaviour and `--prime <n>` draws n frames before the first pose (use 1 on a
   build before Round 229 when comparing across it). The first frame also seeds the skyline theme and the water's phase.
 - The clear sky's fill (`KEYWX.fill`) is 1.2 since Round 234 (Mike's pick; Round 188's 1.8 before). It moves the glass:
-  re-measure with `glass_calibrate.py` before any glass change, and note that `tests/glass_calibration.json` is older than
-  Rounds 222 to 234 (re-measured on main at 1.8, the W already sat past its recorded gap; PLAN.md, Stage 1).
+  re-measure with `glass_calibrate.py` before any glass change. `tests/glass_calibration.json` was re-measured on it in
+  Round 235; its fingerprint sees only the glass's shaders and systems, so a new building in front of a pose, a
+  remodelled swatched tower or a change to the light passes the test unmeasured: re-run the calibration after any of
+  them (devlog Round 235).
 - Camden's measured heights (the batch's fourth package) shipped apart, as Round 231 (Nov 11, at Mike's "Ship Camden"
   after the before and after from Penn's Landing). Their rules:
 - `wide.b64` is repacked only through `pack_wide.py --against <a copy of the one it replaces>`, which writes nothing

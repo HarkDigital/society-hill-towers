@@ -57,7 +57,9 @@ POSES = {
     'river-60': {'pos': [-2950, 60, -1100], 'look': [-3350, 60, -1050], 'clock': C},
     'chestnut2116-50': {'pos': [-2560, 50, -330], 'look': [-2611, 60, -568], 'clock': C},
     'walnut1706-50': {'pos': [-2100, 50, -60], 'look': [-2143, 60, -293], 'clock': C},
-    'twopenn-50': {'pos': [-1790, 50, -1150], 'look': [-1789, 40, -867], 'clock': C},
+    # (Round 235: the eye 70 m west of where Round 192 stood it, past One Parkway's west wall: Round 198 built One Parkway on
+    # its lot, where the model had drawn grass, and from (-1790, 50, -1150) the pose saw only its north face)
+    'twopenn-50': {'pos': [-1860, 50, -1150], 'look': [-1789, 40, -867], 'clock': C},
     'honickman-50': {'pos': [-1230, 50, -300], 'look': [-1228, 55, -557], 'clock': C},
     'chop-50': {'pos': [-3500, 50, 230], 'look': [-3569, 57, -18], 'clock': C},
 }
@@ -72,11 +74,13 @@ SW = {
     'The Laurel Rittenhouse Square (1911 Walnut)': '#8E8A82', 'Murano (2101 Market)': '#6E9EB4', '2116 Chestnut': '#7D9A90',
     'G. Fred DiBona Jr. Building (1901 Market, Independence Blue Cross)': '#4F6476', 'Arthaus (301-311 S Broad)': '#8C9AA4',
     'PNC Bank Building (1600 Market)': '#3A4148', '2000 Market Street': '#2F3539', 'Eleven Penn Center (1835 Market)': '#5B748A',
-    '10 Rittenhouse Square (1801 Walnut)': '#9CAEBB', '1706 Rittenhouse': '#7F95A8', 'Two Penn Center (1500 JFK)': '#9FA6AB',
+    '10 Rittenhouse Square (1801 Walnut)': '#9CAEBB', '1706 Rittenhouse': '#7F95A8',
     'Ten Penn Center (1801 Market)': '#6F7C85', '1650 Arch Street': '#4A5056', 'Jefferson Health Honickman Center (1101 Chestnut)': '#AAB8C2',
     'Riverwalk I and II (30 N 23rd / 2200 Arch)': '#8E9AA6', '3025 JFK Boulevard': '#8FA5B3', 'The Alexander (1601 Vine)': '#9EACB6',
     'CHOP Roberts Center for Pediatric Research': '#9DB5C8', '1818 Market Street': '#3B4246',
 }
+# (Two Penn Center left the swatches in Round 235: since Round 198 it draws its own white enamel bands and blue ribbon
+# windows under the realistic look, towers.json's real record, not a curtain wall, so the curtain wall's swatch no longer reads it)
 JUDGED = json.loads((HERE / 'tests' / 'glass_calibration_poses.json').read_text()) if (HERE / 'tests' / 'glass_calibration_poses.json').exists() else {}
 SWATCHES = {k: (v, JUDGED.get(k, [p for p in POSES if p != 'onelib-crown']), 15) for k, v in SW.items()}
 SWATCHES['One Liberty Place (crown)'] = ('#5D7F9E', ['onelib-crown', 'skyline-sw-day'], 15)
@@ -92,17 +96,16 @@ HUE_B = 6.0
 JUDGE = (400, 0.4, 20.0)
 # the poses the review named for the two Comcast towers: mid-level and the shaded north faces (they must stay judged)
 NAMED = {'Comcast Center': ['comcast-south-100', 'market-south-low', 'comcast-north-150'], 'Comcast Technology Center': ['ctc-mid', 'market-north']}
-# the towers still open at this round's end, each with its median delta E and b* gap over its judged poses (the test holds
+# the towers still open at this round's end (re-measured in Round 235, on Round 234's fill of 1.2), each with its median delta E and b* gap over its judged poses (the test holds
 # them there, so no change makes them worse unseen) and what keeps it from its swatch; for Mike
 OPEN = {
-    'The W and Element Philadelphia (1441 Chestnut)': (11.0, 10.6, 'its photographed blue (b* -27) is deeper than a coated pane keeps under Schlick\'s grazing white and the haze: b* -13 to -19 at its judged poses (the review measured -2 to -8)'),
-    'Murano (2101 Market)': (14.0, 13.5, 'five of its seven judged poses see its south faces, which mirror the sky toward the sun, white round the sun\'s aureole at noon; its north faces from Market\'s north side and from the west keep its blue'),
-    'The Laurel Rittenhouse Square (1911 Walnut)': (9.5, -6.9, 'a warm greige glass mirroring a blue sky reads a little blue: b* -1 to -3 against the swatch\'s +4.8, one point past the bound'),
-    'Eleven Penn Center (1835 Market)': (16.2, 4.8, 'its west face from 60 m mirrors the dark low city west of it (L* 25); its other faces are within 4'),
-    'Jefferson Health Honickman Center (1101 Chestnut)': (17.0, -0.4, 'judged at one pose, its south face from 50 m mirroring the sky toward the sun (L* 58 against 74)'),
-    'Riverwalk I and II (30 N 23rd / 2200 Arch)': (17.4, 1.1, 'both judged poses see it among Center City\'s towers, which it mirrors (L* 47 to 50 against 63)'),
-    'Two Penn Center (1500 JFK)': (None, None, 'no standard pose sees two fifths of its height: 80 m among Penn Center\'s towers'),
-    '1818 Market Street': (20.5, -1.8, 'its ribbon windows\' dark glass (L* 27 head-on) mirrors the sky at the slant most poses see a ribbon at, L* 45 to 65, and from below it mirrors the sky overhead'),
+    'The W and Element Philadelphia (1441 Chestnut)': (11.1, 10.3, 'its photographed blue (b* -27) is deeper than a coated pane keeps under Schlick\'s grazing white and the haze: b* -13 to -19 at its judged poses (the review measured -2 to -8)'),
+    'Murano (2101 Market)': (14.8, 13.5, 'five of its seven judged poses see its south faces, which mirror the sky toward the sun, white round the sun\'s aureole at noon; its north faces from Market\'s north side and from the west keep its blue'),
+    'The Laurel Rittenhouse Square (1911 Walnut)': (8.5, -6.8, 'a warm greige glass mirroring a blue sky reads a little blue: b* -1 to -3 against the swatch\'s +4.8, one point past the bound'),
+    'G. Fred DiBona Jr. Building (1901 Market, Independence Blue Cross)': (16.5, -0.2, 'its dark blue-grey glass (L* 41) mirrors the noon sky at L* 54 to 58 from every judged pose, and the clear sky\'s fill at 1.2 (Round 234) lifted it 1 to 3 L*, from 14.4 past the bound'),
+    'Eleven Penn Center (1835 Market)': (17.6, 4.8, 'its west face from 60 m mirrors the dark low city west of it (L* 24), and from 50 m its south faces read L* 56 to 65 against the swatch\'s 48, 2 L* lighter since the clear sky\'s fill went to 1.2 (Round 234)'),
+    'Riverwalk I and II (30 N 23rd / 2200 Arch)': (14.9, 1.0, 'both judged poses see it among Center City\'s towers, which it mirrors (L* 50 to 53 against 63); inside the bound since Round 234\'s fill, by a tenth'),
+    '1818 Market Street': (24.2, -1.9, 'its ribbon windows\' dark glass (L* 27 head-on) mirrors the sky at the slant most poses see a ribbon at, L* 45 to 66, and from below it mirrors the sky overhead; Round 234\'s fill lifted it 1 to 6 L*'),
 }
 QUERY = 'dev=1&dpr=1&wx=clear#l=132156'
 

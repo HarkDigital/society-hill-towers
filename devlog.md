@@ -14108,3 +14108,47 @@ the W 12.9 to 13.3, 1818 Market 20.9 to 24.2, 1706 Rittenhouse 2.5 to 4.4; Jeffe
 CHOP Roberts 11.5 to 9.7, The Alexander 13.1 to 11.3; 39 measures past tolerance against 34. The committed file was
 left as it was: re-baselining it, and finding what moved it since, is its own task (PLAN.md, Stage 1).
 
+
+## Round 235 — the glass calibration re-measured, and what had moved it (Nov 11)
+
+Mike, Nov 11, on "Re-measure the glass towers' colours and find what moved them?": "Yes, do it". Round 234 had found
+the committed `tests/glass_calibration.json` older than the page (the W past its recorded gap when re-measured).
+
+**What moved it, by bisection** (the calibrator's seven poses that judge the W, the Ritz and the two Liberty Places,
+rendered on the pages of d615ce0, 9e9baf8 and main, and on main with `?townart=0`). The harness is sound: d615ce0's
+page, where the file was measured on Oct 14, gives the stored numbers back within 0.1. Then:
+- **The Oct 14 integration** merged two branches after the calibration's own commit and nobody re-ran it (the
+  fingerprint covers only the glass's shaders and systems, so the test kept passing):
+  - Round 195's Liberty remodel (LIB_SPECS) lifted both Liberty Places about 5 levels of 255 (One Liberty's median
+    7.0 to 6.8, Two Liberty's 4.7 to 7.1, inside the bound);
+  - Round 198 built One Parkway (1515 Arch, 79 m) on a lot the model had drawn as grass, squarely between pose
+    `twopenn-50` and Two Penn. The pose saw only its north face, so the W and the Ritz lost the one pose that saw them
+    from the north, their best (5.5 and 5.6). The W's median over its three poses left went from 11.0 to 12.9: that was
+    the whole of its "drift". Its colour at the other three poses moved under 0.4. With `?townart=0` the pose sees
+    them again (6.5 and 7.7).
+- **Rounds 202 to 233 moved nothing**: 9e9baf8 (Round 201) and main at fill 1.8 read the same.
+- **Round 234's fill of 1.2** lifts every glass 1 to 3 L* (Two Liberty a further 2 to 5 levels toward the sun). That
+  helps the pale glass (the Honickman 16.3 to 13.7, Riverwalk 16.2 to 14.9, The Alexander 13.1 to 11.3, CHOP 11.5 to
+  9.7) and costs the dark (DiBona, 1901 Market, 14.4 to 16.5; Eleven Penn 16.2 to 17.6; 1818 Market 20.9 to 24.2;
+  Murano 13.8 to 14.8). The W stays within 0.4.
+
+A correction to Round 234's entry: the stored file also had 34 measures past the per-pose tolerance (the test bounds
+each tower's median, not every measure), so "34 of 118 fail" was not a drift; and `twopenn-50` lost the W and the Ritz,
+not Two Penn.
+
+**What changed (the calibrator and its record only; no page change, so no deploy).**
+- `twopenn-50`'s eye moves 70 m west to (-1860, 50, -1150), past One Parkway's west wall, the same aim. From there the
+  W reads 7.4 and the Ritz 6.2, as from the old eye before One Parkway; Arthaus and One Liberty are judged there too.
+- Two Penn Center leaves the swatches: since Round 198 it draws its own white enamel bands and blue ribbon windows under
+  the realistic look (towers.json's `real`), not the curtain wall its swatch was read for. 27 swatches remain.
+- `glass_calibrate.py --judge` re-run on main's page: the judged poses re-frozen (Comcast Center gains `south-day`, the
+  CTC drops `chestnut2116-50` and `walnut1706-50`, One Liberty gains `market-west-60`, Arthaus `twopenn-50`), and OPEN set
+  to the new medians: the W 11.1 / 10.3 (back inside the old 11.0 / 10.6), Murano 14.8, The Laurel 8.5, Eleven Penn 17.6,
+  Riverwalk 14.9 (inside the bound by a tenth, kept open), 1818 Market 24.2, and DiBona joins at 16.5 / -0.2 with its
+  reason. The Honickman leaves OPEN, within both bounds at 13.7. Seven towers open, as before.
+
+**Known, open.** The fingerprint still cannot see a new building in front of a pose, a remodelled swatched tower or a
+change to the light (CLAUDE.md says to re-run after any of them). Folding `towers.json`'s records near the swatched
+towers into it would catch the first two at the price of a six-minute run after every such edit; not done without
+Mike's say. The four dark-glass towers past or at their bound are the price of the fill he picked; the straighter day
+toe (Stage 2) is the next thing that moves them, and it must be measured with this file.
