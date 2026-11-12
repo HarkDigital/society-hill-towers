@@ -31,7 +31,7 @@ What the prompt had to learn, sheet by sheet (keep these when the wording change
   left-for-right is mirrored in the bake (bake_people_art.py's FLIP) rather than asked for again;
 - the figures stand about 480 to 560 px tall in the 1024: enough for the sharp atlas's 512 px cell and no more.
 
-Usage: python3 fetch_people_art.py [--only id,...] [--force] [--list] [--workers 3]"""
+Usage: python3 fetch_people_art.py [--mid] [--only id,...] [--force] [--list] [--workers 3]"""
 import argparse, base64, concurrent.futures, json, os, sys, time, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -41,8 +41,13 @@ MODEL = os.environ.get('PEOPLE_ART_MODEL', 'gpt-image-1.5')
 QUALITY = os.environ.get('PEOPLE_ART_QUALITY', 'high')
 SIZE = '1536x1024'   # six figures in one row: each about 250 px wide and 480 to 560 tall
 
-# the sheet's six pictures, left to right: (view, frame). bake_people_art.py reads this order.
-POSES = [('front', 0), ('front', 1), ('back', 0), ('back', 1), ('side', 0), ('side', 1)]
+# the sheet's six pictures, left to right: (view, frame). bake_people_art.py reads this order. Frames run through one
+# step: 0 the contact (legs apart), 1 the down (the weight landing), 2 the passing (legs together), 3 the up (the
+# swinging leg reaching forward). The first sheet holds the contact and the passing; the in-between sheet (MID, Round
+# 237) the down and the up
+POSES = [('front', 0), ('front', 2), ('back', 0), ('back', 2), ('side', 0), ('side', 2)]
+MID_POSES = [('front', 1), ('front', 3), ('back', 1), ('back', 3), ('side', 1), ('side', 3)]
+EDIT_API = 'https://api.openai.com/v1/images/edits'
 
 SHEET = ('A sheet of six cut-out photographs of the SAME real person, of the kind architects place in their renderings: '
          '{who}. A real adult\'s proportions: the head is small, about one seventh of the full height, and the legs are '
@@ -82,6 +87,51 @@ SHEET = ('A sheet of six cut-out photographs of the SAME real person, of the kin
          'logos and no lettering anywhere, plain clothes with no prints. Muted, realistic colours, natural skin, real '
          'cloth with its own creases. A photograph of an ordinary person on an ordinary weekday: not fashion, not an '
          'illustration, not a 3D render, not a game character.')
+
+# Round 237 (Mike: "The people are a bit disjointed. Can we smooth out their gait?"): two pictures a view made the walk a
+# flip between a stride and standing still. The in-between sheet is an EDIT of the figure's own first sheet (the image
+# endpoint's edits with input_fidelity high), so the face, the clothes and the bag are the first sheet's, and asks for
+# the two moments an animator draws between those two: the down and the up. <id>-mid.png beside <id>.png.
+MID_SHEET = ('The attached picture is a sheet of six cut-out photographs of one real person walking, in one row: from the '
+             'front in mid stride, from the front in the passing position, from behind in mid stride, from behind in the '
+             'passing position, in side profile in the contact position, and in side profile in the passing position. '
+             'Make a NEW sheet of the SAME person: exactly the same face, hair, build, clothes and colours, at exactly '
+             'the same scale and in the same soft overcast light, six NEW full-body pictures in ONE horizontal row on a '
+             'fully transparent background, evenly spaced with a clear gap between each figure and the next, the heads level '
+             'and the shoes level, nothing cut off. These six show the two IN-BETWEEN moments of the same walk that an '
+             'animator draws between the stride and the passing position. From left to right: '
+             '(1) seen from the FRONT walking toward the camera, the DOWN position just after a stride: the front foot now '
+             'flat on the ground and taking the weight with its knee a little bent, the back foot\'s heel lifted, the feet '
+             'still apart but closer than in a full stride, the arms swung part of the way; '
+             '(2) seen from the FRONT walking toward the camera, the UP position just after passing: upright on one straight '
+             'leg, the other leg swinging forward with its knee bent and its foot lifted just off the ground a little ahead, '
+             'the feet close together, the arms only slightly swung; '
+             '(3) seen from directly BEHIND walking away, the DOWN position: the forward foot flat and taking the weight, '
+             'the back foot\'s heel lifted so part of its sole shows, the feet apart but closer than in a full stride, the '
+             'arms swung part of the way; '
+             '(4) seen from directly BEHIND walking away, the UP position: upright on one straight leg, the other knee bent '
+             'and its foot lifted just off the ground, swinging forward, the feet close together, the arms only slightly '
+             'swung; '
+             '(5) an exact SIDE PROFILE walking toward the right edge of the frame, the DOWN position: the front leg bent at '
+             'the knee under the body\'s weight with its foot flat, the back leg trailing with its heel lifted high and only '
+             'its toes on the ground, the feet about two thirds of a full stride apart, the arms swinging opposite to the '
+             'legs; '
+             '(6) an exact SIDE PROFILE walking toward the right edge of the frame, the UP position, a moment after the legs '
+             'have passed each other: the legs like a narrow pair of scissors only just opened, the supporting leg straight '
+             'and under the hips with its heel starting to rise, the swinging leg a little ahead of it with the knee bent and '
+             'its foot in the air, clear of the ground, so the two feet are only about one shoe length apart. This sixth '
+             'figure is far narrower than the fifth; the arms close to the sides and only just swinging. '
+             '{carry} '
+             'Every picture is taken level from chest height with a long lens, no perspective distortion. No ground, no '
+             'floor, no shadow under the feet, no backdrop, no frame lines, no text, no labels, no numbers, no logos. A '
+             'photograph of an ordinary person, not an illustration, not a 3D render, not a game character.')
+
+# what each figure carries, said plainly for the in-between sheet (asked to keep "the bag", a figure with none grew one)
+MID_CARRY = {
+    'p01': 'She carries the same plain tan canvas tote bag hanging from her own right shoulder in all six pictures, as in the attached sheet.',
+    'p02': 'He carries NOTHING: his hands are empty, and there is no bag, no strap and no backpack anywhere in any of the six pictures.',
+    'p03': 'He wears the same plain black backpack on both shoulders in all six pictures, as in the attached sheet.',
+}
 
 SEASONS = {
     'cold': 'dressed for a cold, dry November day',
@@ -124,17 +174,38 @@ def api_key():
     sys.exit('no OPENAI_API_KEY in the environment or ~/.config/philly3d/openai.env')
 
 
-def make(key, fid, prompt, force):
+def multipart(fields, files):
+    """A multipart/form-data body: fields {name: value}, files [(name, filename, bytes)]."""
+    b = '----philly3d%d' % int(time.time() * 1000)
+    out = []
+    for k, v in fields.items():
+        out.append(('--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n' % (b, k, v)).encode())
+    for k, fn, data in files:
+        out.append(('--%s\r\nContent-Disposition: form-data; name="%s"; filename="%s"\r\nContent-Type: image/png\r\n\r\n' % (b, k, fn)).encode() + data + b'\r\n')
+    out.append(('--%s--\r\n' % b).encode())
+    return b''.join(out), 'multipart/form-data; boundary=' + b
+
+
+def make(key, fid, prompt, force, mid=False):
     os.makedirs(RAW, exist_ok=True)
-    base = os.path.join(RAW, fid)
+    src = os.path.join(RAW, fid + '.png')
+    base = os.path.join(RAW, fid + ('-mid' if mid else ''))
     if os.path.exists(base + '.png') and not force:
         return fid, 'kept'
-    body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1, 'output_format': 'png',
-                       'background': 'transparent'}).encode()
+    if mid:
+        if not os.path.exists(src):
+            return fid, 'no first sheet to edit'
+        body, ctype = multipart({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': '1', 'output_format': 'png',
+                                 'background': 'transparent', 'input_fidelity': 'high'}, [('image[]', fid + '.png', open(src, 'rb').read())])
+        url = EDIT_API
+    else:
+        body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1, 'output_format': 'png',
+                           'background': 'transparent'}).encode()
+        ctype, url = 'application/json', API
     err = ''
     for attempt in range(3):
-        req = urllib.request.Request(API, data=body, method='POST',
-                                     headers={'Authorization': 'Bearer ' + key, 'Content-Type': 'application/json'})
+        req = urllib.request.Request(url, data=body, method='POST',
+                                     headers={'Authorization': 'Bearer ' + key, 'Content-Type': ctype})
         try:
             with urllib.request.urlopen(req, timeout=400) as r:
                 j = json.load(r)
@@ -148,7 +219,8 @@ def make(key, fid, prompt, force):
                 f.write(img)
             os.replace(base + '.png.tmp', base + '.png')
             json.dump({'id': fid, 'prompt': prompt, 'model': MODEL, 'size': SIZE, 'quality': QUALITY, 'transparent': True,
-                       'poses': POSES, 'created': j.get('created'), 'usage': j.get('usage')}, open(base + '.json', 'w'), indent=1)
+                       'edit_of': fid + '.png' if mid else None, 'poses': MID_POSES if mid else POSES, 'created': j.get('created'),
+                       'usage': j.get('usage')}, open(base + '.json', 'w'), indent=1)
             return fid, 'made %d KB' % (len(img) // 1024)
         except urllib.error.HTTPError as e:
             msg = e.read().decode('utf-8', 'replace')[:300]
@@ -167,17 +239,21 @@ def main():
     ap.add_argument('--only', default='')
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--workers', type=int, default=3)
+    ap.add_argument('--mid', action='store_true', help='the in-between sheets (<id>-mid.png), each an edit of its first sheet')
     a = ap.parse_args()
     only = set(filter(None, a.only.split(',')))
     todo = [j for j in jobs() if not only or j[0] in only]
+    if a.mid:
+        todo = [(fid, MID_SHEET.format(carry=MID_CARRY[fid])) for fid, _ in todo]
+    suf = '-mid' if a.mid else ''
     if a.list:
         for fid, prompt in todo:
-            print(fid, SIZE, 'on disk' if os.path.exists(os.path.join(RAW, fid + '.png')) else 'to make')
+            print(fid + suf, SIZE, 'on disk' if os.path.exists(os.path.join(RAW, fid + suf + '.png')) else 'to make')
         return
     key = api_key()
-    print('%d sheets, model %s, %s, quality %s' % (len(todo), MODEL, SIZE, QUALITY), flush=True)
+    print('%d %ssheets, model %s, %s, quality %s' % (len(todo), 'in-between ' if a.mid else '', MODEL, SIZE, QUALITY), flush=True)
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
-        for fid, what in ex.map(lambda j: make(key, j[0], j[1], a.force), todo):
+        for fid, what in ex.map(lambda j: make(key, j[0], j[1], a.force, a.mid), todo):
             print(fid, what, flush=True)
 
 

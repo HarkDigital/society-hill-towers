@@ -112,15 +112,16 @@ A.peopleStep(48); o.askedOnce = A.asked.length;
 land(A); A.peopleStep(64);
 o.atlas = P.atlas; o.count = [P.card.count, P.shade.count, P.blob.count]; o.vis = [P.card.visible, P.shade.visible, P.blob.visible]; o.cellPx = P.uPK.value.z;
 const iv = P.iv, rd = (i, s) => Array.from(iv.slice(i * 16 + 4 + s * 4, i * 16 + 8 + s * 4)), mir = (c) => [c[0] + c[2], c[1], -c[2], c[3]];
-const which = (r, fig) => { for (let v = 0; v < 3; v++) for (let f = 0; f < 2; f++) { const c = cell(fig, v, f); if (near(r, c)) return 'FBS'[v] + f; if (near(r, mir(c))) return 'FBS'[v] + f + 'm'; } return '?'; };
+const which = (r, fig) => { for (let v = 0; v < 3; v++) for (let f = 0; f < ART.frames; f++) { const c = cell(fig, v, f); if (near(r, c)) return 'FBS'[v] + f; if (near(r, mir(c))) return 'FBS'[v] + f + 'm'; } return '?'; };
 o.views = H.map((d, i) => [d, which(rd(i, 0), 1), which(rd(i, 1), 1), +iv[i * 16 + 2].toFixed(3)]);
 o.size = [iv[0], iv[1], ART.figures[1].tall];
 // the step: figure 0 (p01, carries a tote: never mirrored) and figure 1 (p02), walking at the eye and away, by phase
-const PH = [0.05, 0.3, 0.55, 0.8];
+const PH = [0.05, 0.17, 0.3, 0.42, 0.55, 0.67, 0.8, 0.92];   // one eighth of a cycle each: every frame of both steps
 A.rows([].concat(...[0, 1, 2, 4].map((fig) => PH.map((ph) => row(0, -10, 0, 1, fig, ph))), PH.map((ph) => row(0, -10, 0, -1, 1, ph)), PH.map((ph) => row(0, -10, 1, 0, 1, ph))));
 A.peopleStep(80);
-o.step = [0, 1, 2, 4].map((fig, a) => PH.map((ph, b) => which(rd(a * 4 + b, 0), fig % 3)));
-o.stepBack = PH.map((ph, b) => which(rd(16 + b, 0), 1)); o.stepSide = PH.map((ph, b) => which(rd(20 + b, 0), 1));
+o.step = [0, 1, 2, 4].map((fig, a) => PH.map((ph, b) => which(rd(a * 8 + b, 0), fig % 3)));
+o.stepBack = PH.map((ph, b) => which(rd(32 + b, 0), 1)); o.stepSide = PH.map((ph, b) => which(rd(40 + b, 0), 1));
+o.bob = PH.map((ph, b) => +iv[b * 16 + 3].toFixed(4));
 // the sun stands east (sunDir.x 1): its view of a walker by the walker's heading, for the shadow
 A.rows([[1, 0], [-1, 0], [0, 1], [0, -1]].map((h) => row(0, -10, h[0], h[1], 1, 0.05)).concat([[0, 1], [0, -1]].map((h) => row(0, -10, h[0], h[1], 1, 0.55))));
 A.peopleStep(96);
@@ -352,19 +353,19 @@ class View(unittest.TestCase):
 
     def test_the_view_by_the_heading_against_the_eye(self):
         got = {d: (a, b, k) for d, a, b, k in self.o['views']}
-        # phase 0.3 is the passing pose (frame 1); F front, B back, S side, m mirrored
+        # phase 0.3 is the passing pose (frame 2 of four); F front, B back, S side, m mirrored
         for d in (0, 30, 38.9):
-            self.assertEqual(got[d], ('F1', 'F1', 0), d)
+            self.assertEqual(got[d], ('F2', 'F2', 0), d)
         for d in (51.1, 60, 90, 120, 128.9):
-            self.assertEqual(got[d], ('S1', 'S1', 0), d)       # toward the viewer's right: the picture as drawn
+            self.assertEqual(got[d], ('S2', 'S2', 0), d)       # toward the viewer's right: the picture as drawn
         for d in (141.1, 150, 180):
-            self.assertEqual(got[d], ('B1', 'B1', 0), d)
-        self.assertEqual(got[-90], ('S1m', 'S1m', 0))          # toward the viewer's left: mirrored
-        self.assertEqual(got[-120], ('S1m', 'S1m', 0))
+            self.assertEqual(got[d], ('B2', 'B2', 0), d)
+        self.assertEqual(got[-90], ('S2m', 'S2m', 0))          # toward the viewer's left: mirrored
+        self.assertEqual(got[-120], ('S2m', 'S2m', 0))
         # on a line both pictures ride the instance, half and half
-        self.assertEqual(got[45], ('F1', 'S1', 0.5))
-        self.assertEqual(got[135], ('S1', 'B1', 0.5))
-        self.assertEqual(got[-45], ('F1', 'S1m', 0.5))
+        self.assertEqual(got[45], ('F2', 'S2', 0.5))
+        self.assertEqual(got[135], ('S2', 'B2', 0.5))
+        self.assertEqual(got[-45], ('F2', 'S2m', 0.5))
         # the card's size is the figure's cell: its height the manifest's tall, its width by the cell's shape
         w, h, tall = self.o['size']
         self.assertAlmostEqual(h, tall, places=5)
@@ -372,17 +373,26 @@ class View(unittest.TestCase):
 
     def test_the_step(self):
         s = self.o['step']
-        self.assertEqual(s[0], ['F0', 'F1', 'F0', 'F1'])       # p01 carries a tote on one shoulder: never mirrored
-        self.assertEqual(s[1], ['F0', 'F1', 'F0m', 'F1'])      # p02: the second stride is the other leg's
-        self.assertEqual(s[2], ['F0', 'F1', 'F0m', 'F1'])      # p03
+        # Round 237: a step is four frames (contact, down, passing, up), eight a cycle
+        self.assertEqual(s[0], ['F0', 'F1', 'F2', 'F3', 'F0', 'F1', 'F2', 'F3'])           # p01 carries a tote on one shoulder: never mirrored
+        self.assertEqual(s[1], ['F0', 'F1', 'F2', 'F3', 'F0m', 'F1m', 'F2m', 'F3m'])   # p02: the second step is the other leg's
+        self.assertEqual(s[2], s[1])                           # p03
         self.assertEqual(s[3], s[1])                           # figure 4 of the fill's twelve is figure 1 of the three here
-        self.assertEqual(self.o['stepBack'], ['B0', 'B1', 'B0m', 'B1'])
-        self.assertEqual(self.o['stepSide'], ['S0', 'S1', 'S0', 'S1'])   # a side is mirrored by its way alone
+        self.assertEqual(self.o['stepBack'], ['B0', 'B1', 'B2', 'B3', 'B0m', 'B1m', 'B2m', 'B3m'])
+        self.assertEqual(self.o['stepSide'], ['S0', 'S1', 'S2', 'S3'] * 2)   # a side is mirrored by its way alone
+
+    def test_the_bob_is_lowest_at_the_down_and_highest_at_the_up(self):
+        # the shader stretches the card by 0.5 - 0.5 cos(4 pi (w - 0.125)) of the bob, w the phase it is handed: lowest at
+        # w 0.125, highest at 0.375. With four frames the page hands the phase a sixteenth early
+        import math
+        lift = [0.5 - 0.5 * math.cos(4 * math.pi * (w - 0.125)) for w in self.o['bob']]
+        self.assertLess(max(lift[1], lift[5]), 0.1)            # the down (0.17, 0.67)
+        self.assertGreater(min(lift[3], lift[7]), 0.9)         # the up (0.42, 0.92)
 
     def test_the_suns_view_for_the_shadow(self):
         # the sun stands east: a walker heading east shows it the front, west the back; north and south a side, and
         # from the side always the passing pose (a stride's feet would stand apart from the card's own)
-        self.assertEqual(self.o['sun'], ['F0', 'B0', 'S1m', 'S1', 'S1m', 'S1'])
+        self.assertEqual(self.o['sun'], ['F0', 'B0', 'S2m', 'S2', 'S2m', 'S2'])
 
     def test_the_place_the_lift_and_the_fade(self):
         o = self.o
@@ -395,9 +405,9 @@ class View(unittest.TestCase):
 
     def test_the_knobs(self):
         b, k, a1, b1, mid = self.o['tuned']
-        self.assertEqual(b, 'F1')                              # 41 degrees is outside a 2 degree hand-over
+        self.assertEqual(b, 'F2')                              # 41 degrees is outside a 2 degree hand-over
         self.assertEqual(k, 0)
-        self.assertEqual((a1, b1, mid), ('F0', 'F1', True))    # the tail of the stride dissolving into the passing pose
+        self.assertEqual((a1, b1, mid), ('F1', 'F2', True))    # the tail of the down dissolving into the passing pose
 
     def test_the_art(self):
         A, a = self.art['atlas'], self.o['art']

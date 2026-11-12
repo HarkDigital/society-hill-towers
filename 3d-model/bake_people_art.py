@@ -34,19 +34,21 @@ import argparse, json, os, sys
 import numpy as np
 from PIL import Image, ImageDraw
 import art_files
-from fetch_people_art import FIGURES, POSES, RAW
+from fetch_people_art import FIGURES, POSES, MID_POSES, RAW
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'people_art.json')
 VIEWS = ['front', 'back', 'side']
-FRAMES = 2                      # 0 the contact (legs apart), 1 the passing (legs together)
+FRAMES = 4                      # one step: 0 the contact (legs apart), 1 the down, 2 the passing (legs together), 3 the up
+# (Round 237: the down and the up are the in-between sheet's, <id>-mid.png; before it a view was two frames, a stride and
+# a stand, and the walk read as a flip between them)
 CELL_W, CELL_H, GUTTER = 128, 256, 8     # the full atlas; the half is 0.5 of these and the sharp 2.0
 SHARP = 2
 DIP_MAX = 0.04                  # a contact frame stands at most this much shorter than its view's passing frame
 QUALITY = 86                    # lossy colour; the alpha is kept lossless (alpha_quality 100) so the edge stays clean
 # figure id: the (view, frame) pictures to mirror. p01's tote hangs from her right shoulder in five pictures and from
 # her left in the back contact
-FLIP = {'p01': [('back', 0)]}
+FLIP = {'p01': [('back', 0), ('back', 1)]}
 # figure id: six (x0, x1) column ranges in sheet pixels, for a sheet whose figures touch (none of the first three do)
 CUTS = {}
 
@@ -79,7 +81,7 @@ def dilate(m, k):
     return m
 
 
-def slice_sheet(fid, a):
+def slice_sheet(fid, a, POSES=POSES):
     """The sheet's six poses as boolean masks at the sheet's size, left to right, and how they were found."""
     al = a[..., 3]
     H, W = al.shape
@@ -165,6 +167,15 @@ def measure(p):
     return (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1), axis
 
 
+def feet_apart(pose):
+    """How far apart the feet stand, in figure heights: the width of the solid pixels in the pose's lowest eighth."""
+    p, box = pose[0], pose[1]
+    al = p[..., 3]
+    h = box[3] - box[1]
+    xs = np.nonzero((al[box[3] - max(1, h // 8):box[3]] > 0.5).any(0))[0]
+    return float(xs.max() - xs.min() + 1) / h
+
+
 def resample(p, k):
     """The pose scaled by k, in premultiplied floating point (a channel at a time: no 8-bit premultiplied step)."""
     h, w = p.shape[:2]
@@ -200,20 +211,20 @@ def finish(pm, gutter, rects):
 
 
 def layout(n):
-    """Where n figures' six cells go: each figure a row of six, the figures in `per` columns of such rows, chosen for
+    """Where n figures' cells go: each figure a row of views times frames, the figures in `per` columns of such rows, chosen for
     the smallest longer side. Returns per, the full atlas's size and a function from (figure, view, frame) to its
     inner rect in full-atlas pixels."""
     pw, ph = CELL_W + 2 * GUTTER, CELL_H + 2 * GUTTER
     best = None
     for per in range(1, n + 1):
         rows = -(-n // per)
-        w, h = per * len(POSES) * pw, rows * ph
+        w, h = per * len(VIEWS) * FRAMES * pw, rows * ph
         if best is None or (max(w, h), w * h) < best[0]:
             best = ((max(w, h), w * h), per, w, h)
     _, per, w, h = best
 
     def rect(i, view, frame):
-        col = (i % per) * len(POSES) + VIEWS.index(view) * FRAMES + frame
+        col = (i % per) * len(VIEWS) * FRAMES + VIEWS.index(view) * FRAMES + frame
         return [col * pw + GUTTER, (i // per) * ph + GUTTER, CELL_W, CELL_H]
     return per, w, h, rect
 
@@ -222,23 +233,58 @@ def bake_figure(fid, tall):
     path = os.path.join(RAW, fid + '.png')
     if not os.path.exists(path):
         sys.exit('missing sheet %s (run fetch_people_art.py)' % path)
-    a = np.asarray(Image.open(path).convert('RGBA'), np.float32) / 255.0
-    masks, how = slice_sheet(fid, a)
-    poses = {}
-    for (view, frame), m in zip(POSES, masks):
-        p = cut_pose(a, m)
-        if (view, frame) in FLIP.get(fid, ()):
-            p = p[:, ::-1].copy()
-        poses[(view, frame)] = (p,) + measure(p)
+    mid = os.path.join(RAW, fid + '-mid.png')
+    if not os.path.exists(mid):
+        sys.exit('missing in-between sheet %s (run fetch_people_art.py --mid)' % mid)
+    poses, how = {}, []
+    for sheet, order in ((path, POSES), (mid, MID_POSES)):
+        a = np.asarray(Image.open(sheet).convert('RGBA'), np.float32) / 255.0
+        masks, h = slice_sheet(fid, a, order)
+        how.append(h)
+        for (view, frame), m in zip(order, masks):
+            p = cut_pose(a, m)
+            if (view, frame) in FLIP.get(fid, ()):
+                p = p[:, ::-1].copy()
+            poses[(view, frame)] = (p,) + measure(p)
+    how = ' + '.join(how)
+    # the in-between sheet is another photograph: it came back 5 to 15% lighter than the first (measured over the solid
+    # pixels), which flickers as the frames alternate. Each view's two in-betweens take a gain a channel, in linear
+    # light, that brings their mean to the mean of the view's contact and passing
+    gains = {}
+    for view in VIEWS:
+        def mean(fs):
+            px = np.concatenate([poses[(view, f)][0][..., :3][poses[(view, f)][0][..., 3] > 0.9] for f in fs])
+            return (px ** 2.2).mean(0)
+        g = mean((0, 2)) / np.maximum(mean((1, 3)), 1e-4)
+        gains[view] = [round(float(v), 3) for v in g]
+        for f in (1, 3):
+            p, box, axis = poses[(view, f)]
+            p = p.copy()
+            p[..., :3] = np.clip(p[..., :3] ** 2.2 * g, 0, 1) ** (1 / 2.2)
+            poses[(view, f)] = (p, box, axis)
+    # the in-betweens by what they show, not by what they were asked to be: of a profile's two, the one with its feet
+    # further apart is the down (just after the contact) and the narrower the up (just after the passing). The model
+    # draws a profile's up wider than asked as often as not, and played the other way round the legs would close and
+    # open again inside one step
+    # (the profile only: from the front or behind the feet stand side by side at every moment, and the lowest eighth's
+    # width says nothing about the stride)
+    swapped = []
+    for view in ('side',):
+        if feet_apart(poses[(view, 3)]) > feet_apart(poses[(view, 1)]):
+            poses[(view, 1)], poses[(view, 3)] = poses[(view, 3)], poses[(view, 1)]
+            swapped.append(view)
     # one scale a figure: each view's passing frame at the full height, its contact frame at the height the sheet drew
     # beside it (the dip, bounded), and the whole figure shrunk until its widest pose fits the cell about its axis
     SH, SW = CELL_H * SHARP, CELL_W * SHARP
+    # the in-between sheet is its own photograph at its own scale: its two frames of a view against the taller of the two
     rel = {}
+    hgt = lambda k: poses[k][1][3] - poses[k][1][1]
     for view in VIEWS:
-        h1 = poses[(view, 1)][1][3] - poses[(view, 1)][1][1]
-        h0 = poses[(view, 0)][1][3] - poses[(view, 0)][1][1]
-        rel[(view, 1)] = 1.0
-        rel[(view, 0)] = float(min(1.0, max(1.0 - DIP_MAX, h0 / h1)))
+        rel[(view, 2)] = 1.0
+        rel[(view, 0)] = float(min(1.0, max(1.0 - DIP_MAX, hgt((view, 0)) / hgt((view, 2)))))
+        top = max(hgt((view, 1)), hgt((view, 3)))
+        for f in (1, 3):
+            rel[(view, f)] = float(min(1.0, max(1.0 - DIP_MAX, hgt((view, f)) / top)))
     reach = 0.0   # the widest half extent about the axis, in figure heights
     for key, (p, box, axis) in poses.items():
         h = box[3] - box[1]
@@ -255,8 +301,9 @@ def bake_figure(fid, tall):
         ys1, xs1 = min(r.shape[0], SH - oy), min(r.shape[1], SW - ox)
         cell[oy + ys0:oy + ys1, ox + xs0:ox + xs1] = r[ys0:ys1, xs0:xs1]
         cells[key] = cell
-    info = {'how': how, 'fill': fill, 'src_h': [poses[k][1][3] - poses[k][1][1] for k in POSES], 'rel': [round(rel[k], 4) for k in POSES],
-            'reach': reach}
+    keys = [(v, f) for v in VIEWS for f in range(FRAMES)]
+    info = {'how': how, 'fill': fill, 'src_h': [hgt(k) for k in keys], 'rel': [round(rel[k], 4) for k in keys],
+            'reach': reach, 'gains': gains, 'spread': [round(feet_apart(poses[k]), 3) for k in keys], 'swapped': swapped}
     return cells, round(tall / fill, 3), info
 
 
@@ -269,14 +316,15 @@ def contact(path, man):
     half = Image.open(os.path.join(HERE, at['imgHalf'])).convert('RGBA')
     sharp = Image.open(os.path.join(HERE, at['imgSharp'])).convert('RGBA')
     LBL = 18
+    N = len(VIEWS) * FRAMES
     bandH = CELL_H * SHARP + LBL
-    Wd = 6 * CELL_W * SHARP + 12 * CELL_W + 40
+    Wd = N * CELL_W * SHARP + 12 * CELL_W + 40
     sheet = Image.new('RGB', (Wd, bandH * len(man['figures'])), (40, 40, 40))
     d = ImageDraw.Draw(sheet)
 
     def strip(src, s, fig, ground, x, y):
         w, h = int(CELL_W * s), int(CELL_H * s)
-        bg = Image.new('RGBA', (6 * w, h), GROUNDS[ground] + (255,))
+        bg = Image.new('RGBA', (N * w, h), GROUNDS[ground] + (255,))
         i = 0
         for cv in fig['cells']:
             for c in cv:
@@ -286,17 +334,17 @@ def contact(path, man):
 
     for n, fig in enumerate(man['figures']):
         y = n * bandH
-        d.text((4, y + 3), '%s  tall %.2f m a cell  sharp cells %dx%d: front contact, front passing, back contact, back passing, side contact, side passing'
+        d.text((4, y + 3), '%s  tall %.2f m a cell  sharp cells %dx%d: each view contact, down, passing, up'
                % (fig['id'], fig['tall'], CELL_W * SHARP, CELL_H * SHARP), fill=(230, 230, 230))
         strip(sharp, SHARP, fig, 'grey', 0, y + LBL)
-        x = 6 * CELL_W * SHARP + 20
+        x = N * CELL_W * SHARP + 20
         d.text((x, y + 3), 'full cells %dx%d on brick and night; below on grey, and the half cells' % (CELL_W, CELL_H), fill=(230, 230, 230))
         strip(full, 1, fig, 'brick', x, y + LBL)
-        strip(full, 1, fig, 'night', x + 6 * CELL_W + 20, y + LBL)
+        strip(full, 1, fig, 'night', x + N * CELL_W + 20, y + LBL)
         strip(full, 1, fig, 'grey', x, y + LBL + CELL_H)
-        hx = x + 6 * CELL_W + 20
+        hx = x + N * CELL_W + 20
         strip(half, 0.5, fig, 'grey', hx, y + LBL + CELL_H)
-        strip(half, 0.5, fig, 'brick', hx + 3 * CELL_W, y + LBL + CELL_H)
+        strip(half, 0.5, fig, 'brick', hx + N // 2 * CELL_W, y + LBL + CELL_H)
         strip(half, 0.5, fig, 'night', hx, y + LBL + CELL_H + CELL_H // 2)
     sheet.save(path)
     return sheet.size
@@ -318,8 +366,9 @@ def main():
             sharp[y:y + h, x:x + w] = cell
         figures.append({'id': fid, 'tall': cell_tall, 'season': season,
                         'cells': [[rect(i, view, frame) for frame in range(FRAMES)] for view in VIEWS]})
-        print('%s  cut by %s  %.2f m, fills %.3f of the cell, so the cell stands %.3f m  sheet heights %s  frame heights %s  widest reach %.3f'
-              % (fid, info['how'], tall, info['fill'], cell_tall, info['src_h'], info['rel'], info['reach']))
+        print('%s  cut by %s  %.2f m, fills %.3f of the cell, so the cell stands %.3f m  sheet heights %s  frame heights %s  widest reach %.3f\n'
+              '     feet apart (figure heights, front/back/side by frame) %s  in-betweens swapped %s  their colour gains %s'
+              % (fid, info['how'], tall, info['fill'], cell_tall, info['src_h'], info['rel'], info['reach'], info['spread'], info['swapped'] or 'none', info['gains']))
     full = reduce2(sharp)
     half = reduce2(full)
     kw = dict(quality=QUALITY, method=6, alpha_quality=100, exact=True)

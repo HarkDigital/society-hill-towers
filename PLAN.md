@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 11, 2026, after Round 236 (no parked cars down the middle of divided streets).
+Last updated: Nov 11, 2026, after Round 237 (the people's walk in four poses a step).
 
 ## The ask
 
@@ -115,9 +115,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
    other half (the straighter day toe, shader text, Stage 2), shown on a test build first; the yellow-green haze toward a
    low sun at 16:10, seen in every variant, not yet looked into. (The glass calibration it moved was re-measured as
    Round 235.)
-2. **The people, after Mike's first look.** He has been asked to fly `philly3d.com/?people=sharp` on the Mac and
-   `?people=1` in Safari on the iPhone, and to say whether to generate the full figure set. Do not generate it before he
-   answers.
+2. **The people, after Mike's first look.** He found the walk disjointed (Nov 11); Round 237 gave each step four poses
+   in place of two. He is to fly `philly3d.com/?people=sharp` on the Mac and `?people=1` in Safari on the iPhone again
+   and say whether to generate the full figure set. Do not generate it before he answers.
 3. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
    after Ready on cold loads, programs linked per flush, the link probe's ratio by engine, the memory crumbs after
    Enter on the phone.
@@ -178,8 +178,10 @@ Shipped, behind `?people=1` / `?people=sharp`, off by default, refused at tier 2
 - Standing cost with the flag off: about 92 KB of the page's gzip (the walk-line blob).
 
 Known in the first look (devlog Round 227 has the detail):
-- Inside about 10 m the walk is two poses flipping; figures walking toward the eye look into the lens; three figures
-  means twins.
+- Inside about 10 m the walk WAS two poses flipping: since Round 237 it is four a step (contact, down, passing, up,
+  about seven pictures a second at a walk). Feet still slide a little between pictures, and a profile's contact and
+  down read alike (the model draws the down nearly as wide). Figures walking toward the eye look into the lens; three
+  figures means twins.
 - From 25 to 55 m up the 150 m reach shows: people stop at the first crossing while cars run on.
 - Narrow rowhouse streets carry nobody (drawn 7 m wide between rows 8 to 9 m apart: no room for a walk line).
 - Walkers pass through each other, low tree crowns and poles; some feet float 10 to 17 cm; a walker turns round in one
@@ -187,9 +189,8 @@ Known in the first look (devlog Round 227 has the detail):
 - Nobody has watched it on a real phone.
 
 The next pass, once Mike has looked:
-1. The full figure set (the plan said 12 figures in two wardrobes; about $12 at the quality that held one person
-   across six poses), with four gait poses a view in place of two if the flip-book bothers him, and no figure looking
-   at the lens.
+1. The full figure set (the plan said 12 figures in two wardrobes; about $24 now, two sheets a figure at the quality
+   that held one person across six poses), and no figure looking at the lens.
 2. A real height for the walk surface (the lift is a bias today), and a reach that grows with eye height.
 3. Standers at SEPTA stops, shop doors, open markets and a short list of crowd points; tier 2 gets standers only.
 4. The storefront density hook (`PEOPLE.boost`), wardrobes by season, dodging trees and poles.
@@ -197,7 +198,9 @@ The next pass, once Mike has looked:
 
 His decisions for the people: whether they stay at all after the first look; the narrow streets (draw them narrower, or
 let people use the road's edge); the sharp atlas on a computer (15 MB for three figures; it scales with the count);
-walkers on bare ground where no sidewalk is drawn; an About line saying the people are invented; a layer switch.
+walkers on bare ground where no sidewalk is drawn; an About line saying the people are invented; a layer switch. A
+softer change of picture is ready to try (`__dbg.peopleTune({ xfade: 0.35 })` dithers the tail of each pose into the
+next) if four poses still read as steps.
 
 ## Realism picks still to come (each its own round, in the order Mike chooses)
 

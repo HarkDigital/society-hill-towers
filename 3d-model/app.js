@@ -47386,17 +47386,19 @@ float pinOccGate() {
   // ---- people on the sidewalks: the drawing (Round 227. The walkers above, drawn: only under ?people=1, a look change
   // behind its flag until Mike has seen it). One InstancedMesh of unit quads, a card a walker, each turned about its own
   // vertical to the eye and never tilted, its feet on the drawn ground the fill hands it. The picture is a cell of
-  // PEOPLE_ART's one atlas (bake_people_art.py): a front, a back and a side view, each as a stride and as the passing
-  // pose between two strides.
+  // PEOPLE_ART's one atlas (bake_people_art.py): a front, a back and a side view, each at the four moments of a step
+  // (Round 237: the contact, the down, the passing and the up; Round 227's two, a stride and a stand, read as a flip).
   //   THE VIEW comes from the walker's heading against the line to the eye: the front inside 45 degrees of walking at
   // the eye, the back inside 45 of walking away, the side between, mirrored when the walker's way is toward the viewer's
   // left. No view snaps: across PPL.hand degrees either side of a line the two pictures hand over through a per-pixel
   // dither (both cells ride every instance). The plan asked for about 12 degrees in all; at 12 a passer 7 m to the side
   // stood half one picture and half the other for 0.8 s (the captures), so it is 6: a quick dissolve, not a ghost.
-  //   THE STEP: the fill's phase is one gait cycle of two steps, so stride, pass, stride, pass. The second stride is the
-  // other leg's: the front and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on
-  // one side (p01's tote must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet
-  // by PPL.bob metres at the passing pose (a walker is lowest with both feet down), the feet never leaving the ground.
+  //   THE STEP: the fill's phase is one gait cycle of two steps, each the manifest's frames in order (contact, down,
+  // passing, up), so eight pictures a cycle, about seven a second at a walk. The second step is the other leg's: the front
+  // and the back are mirrored for it, but only on a figure PEOPLE_SYM marks as carrying nothing on one side (p01's tote
+  // must not change shoulders). The sheets hold no head bob, so the card is stretched from its feet by PPL.bob metres,
+  // lowest at the down and tallest at the up (the phase the shader reads is shifted a sixteenth of a cycle for it), the
+  // feet never leaving the ground.
   //   THE LIGHT is the tree cards': a MeshStandardMaterial with a soft normal round the body's axis, so a figure has a
   // sun side; the sun's shadow received on a computer (a walker in a building's shade is in shade); the lamps' pools at
   // night through lampLightPatch (called, never edited: its crown share is the card's own uniform here); the clouds'
@@ -47418,13 +47420,15 @@ float pinOccGate() {
     hand: 3, bob: 0.03, xfade: 0, up0: 0.05, up1: 0.24, warm: { frames: 0, initMs: 0, makeMs: 0, cardMs: 0, shadeMs: 0, blobMs: 0, p0: 0, p1: 0 }, stepMs: 0,
     uTex: { value: null }, uPK: { value: new THREE.Vector4(0.03, 900, 256, 0.0) }, uPL: { value: new THREE.Vector4(0.42, 0.9, 0, 0) }, uPS: { value: new THREE.Vector4(0, 0.035, 0, 0) } };
   const PEOPLE_BAYER = 'float pBay(vec2 p) { vec2 cp = mod(floor(p), 4.0); float low = mod(mod(cp.x, 2.0) * 2.0 + mod(cp.y, 2.0) * 3.0, 4.0); float high = mod(floor(cp.x / 2.0) * 2.0 + floor(cp.y / 2.0) * 3.0, 4.0); return (low * 4.0 + high + 0.5) / 16.0; }';
-  // every figure's cells as the shader reads them: view (front, back, side) by frame (stride, pass), each u0, v0 (the
-  // feet's row), du, dv in a texture with its first row at the top of the image
+  // every figure's cells as the shader reads them: view (front, back, side) by frame (the manifest's, a step's moments in
+  // order), each u0, v0 (the feet's row), du, dv in a texture with its first row at the top of the image
+  const PEOPLE_FR = (typeof PEOPLE_ART !== 'undefined' && PEOPLE_ART && PEOPLE_ART.frames) || 2;   // frames a step
+  const PEOPLE_PASS = PEOPLE_FR >> 1;   // the passing frame: 1 of two, 2 of four
   function peopleCells() {
-    const A = PEOPLE_ART, W = A.atlas.w, H = A.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [];
+    const A = PEOPLE_ART, W = A.atlas.w, H = A.atlas.h, V = ['front', 'back', 'side'].map((v) => A.views.indexOf(v)), F = [], NF = PEOPLE_FR;
     for (const f of A.figures) {
-      const c = new Float32Array(24);
-      for (let v = 0; v < 3; v++) for (let fr = 0; fr < 2; fr++) { const r = f.cells[V[v]][fr], o = (v * 2 + fr) * 4; c[o] = r[0] / W; c[o + 1] = 1 - (r[1] + r[3]) / H; c[o + 2] = r[2] / W; c[o + 3] = r[3] / H; }
+      const c = new Float32Array(12 * NF);
+      for (let v = 0; v < 3; v++) for (let fr = 0; fr < NF; fr++) { const r = f.cells[V[v]][fr], o = (v * NF + fr) * 4; c[o] = r[0] / W; c[o + 1] = 1 - (r[1] + r[3]) / H; c[o + 2] = r[2] / W; c[o + 3] = r[3] / H; }
       const r0 = f.cells[V[0]][0];
       F.push({ c, tall: f.tall, wide: f.tall * r0[2] / r0[3], sym: !!PEOPLE_SYM[f.id] });
     }
@@ -47614,14 +47618,15 @@ float pinOccGate() {
     if (D.shade) { D.shade.count = show; D.shade.visible = show > 0 && vehShadowU.uShadowA.value > 0.005; }
     if (!show) { D.stepMs = performance.now() - t0; return; }
     D.uPK.value.x = D.bob; D.uPK.value.y = renderer.domElement.height || 900;
-    const figs = D.figs, nf = figs.length, iv = D.iv, fd = D.fade, me = D.card.instanceMatrix.array, ex = c.x, ez = c.z, HW = D.hand, xf = D.xfade;
+    const figs = D.figs, nf = figs.length, iv = D.iv, fd = D.fade, me = D.card.instanceMatrix.array, ex = c.x, ez = c.z, HW = D.hand, xf = D.xfade, NF = PEOPLE_FR, NC = 2 * NF;
     let sx = sunDir.x, sz = sunDir.z; const sl = Math.hypot(sx, sz) || 1; sx /= sl; sz /= sl;
     for (let i = 0; i < show; i++) {
       const o = i * 8, x = out[o], z = out[o + 2], hx = out[o + 3], hz = out[o + 4], F = figs[out[o + 5] % nf], ph = out[o + 6], C = F.c, q = i * 16;
       me[q + 12] = x; me[q + 13] = out[o + 1] + peopleUp(x, z, hx, hz); me[q + 14] = z;
       fd[i] = out[o + 7];
-      // the step: stride, pass, stride, pass; the second stride mirrored where the figure allows
-      const p4 = ph * 4, fi = Math.floor(p4) & 3, fr = fi & 1, flip = F.sym && fi === 2;
+      // the step: the frames in order twice a cycle; the second step mirrored where the figure allows (of two frames, only
+      // its stride, as Round 227 drew it)
+      const p4 = ph * NC, fi = Math.floor(p4) % NC, fr = fi % NF, flip = F.sym && fi >= NF && (NF > 2 || fr === 0);
       // the view against the eye: 0 the front, 1 the back, 2 the side
       let dx = ex - x, dz = ez - z; const dl = Math.hypot(dx, dz) || 1; dx /= dl; dz /= dl;
       const cs = hx * dx + hz * dz, a = Math.acos(cs > 1 ? 1 : cs < -1 ? -1 : cs) * 57.29578, right = hx * dz - hz * dx >= 0;
@@ -47634,9 +47639,9 @@ float pinOccGate() {
       let frB = fr, flipB = flip;
       if (xf > 0 && vA === vB) {   // PPL.xfade (0 by default): the tail of each pose dissolves into the next through the same dither
         const u = p4 - Math.floor(p4);
-        if (u > 1 - xf) { const nx = (fi + 1) & 3; frB = nx & 1; flipB = F.sym && nx === 2; k = (u - 1 + xf) / xf; }
+        if (u > 1 - xf) { const nx = (fi + 1) % NC; frB = nx % NF; flipB = F.sym && nx >= NF && (NF > 2 || frB === 0); k = (u - 1 + xf) / xf; }
       }
-      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = ph;
+      iv[q] = F.wide; iv[q + 1] = F.tall; iv[q + 2] = k * k * (3 - 2 * k); iv[q + 3] = NF > 2 ? ph - 0.0625 : ph;   // the bob's phase: with four frames the shader's low point lands on the down and its high on the up
       for (let s = 0; s < 3; s++) {
         let v, f = fr, mir;
         if (s === 0) { v = vA; mir = v === 2 ? !right : flip; }
@@ -47646,9 +47651,9 @@ float pinOccGate() {
           // or a back, feet together), and a shadow that does not start at the feet reads as somebody else's
           const cz = hx * sx + hz * sz;
           v = cz > 0.7071 ? 0 : cz < -0.7071 ? 1 : 2; mir = v === 2 ? hx * sz - hz * sx < 0 : flip;
-          if (v === 2) f = 1;
+          if (v === 2) f = PEOPLE_PASS;
         }
-        const ci = (v * 2 + f) * 4, w = q + 4 + s * 4;
+        const ci = (v * NF + f) * 4, w = q + 4 + s * 4;
         iv[w] = mir ? C[ci] + C[ci + 2] : C[ci]; iv[w + 1] = C[ci + 1]; iv[w + 2] = mir ? -C[ci + 2] : C[ci + 2]; iv[w + 3] = C[ci + 3];
       }
     }

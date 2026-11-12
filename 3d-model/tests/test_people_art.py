@@ -1,7 +1,8 @@
 """Round 227 (Mike: "people on the sidewalks, walking"): the first figure art, three test pedestrians as card sprites.
 
-fetch_people_art.py makes one character sheet a figure (six pictures of one person: front, back and side, each at the
-contact and the passing moment of a step) and bake_people_art.py packs every figure into one atlas with a phone's half
+fetch_people_art.py makes two character sheets a figure (six pictures of one person: front, back and side, each at the
+contact and the passing moment of a step; and since Round 237 an edit of it with the same three views at the down and the
+up, so a step is four frames) and bake_people_art.py packs every figure into one atlas with a phone's half
 and a computer's sharp copy. The walkers' drawing reads the manifest under ?people=1 (tests/test_people_draw.py); these checks hold the shape it
 is told it will find:
 
@@ -52,7 +53,7 @@ class Manifest(unittest.TestCase):
     def test_the_shape(self):
         m = self.m
         self.assertEqual(set(m), {'v', 'frames', 'views', 'atlas', 'figures'})
-        self.assertEqual((m['v'], m['frames'], m['views']), (1, 2, ['front', 'back', 'side']))
+        self.assertEqual((m['v'], m['frames'], m['views']), (1, 4, ['front', 'back', 'side']))
         self.assertEqual(set(m['atlas']), {'img', 'imgHalf', 'imgSharp', 'w', 'h'})
         self.assertGreaterEqual(len(m['figures']), 3)
         for f in m['figures']:
@@ -76,14 +77,20 @@ class Manifest(unittest.TestCase):
             self.assertGreaterEqual(f['tall'], tall)
             self.assertLess(f['tall'], tall / 0.75, fid)
             self.assertTrue(1.45 <= tall <= 2.0, fid)
-        # the sheet's order is the manifest's: view by view, the contact frame then the passing
-        self.assertEqual(fetch_people_art.POSES, [(v, f) for v in self.m['views'] for f in range(self.m['frames'])])
+        # the two sheets between them hold every view's frames once, each sheet view by view: the first the contact and the
+        # passing, the in-between sheet the down and the up
+        F = fetch_people_art
+        views = self.m['views']
+        self.assertEqual(F.POSES, [(v, f) for v in views for f in (0, 2)])
+        self.assertEqual(F.MID_POSES, [(v, f) for v in views for f in (1, 3)])
+        self.assertEqual(sorted(F.POSES + F.MID_POSES, key=lambda p: (views.index(p[0]), p[1])), [(v, f) for v in views for f in range(self.m['frames'])])
+        self.assertEqual(set(F.MID_CARRY), {f[0] for f in figs})
 
     def test_every_rect_sits_inside_the_atlas_with_its_gutter(self):
         W, H = self.m['atlas']['w'], self.m['atlas']['h']
         self.assertEqual((W % 16, H % 16), (0, 0))
         rects = [r for f in self.m['figures'] for view in f['cells'] for r in view]
-        self.assertEqual(len(rects), 6 * len(self.m['figures']))
+        self.assertEqual(len(rects), 3 * self.m['frames'] * len(self.m['figures']))
         for x, y, w, h in rects:
             self.assertEqual((w, h), (CELL_W, CELL_H))
             self.assertGreaterEqual(min(x, y), GUTTER)
@@ -196,7 +203,7 @@ class Wiring(unittest.TestCase):
         s = (ROOT / 'fetch_people_art.py').read_text()
         self.assertIn("os.environ.get('OPENAI_API_KEY')", s)
         self.assertIn("os.path.expanduser('~/.config/philly3d/openai.env')", s)
-        uses = ("def make(key, fid, prompt, force):", "'Authorization': 'Bearer ' + key", "key = api_key()", "make(key, j[0], j[1], a.force)")
+        uses = ("def make(key, fid, prompt, force, mid=False):", "'Authorization': 'Bearer ' + key", "key = api_key()", "make(key, j[0], j[1], a.force, a.mid)")
         for line in s[s.index('def api_key'):].split('\n'):
             if re.search(r'\bkey\b', line):
                 self.assertTrue(any(u in line for u in uses), 'a new use of the key: ' + line.strip())

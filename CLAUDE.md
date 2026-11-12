@@ -494,8 +494,11 @@ Devlog Round 227 has the measurements and what is not built. Its rules:
   intersections), placed by `people_walk.b64` (`bake_people_walk.py`, keyed by way index and distance along the way: the
   page's run order cannot be baked). Re-bake it after any change to traffic.b64 or the packed footprints; it stores
   centreline-to-wall, and the page subtracts its own drawn half width.
-- Art is one sheet a figure at quality high (`fetch_people_art.py`, `bake_people_art.py`); the `-sharp` atlas is never in
-  the app or asked for by a phone.
+- Art is two sheets a figure at quality high (`fetch_people_art.py`, `bake_people_art.py`): the first the contact and the
+  passing of each view, the second (Round 237, `--mid`) an EDIT of the first with the down and the up, so a step is four
+  frames (`PEOPLE_ART.frames`). The bake orders a profile's two in-betweens by how far apart the feet are and matches
+  their colour to the first sheet's; look at every new sheet before keeping it. The `-sharp` atlas is never in the app or
+  asked for by a phone.
 - Nothing that moves casts into the depth pass; the cards are left out of the mirror (`userData.reflK = 0`) and the pins'
   capture, and take Float32 streams only.
 

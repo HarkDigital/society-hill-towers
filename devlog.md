@@ -14200,3 +14200,52 @@ one-way left kerb loses its row though no median is there, are at most about 11 
 no opposite run; some of those are the halves of trunk roads, whose runs the check does not read).
 
 Suite: 1,495 tests, OK (one skip, one expected failure, both as before).
+
+## Round 237 — the people's walk in four poses a step (Nov 11)
+
+Mike, after flying `?people=1`: "The people are a bit disjointed. Can we smooth out their gait?"
+
+What was wrong: each view had two pictures, a full stride and a stand (the passing pose), and the page played stride,
+stand, stride, stand at one picture per quarter of a 1.5 m cycle: at 1.1 to 1.6 m/s each picture held 0.23 to 0.34 s,
+eight to ten frames at 30 fps, and the legs jumped from wide apart to together and back. A flip-book of two.
+
+What the round does:
+- `fetch_people_art.py --mid` makes a second sheet a figure, `<id>-mid.png`, as an EDIT of its first sheet (the image
+  endpoint's edits, `input_fidelity` high, gpt-image-1.5 at high), asking for the two moments an animator draws between
+  the contact and the passing: the DOWN (the weight landing on the front foot, the back heel up) and the UP (one leg
+  straight, the other swinging through just ahead). Being an edit, the face, the clothes and the bag stayed the first
+  sheet's in all three figures. Five generations for three sheets (about $1.25): p03's first was kept; p02's first
+  grew a black shoulder bag in its profiles and the second a bag in all six (the prompt's "the same bag" asked for one),
+  so the prompt now carries one line a figure saying what it carries (`MID_CARRY`); p01's and p02's profile UP came back
+  as a stride twice, and the third prompt, which describes the up as scissors just opened with the feet a shoe apart,
+  is the one kept. Both raw sheets of every try are in lidar_cache/people_art_raw (`.prev-*`).
+- `bake_people_art.py` reads both sheets: FRAMES 4 (0 contact, 1 down, 2 passing, 3 up), twelve cells a figure, the
+  atlas 1728 by 816 (7.52 MB on a computer's GPU with mips, 1.88 MB a phone's half, 30.1 MB the sharp: each twice Round
+  227's). Two corrections for a second photograph: a profile's two in-betweens are ordered by how far apart the feet
+  stand (the width of the lowest eighth: the wider plays as the down; none needed swapping this time, the check stays),
+  and the in-betweens' colour is brought to the first sheet's per view and channel in linear light (they came back 5 to
+  15% lighter, gains 0.69 to 0.98, which would flicker as the frames alternate). p01's back down carried the tote on the
+  wrong shoulder and joins `FLIP`.
+- app.js (the people's drawing only, behind the flag): `PEOPLE_FR` frames a step from the manifest, eight pictures a
+  cycle, about seven a second at a walk; the second step mirrored whole on the symmetric figures (all four frames); the
+  sun's profile shadow takes the passing frame by index (`PEOPLE_PASS`); the bob's phase is handed a sixteenth early so
+  the card is lowest at the down and tallest at the up. No shader text changed (the people's programs exist only under
+  the flag either way), nothing outside the flag changed: the page with the flag off is the same but for the inlined
+  manifest.
+- Tests: the manifest's four frames and twelve cells, the two sheets' poses between them covering every frame once, a
+  carry line a figure, the step's eight pictures for a figure with a tote and for the symmetric ones, front, back and
+  side, the sun's frame, the knobs, and the bob's low and high points.
+
+Proof: 60 frames at 1/30 s with `__dbg.peopleAt` pinned, the old page and the new from one fixed camera each, on Walnut
+Street at Rittenhouse Square (a profile at 6 m, and a walker coming toward the eye): the old holds each picture eight
+frames and jumps between stride and stand; the new runs contact, down, passing, up in order. The clips went to Mike.
+
+Known, open: feet still slide between pictures (a card cannot plant a foot); a profile's contact and down read alike,
+so the profile is in effect three pictures; `__dbg.peopleTune({ xfade: 0.35 })` dithers each picture's tail into the
+next if Mike wants it softer, untested on him.
+
+Also this round: the Nov 10 repack race's leftovers in `.git/objects/pack` were deleted at Mike's word, after proof
+they were unused: `tmp_pack_I4vwmL` (59 MB) was the pack the orphan `pack-e261ff…` index and reverse index described
+(git index-pack of it gives that hash); neither was named in the multi-pack index or open in any process; with them
+moved out every one of its 499 objects (66 commits, 225 trees, 208 blobs) still resolved from the live packs and
+`git fsck --full` was clean; then they were deleted. The pack folder went from 384 MB to 328 MB.
