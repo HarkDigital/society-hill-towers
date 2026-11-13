@@ -14660,3 +14660,75 @@ Park up close, computer and phone in landscape, before and after).
   (the canvas alone never carries them). The poses drive `__dbg.scoreTest()` and `__dbg.concertTest()` (the test shows
   carry no picture, so the concert card's image is not in the set). Checked: no failed step and no console error in any
   of the six runs; zsh does not split an unquoted `$extra`, so pass `--touch --w 740 --h 360` literally.
+
+## Round 247 — Google Analytics switched on for the website (Nov 13)
+
+Mike: "Can we hook up Google Analytics to the philly3d.com site?", then a screenshot of the Google tag's install page
+(container GTM-NL6QL99D, the gtm.js snippet with no config line).
+
+- Round 164's dormant loader takes the measurement ID: `GA_ID = 'G-7VC7EP3YK2'`. The ID was read from the published
+  container itself (`gtm.js?id=GTM-NL6QL99D` names one GA4 destination, G-7VC7EP3YK2), and `gtag/js?id=G-7VC7EP3YK2`
+  serves the same container, so the loader is unchanged: philly3d.com only (ON_SITE), never the app, never a dev or
+  scratch host, Google signals and ad personalization off in the config call. Google's snippet was not pasted into
+  template.html: it would run inside the app, whose privacy manifest and App Store labels declare no analytics.
+  `tests/test_privacy.py` now also holds GA_ID to the G- form, so the GTM- container ID cannot be pasted in its place.
+- The stream's Enhanced measurement came with "page changes based on browser history events" on (`vtp_historyEvents`
+  true in the served gtag.js). updateHash calls `history.replaceState` every 500 ms in flight, so with it on every flight
+  logs a page view twice a second. It is a property setting, not a code one. Switched off at Mike's word (Admin, Data
+  streams, Philly 3D, Enhanced measurement, Page views, advanced settings) before the deploy, and proved in the served
+  gtag.js: with it on the container carries a `__ccd_em_page_view` tag with `"vtp_historyEvents":true`, with it off that
+  tag is gone and the other six enhanced-measurement tags are as they were (the load's page view comes from the config
+  call). `curl -s 'https://www.googletagmanager.com/gtag/js?id=G-7VC7EP3YK2' | grep -c __ccd_em_page_view` must read 0.
+- The property: Google signals off, event data kept 2 months (the shortest); user data was kept 14 months and is 2 months
+  since this round at Mike's word ("Yes, 2 months"), so the privacy policy's "the shortest time Google Analytics allows"
+  holds for both.
+
+Round 247 coda (Nov 13), the hits said ads were allowed: the live hits carried `ngs=1` (Google signals off) but `npa=0`.
+gtag.js marks a hit non-personalized only when the event model holds `allow_ad_personalization_signals: false` or the
+`ad_personalization` consent is denied (`tu` in the served script). Measured on philly3d.com/privacy.html with the
+transports stubbed (sendBeacon, fetch, XHR and Image recorded, no hit reached Google): the flags in the config call
+reached no hit; through `gtag('set', ...)` they reached the scroll event but not the load's page_view; consent mode's
+defaults (`ad_storage`, `ad_user_data`, `ad_personalization` denied, `analytics_storage` left alone) gave the page_view
+`npa=1`, `gcs=G10-` and a client id, so visits count as before. The loader now sets the consent defaults first, the two
+flags through `set`, then `config`; `tests/test_privacy.py` holds the consent line before the config call and refuses an
+`analytics_storage` in the block.
+
+## Round 248 — a new share image: Center City at golden hour (Nov 13)
+
+The link preview (`og.png`, 1200 by 630, the `og:image` and `twitter:image` of every philly3d.com share) was still Round
+38's Aug 26 capture: the pre-realism flat boxes at dusk. A new one, rendered from the model, at Mike's pick of three
+candidates (golden hour, dusk with the windows coming on, a night in Eagles green; he took golden hour).
+
+- The pose: the eye at (-950, 300, -380) over Washington Square West, looking at (-1900, 140, -900), the camera's fov set
+  to 40 (the page's 58 is too wide for a card), June 20, 2026 at 20:24, nine minutes before sunset: the sun sets right
+  behind the Comcast towers, with Liberty Place, City Hall and the PSFS sign in front. Every live layer and label is off
+  (flights, ships, Amtrak, closures, markers, art, stations, events, street and neighbourhood names), traffic and the
+  streetlamps on, `?wx=clear` (8% cloud, the air at Good) and `?lights=off` (the crowns in their own white).
+  `brand/og_pose.json` holds it as a `render.mjs` pose. The render, from a staged copy (the page and `art/`, outside
+  Dropbox): `node .claude/skills/philly3d-capture/scripts/render.mjs --dir <staged 3d-model> --poses brand/og_pose.json
+  --out <dir> --query "dev=1&dpr=1&wx=clear&lights=off&rkcheck=0" --w 2400 --h 1260 --frames 40 --png`, saved as
+  `brand/og_raw.png` (RGB, 3.4 MB), then `python3 brand/make_brand.py og`.
+- What the search found: facing the sun at 19:55 the haze washes the city out to a yellow-green; at 20:52 the dusk is a
+  muddy brown; the front-lit views (the Parkway from over the Art Museum) are flat daylight, since the model's sun warms
+  only in its last minutes. The light reads best in the ten minutes before sunset, looking into it.
+- `make_brand.py`: the lockup is centred at the card's foot (it was at the lower left), so a platform's centre-square
+  crop keeps the whole wordmark with the skyline and City Hall; `make_brand.py og` rebuilds only the share card, leaving
+  the favicons and icons alone (the script reproduces the approved card to the pixel). 873 KB. A 256-colour palette took
+  it to 272 KB but lost the sun and the Liberty Places' blue, so the card stays full colour.
+- `og:image:alt` describes the new picture. The URL is unchanged, so Facebook, iMessage and Slack keep their cached
+  preview until they refetch it (Facebook's Sharing Debugger forces one); a renamed file would change it at once.
+
+## Round 250 — the lightning and the weather observations credited (Nov 13)
+
+Mike asked how many data sets the app uses (about 41 from some 25 publishers, OSM counted once), and the count found two
+in use and never credited. At his word ("Yes, add credits"):
+
+- Blitzortung.org: the real lightning (`ops/lightning_relay.py`, `lightning.json`, `ltnPoll`) has drawn strikes since its
+  round with no credit anywhere. The About panel now names it beside Open-Meteo ("data © Blitzortung.org and its
+  contributors") and in the non-affiliation line; `DATA-LICENSE.md`'s live feeds carry what the relay keeps and that the
+  community's data is offered for personal and non-commercial use (the relay's own docstring said so). Whether
+  philly3d.com and the app fit that use is Mike's call, not settled here.
+- The National Weather Service's latest observations at KPHL and KPNE (`fetchNws`, every five minutes: thunder heard there
+  brings the storm in, and the cover feeds the deck) were read beside the alerts but only the alerts were named. Both
+  places now name the observations too.
+- Text only: no shader, script or data change. `tests/test_ui_separators.py` holds the About text to commas and colons.

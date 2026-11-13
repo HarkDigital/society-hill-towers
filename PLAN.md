@@ -188,6 +188,15 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 ## Stage 2: the shader train (one deploy; each look behind a flag or at zero strength)
 
+**In progress since Nov 13 on the branch `stage2`** (worktree outside Dropbox; pushed to `gh-ssh`). Shader text changes
+for Stage 2 go on that branch, never on `main`, until the train ships as one deploy; a session that needs a shader edit
+before then asks first. Batch 1 is on it (commit 39132c8): one facade program for the city and the core (gains as
+uniforms), the El stations, lamp lenses and roof kit merged (195 programs to 184 after the first frames), the sky and
+the apron drawn last with a 'sceneB' A/B in the GPU timer (`?backdrop=first`), the cloud shadow's gate; parity within
+the noise on the computer, `?real=0` and phone paths. Left: the rebuilds' family (the largest cut, about 19 programs),
+then the looks behind flags for the two side-by-side pages, then the light. The water's three keys differ by
+structure (river, basin, pool), not by numbers: no merge.
+
 - The lit lobbies (Round 243, `?streetfloor=lit`): four big-building street floors with clear glass onto a lit lobby;
   one program's text changes (the street floors', its own cache key under the flag). Mike asked for the fix by default and
   got `clean` (Round 244); offer `lit` with the train.

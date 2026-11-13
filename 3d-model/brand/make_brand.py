@@ -5,6 +5,12 @@ sips does the SVG rasterizing (verified crisp with alpha on this macOS),
 PIL assembles the ico, flattens the touch icon, sets the wordmark, and
 composites the share card. Rerun after editing mark.svg / favicon.svg /
 og_raw.png. og.png is skipped (with a notice) until og_raw.png exists.
+
+`python3 make_brand.py og` rebuilds only the share card from og_raw.png and the
+committed lockup.png, leaving the favicons and icons as they are. og_raw.png is
+rendered from the model by the capture skill's render.mjs at og_pose.json's pose
+(devlog Round 248 has the command); the lockup sits centred at the foot so a
+platform's centre-square crop keeps the whole wordmark and the skyline.
 """
 
 import subprocess
@@ -108,11 +114,14 @@ def og_card():
     lw = 430
     lk = lk.resize((lw, round(lk.height * lw / lk.width)), Image.LANCZOS)
     im = im.convert("RGBA")
-    im.alpha_composite(lk, (60, th - lk.height - 52))
+    im.alpha_composite(lk, ((tw - lw) // 2, th - lk.height - 52))
     im.convert("RGB").save(DIST / "og.png", optimize=True)
     print(f"og.png: {tw}x{th}, {(DIST / 'og.png').stat().st_size // 1024} KB")
 
 
+if sys.argv[1:] == ["og"]:
+    og_card()
+    sys.exit(0)
 favicons()
 touch_icon()
 lockup()

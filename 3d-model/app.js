@@ -113,15 +113,21 @@
   const BEACON = ON_SITE ? '/b' : IN_APP ? 'https://philly3d.com/b' : null;
   // ---- Google Analytics (Round 164, Mike: "I am going to be adding google analytics"): the website only (ON_SITE), never
   // inside the app, whose privacy manifest and App Store labels declare no analytics, and never on a dev or scratch host.
-  // Off until GA_ID holds the property's measurement ID ('G-XXXXXXXXXX'). No advertising features (Google signals and ad
+  // GA_ID is the property's measurement ID (Round 247: G-7VC7EP3YK2, the GA4 destination inside Google tag GTM-NL6QL99D;
+  // never the GTM- container ID). No advertising features (Google signals and ad
   // personalization off), as the privacy policy (privacy.html) says. In the property's Enhanced measurement, turn off "page
   // changes based on browser history events": updateHash rewrites the address every 500 ms in flight
-  const GA_ID = '';
+  const GA_ID = 'G-7VC7EP3YK2';
   if (GA_ID && ON_SITE) {
     window.dataLayer = window.dataLayer || [];
     window.gtag = function () { window.dataLayer.push(arguments); };
+    // Round 247 coda: consent mode denies every advertising use (ad storage, ad user data, ad personalization) and leaves
+    // analytics as it was. Measured: in the config call the two flags reached no hit (every hit npa=0); through set they
+    // reach later events but not the load's page_view; the ad_personalization consent reaches every hit (npa=1)
+    window.gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });
     window.gtag('js', new Date());
-    window.gtag('config', GA_ID, { allow_google_signals: false, allow_ad_personalization_signals: false });
+    window.gtag('set', { allow_google_signals: false, allow_ad_personalization_signals: false });
+    window.gtag('config', GA_ID);
     const ga = document.createElement('script');
     ga.async = true; ga.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA_ID);
     document.head.appendChild(ga);
