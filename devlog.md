@@ -14733,13 +14733,72 @@ in use and never credited. At his word ("Yes, add credits"):
   places now name the observations too.
 - Text only: no shader, script or data change. `tests/test_ui_separators.py` holds the About text to commas and colons.
 
+## Round 251 — the buses keep their lane clear of the parked cars, and no grass through the paving (Nov 13)
+
+Mike, with a screenshot on S 4th Street between Chestnut and Walnut (a bus half inside a parked car): "is it possible to
+not have the busses clip parked cars? Can the bus always stay in the lane closest to it's real world position?" and,
+mid-round, "Also in that shot, grass is coming through the sidewalk. Can we clean that up everywhere?" (Round 249 was
+skipped by the session that took 250, so this round is 251.)
+
+The buses:
+- The cause: Round 207 stood every bus `CAR_OFFW` of its class right of the drawn street's centreline (`septaSnapRoad`),
+  the two-way streets' lane, on every street, and knew nothing of which kerbs park. S 4th Street there is one lane one
+  way between two parked rows, 7 m drawn: the bus stood 1.6 m off the middle with its flank 1.2 m into the right-hand row.
+- Now a bus within `NEAR_R` + `BUS_LANE_PAD` (200 m) snaps to the typical traffic's own run (`busRunSnap`: the cars and
+  the parked rows are laid on it; within 3 m of the drawn street's own snap, a run across the bus's heading counted
+  8 m farther so it keeps its street at a junction, a motorway only where the drawn street is one) and takes that run's
+  lanes (`busLaneOf`): a one-way street's lanes as the traffic lays them, the one nearest the vehicle's own fix, held
+  until another is `BUS_LANE_HYST` (1 m) nearer; a two-way street's lane on its own side whatever side of the centre the
+  fix lies (GPS scatter, not a bus in the oncoming lane); held clear of a kerb that parks by the widest parked car's inner
+  flank and `BUS_LANE_AIR` (0.15 m), of a bare kerb by 0.1 m, and on a street with room for neither the middle of what is
+  left. It eases across at 1.6 m/s. Past the pad a bus is not drawn and keeps Round 207's rule.
+- The run index (`busRunCells`): every run in the 80 m cells its box touches, typed (count, prefix sum, fill) and built as
+  the traffic step ends, behind the veil: 10 to 50 ms headless, 1.35 MB. The first cut was a Map of 64,000 arrays built on
+  the first frame (35 ms).
+- The last check (`busLaneDodge`): the bus, 4 m longer and 3 m ahead of itself, against the parked cars as drawn
+  (`PARKED_HIT`, 20 m cells made by every lay; nothing is drawn past `PARKED.r`, so nothing there can be touched); where it
+  would come within `BUS_LANE_AIR` of one, the nearest place across the street, a quarter metre at a time inside its kerbs,
+  that clears, else the one with the most room. It takes a bus round a curve and past the odd misplaced car.
+- Two parking rules, found by the survey below. `parkedInSlant` (`?parkslant=0`): a car inside the roadway of a street that
+  meets its run at under 30 degrees parks no more (a Y where a diagonal meets the grid, two ways of one street parting):
+  Round 240 took only the streets at 30 degrees or more and Round 236 the parallel ones beyond a kerb. Its candidates come
+  from `parkedJunctions`' own scan (a second scan cost 1.5 ms a fresh lay). 465 slots citywide. `parkedBusClear`: a street
+  with a SEPTA stop within 25 m parks no car a bus in its lane would touch going round it, swept only near a bend (over 4
+  degrees, where the bend could close the room) or on a squeezed street: 7 m one-way blocks parked both sides that turn 15
+  to 50 degrees mid-block, where no lane fits a rigid 12.2 m bus. 2,104 slots. Together 0.4% of 639,000.
+- The survey (`__dbg.busParkSurvey`): a bus at every lane of every street of class 2 to 5 every 6 m both ways, under both
+  rules, against every kerb slot whatever the hour's fill. Over six districts (the core, Penn Square, South Philly, North,
+  West, Kensington; 1,430 km of lanes), the old rule touched a parked car at 24 to 57% of places; the new, on the 604 km of
+  streets with a stop, at 0 to 3 places a district of about 100,000 (worst 0.9 m, at a ramp where the bus took a motorway
+  run), and on every street (bends on streets no bus runs) 0.01 to 0.35%. With the fixes scattered 3 m: 2 of 33,849.
+- Cost: a fresh lay (twelve spots, headless on the Mac) 7.0 to 7.4 ms median before, 8.0 to 8.4 after.
+- The test bus at S 4th Street (`__dbg.busAt(-249, -330, 180)`): Round 207's rule 1.44 m into a parked SUV, the new 0.28 m
+  clear of it, in the middle of the lane. `tests/test_bus_lanes.py`.
+
+The grass:
+- The cause: a park's ring is sown whole, and a park mapped out to its kerbs (Independence Park's lawns, most squares) grew
+  tufts on the core's generated sidewalks, its footpaths and a wide street's asphalt past 4 m: the one paved test was
+  `septaSnapRoad`'s 4 m from a drivable centreline, and the outer districts' sidewalk rings were asked only of the bare
+  ground. A tuft stands 0.12 to 0.36 m from the ground; a walk lies 0.16 over it.
+- Now every sample asks `grassPaved`: inside a drawn street of any tier to its drawn edge (`streetInside`, SRG's half
+  widths), on a walk (`walkAt`: the core's generated sidewalks, mapped footways and pedestrian streets, noted where they are
+  laid with collinear points merged, `walkNote`, and the outer and far tiers' class 6 footways, `walkSeg`; 3,851 segments)
+  or on an outer sidewalk ring (`sidewalkAt`), `GRASS_KERB` 0.1 m wider. 0.35 left a bare band along every path; at 0.1 a
+  tuft at the edge leans over it as a lawn does.
+- Measured at eight parks with `__dbg.grassCheck()`: S 4th Street 5,248 tufts on the sidewalks, Washington Square West
+  1,190 on the asphalt, Logan Square 2,278, Clark Park 871 on its paths, Fitler Square 78; all 0 now. `?grasswalk=0` the
+  old test. On S 4th Street a strip of bare meadow now shows between the generated sidewalk and the park's footpath beside
+  it: real ground between two walks, which the tufts on it used to hide.
+
+JavaScript only: no shader text, no new mesh or program.
+
 ## Round 252 — Stage 2, the shader train: fewer programs, the city's own roofs, the night and the snow, steadier pins (Nov 13)
 
 Stage 2 of the Nov 10 plan, built on the branch `stage2` and shipped as one deploy, so visitors' devices compile the changed
 shaders once. Mike's asks along the way: "Start Stage 2", "Yes, continue", "The shader updates look great, wrap that into
 the next deploy", his picks from two side-by-side pages, "We also need to fix the pins somehow. The pins appear to be
 flashing when flying sometimes", and the loading screen. The comments call all of it Round 252 (it was built as 247; 247,
-248 and 250 shipped on main meanwhile).
+248, 250 and 251 shipped on main meanwhile).
 
 **Fewer programs, nothing on screen moved** (each checked by pixel parity against the build before it, noon and night, on
 the computer, the phone and `?real=0` paths, within the run-to-run noise):
@@ -14786,5 +14845,5 @@ draws it every frame while it moves, as a computer does; none shows through on e
 **The loading screen** (Mike: get rid of the three facts and change Philadelphia to Philly3D): the title reads Philly3D
 and the facts row and its styles are gone.
 
-1,547 tests pass; the merged page smoke-rendered on the computer and phone paths with no failed step and no console
+1,560 tests pass on the page merged with Round 251; it smoke-rendered on the computer and phone paths with no failed step and no console
 error. Not built: the straighter day toe, `?streetfloor=lit`, the buses' lamps (left for a later train).

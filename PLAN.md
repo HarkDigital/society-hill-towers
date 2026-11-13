@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 12, 2026, after Round 241 (no street name in a junction).
+Last updated: Nov 13, 2026, after Round 251 (the buses' lanes, no grass through paving).
 
 ## The ask
 
@@ -139,6 +139,12 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   computer's later compiles are no longer under a lit button; the deploy checks the server's art caching and proxy gzip;
   the beacon reducer's engine line counts the probes it leaves out; the entry orbit and day reference set retaken; the
   service worker's reload not confirmed, so left alone; the real beacons read.
+- **Round 251** (Mike's ask, outside the stages: buses in parked cars, and grass through the sidewalks): a bus near the eye
+  takes the traffic run's own lanes, the one nearest its fix, clear of the parked rows, with a last check against the cars
+  as drawn; a street with a stop parks no car a bus would hit round a bend, and no car parks inside a street meeting its
+  own at a slant (0.4% of slots). On the bus streets of six districts the old rule touched a parked car along 9 to 56 km
+  each, the new at 0 to 3 places of about 100,000. Grass tufts keep off every drawn street, walk, path and sidewalk ring.
+  About 1 ms more a fresh lay. `?buslane=old`, `?parkslant=0`, `?grasswalk=0`. JavaScript only.
 
 ## In flight (finish these first)
 
