@@ -2039,6 +2039,8 @@
   // old floor and every free-standing thing on siteY (bankBand, bankPlace)
   const BANKS = !/[?&]banks=0\b/.test(location.search);
   const BUS_YIELD = !/[?&]busyield=0\b/.test(location.search);   // Round 207: the buses keep their lane and the cars stop behind them (?busyield=0: neither)   // Round 205: the trees and poles on a drawn street go to its kerb (streetPush)
+  const BUS_LANES = BUS_YIELD && !/[?&]buslane=old\b/.test(location.search);   // Round 251: a bus takes the traffic run's own lanes, nearest its fix and clear of the parked rows (busLaneSnap; ?buslane=old: Round 207's offset)
+  const GRASS_PAVE = !/[?&]grasswalk=0\b/.test(location.search);   // Round 251: no grass tuft on a drawn street, sidewalk or path of any tier (grassPaved; ?grasswalk=0: the old 4 m road test)
   // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
   // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
   const GLORY_ON = REAL && !/[?&]glory=0\b/.test(location.search);
@@ -12402,6 +12404,7 @@ vec2 wRing(vec2 rc, float tt) {
         // Round 195's review round: the towers' motor court is paving (SHT_COURT), so a service way's segments over it lay no asphalt
         const paint = SHT_ON && r.t === 'service' ? shtCourtRuns(run) : [run];
         const gs = paint.map((pr) => ribbon(pr, r.w, y, mot ? motY : null, pr === run ? lane : lane && { ...lane, jl: null }, true, true, setts ? 0.01 : 0.06));
+        if (foot) walkNote(run, r.w / 2);   // Round 251: a pedestrian street (no drivable grid knows it), for the grass
         const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
         for (let i = 0; i < run.length - 1; i++) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
@@ -12457,7 +12460,7 @@ vec2 wRing(vec2 rc, float tt) {
     for (const j of walkJobs) {
       const pts = densify(j.line, 1.5), keep = pts.map((q) => { const m = marketDeck(q[0], q[1]); return m ? m[1] > m[2] : !carHit(q[0], q[1], -0.3); });
       if (keep.some((k) => !k)) cutWalk++;
-      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, j.w || 3.0, LAYER.sidewalk, MARKET_DECKS.length ? walkOnDeck : null), color: j.col });
+      for (const run of splitRuns(pts, keep)) { brickParts.push({ geom: ribbon(run, j.w || 3.0, LAYER.sidewalk, MARKET_DECKS.length ? walkOnDeck : null), color: j.col }); walkNote(run, (j.w || 3.0) / 2); }   // Round 251: and no grass through it
     }
     for (const j of footJobs) {
       const pts = densify(j.run, 1.0), n = pts.length, cls = new Array(n);
@@ -12468,7 +12471,7 @@ vec2 wRing(vec2 rc, float tt) {
         cls[i] = hit ? (Math.abs(hit[0] * ux + hit[1] * uz) < 0.6 ? 'x' : 'd') : besideWalked(pts[i][0], pts[i][1], ux, uz) ? 'd' : 'k';
       }
       if (cls.some((c) => c === 'd')) dupFoot++;
-      for (const run of splitRuns(pts, cls.map((c) => c === 'k'))) brickParts.push({ geom: ribbon(run, j.w, LAYER.footway, null, null, true, true), color: new THREE.Color(COLORS.footway) });
+      for (const run of splitRuns(pts, cls.map((c) => c === 'k'))) { brickParts.push({ geom: ribbon(run, j.w, LAYER.footway, null, null, true, true), color: new THREE.Color(COLORS.footway) }); walkNote(run, j.w / 2); }
       for (const run of splitRuns(pts, cls.map((c) => c === 'x'))) {   // a zebra: bars along the traffic, every 1.1 m across the walk
         const a = run[0], b = run[run.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (L < 3) continue;
@@ -29771,6 +29774,7 @@ if (uOlLamp > 0.001) {
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, t);
+      else if (t === 6) for (let j = 0; j + 1 < pts.length; j++) walkSeg(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);   // Round 251: a footway, for the grass
       for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, laneClsOf(t, w));   // for the far ring's seam (Round 88), and the paving season's strips (wideStreetAt)
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       wideRoadRecs.push({pts,w,t,i});
@@ -33054,6 +33058,7 @@ if (uOlLamp > 0.001) {
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (keepAt && !buildingsOnly && !keepAt(pts[pts.length >> 1][0], pts[pts.length >> 1][1])) continue;
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, t);
+      else if (t === 6) for (let j = 0; j + 1 < pts.length; j++) walkSeg(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2);   // Round 251: a footway, for the grass
       roadRecs.push({ pts: densify(pts, 30), w, t, i });
     }
     // how many runs end at each half-metre node key: a run's own end gets a mitre disc only
@@ -37599,6 +37604,49 @@ if (uOlLamp > 0.001) {
   // building test outside the core (colGrid is core-only): a tuft inside a closed building is
   // invisible, one at a wall base pokes a blade through, accepted
   const BARE_TUFT_W = 0.4;
+  // ---- the paved ground the grass keeps off (Round 251. Mike, of the S 4th Street screenshot: "Also in that shot, grass is
+  // coming through the sidewalk. Can we clean that up everywhere?"). A park's ring is sown whole, and a park mapped out to
+  // its kerbs (Independence Park's lawns, most of the city's squares) grew tufts on the core's generated sidewalks, on its
+  // own footpaths and on a wide street's asphalt past 4 m: the one paved test was septaSnapRoad's 4 m from a drivable
+  // centreline, the outer districts' sidewalk rings were asked of the bare ground alone, and a tuft stands 0.12 to 0.36 m
+  // from the ground where a walk lies 0.16 over it. Now every sample asks grassPaved: inside a drawn street of any tier to
+  // its drawn edge (streetInside, SRG's half widths), on a walk (walkAt: the core's generated sidewalks, its mapped
+  // footways and pedestrian streets, the outer and far tiers' footways, their class 6) or on an outer sidewalk ring
+  // (sidewalkAt), each GRASS_KERB wider so no tuft stands in it (its blades still lean over the edge, as a lawn's do at a path). ?grasswalk=0 keeps the old test (GRASS_PAVE);
+  // __dbg.grassCheck() counts the field's tufts on each kind of paving
+  const GRASS_KERB = 0.1;   // a tuft's centre this far off the edge: its blades may lean over it, as grass does at a path (0.35 left a bare band)
+  const WALK = { cell: 24, segs: new Float32Array(5 * 4096), n: 0, grid: new Map() };
+  function walkSeg(ax, az, bx, bz, hw) {   // laid under ?grasswalk=0 too, for the probe's count
+    if (WALK.n * 5 + 5 > WALK.segs.length) { const b = new Float32Array(WALK.segs.length * 2); b.set(WALK.segs); WALK.segs = b; }
+    const o = WALK.n * 5, C = WALK.cell, p = hw + GRASS_KERB;
+    WALK.segs[o] = ax; WALK.segs[o + 1] = az; WALK.segs[o + 2] = bx; WALK.segs[o + 3] = bz; WALK.segs[o + 4] = hw;
+    for (let gx = Math.floor((Math.min(ax, bx) - p) / C); gx <= Math.floor((Math.max(ax, bx) + p) / C); gx++) for (let gz = Math.floor((Math.min(az, bz) - p) / C); gz <= Math.floor((Math.max(az, bz) + p) / C); gz++) {
+      const k = gx * 100003 + gz; let a = WALK.grid.get(k); if (!a) WALK.grid.set(k, a = []); a.push(WALK.n);
+    }
+    WALK.n++;
+  }
+  function walkNote(run, hw) {   // a drawn walk's centreline, its collinear points merged (the core densifies its walks to 1.5 m)
+    if (run.length < 2) return;
+    let a = run[0], p = run[1];
+    for (let i = 2; i < run.length; i++) {
+      const q = run[i], ux = p[0] - a[0], uz = p[1] - a[1], L = Math.hypot(ux, uz);
+      if (L > 40 || (L > 1e-6 && Math.abs((q[0] - a[0]) * uz - (q[1] - a[1]) * ux) / L > 0.05)) { walkSeg(a[0], a[1], p[0], p[1], hw); a = p; }
+      p = q;
+    }
+    walkSeg(a[0], a[1], p[0], p[1], hw);
+  }
+  function walkAt(x, z, pad) {   // pad up to GRASS_KERB: every segment sits in each cell its padded box touches
+    const a = WALK.grid.get(Math.floor(x / WALK.cell) * 100003 + Math.floor(z / WALK.cell));
+    if (!a) return false;
+    const S = WALK.segs;
+    for (let q = 0; q < a.length; q++) {
+      const o = a[q] * 5, ax = S[o], az = S[o + 1], dx = S[o + 2] - ax, dz = S[o + 3] - az, L2 = dx * dx + dz * dz;
+      const t = L2 > 1e-9 ? clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1) : 0, ex = ax + dx * t - x, ez = az + dz * t - z, r = S[o + 4] + pad;
+      if (ex * ex + ez * ez < r * r) return true;
+    }
+    return false;
+  }
+  function grassPaved(x, z) { return !!streetInside(x, z, GRASS_KERB) || walkAt(x, z, GRASS_KERB) || sidewalkAt(x, z); }
   let grassMesh = null, grassAt = null, grassQueue = [], grassCursor = 0, grassBusy = false, grassNear = [], noSowNear = [];
   const grassPolyBB = [];
   function bareGroundAt(x, z) {
@@ -37722,7 +37770,7 @@ if (uOlLamp > 0.001) {
         if (pg && CH.noTuft && CH.noTuft.some(([r, bb]) => x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, r))) continue;   // City Hall's paving over a park (Round 191)
         if (REBUILD_PAVED.length && rebuildPavedAt(x, z)) continue;
         if (elPortalAt(x, z) || patcoCutAt(x, z) || vineCut(x, z, 0) !== null || apCutNear(x, z, 1)) continue;   // the excavated ground cannot carry floating grass (Round 226: nor the expressway's cut, whose floor grew tufts between the lanes)
-        if (septaSnapRoad(x, z, 4)) continue;
+        if (GRASS_PAVE ? grassPaved(x, z) : septaSnapRoad(x, z, 4)) continue;   // Round 251: any street, walk or path, to its edge
         if (inWater(x, z) > -2) continue;
         // on the drawn ground where a grid is registered (the sheets conform to it), drapeY in the core
         const y = (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + (pg ? LAYER.park : 0) + 0.02;
@@ -37758,6 +37806,20 @@ if (uOlLamp > 0.001) {
   }
   function grassUpdate() {
     if (!grassMesh) return;
+    // Round 251: the field's tufts now standing on a drawn street (to its edge), a walk or path, or an outer sidewalk
+    // ring, and a few of each; the walks indexed (segments, cells)
+    if (window.__dbg && !window.__dbg.grassCheck) window.__dbg.grassCheck = (pad = 0) => {
+      const e = grassMesh.instanceMatrix.array, o = { on: GRASS_PAVE, tufts: grassMesh.count, street: 0, walk: 0, ring: 0, ex: { street: [], walk: [], ring: [] }, walks: WALK.n, cells: WALK.grid.size };
+      for (let i = 0; i < grassMesh.count; i++) {
+        const x = e[i * 16 + 12], z = e[i * 16 + 14];
+        if (!e[i * 16 + 5]) continue;   // an emptied slot (scale 0)
+        const k = streetInside(x, z, pad) ? 'street' : walkAt(x, z, pad) ? 'walk' : sidewalkAt(x, z) ? 'ring' : null;
+        if (!k) continue;
+        o[k]++;
+        if (o.ex[k].length < 6) o.ex[k].push([+x.toFixed(1), +z.toFixed(1)]);
+      }
+      return o;
+    };
     const p = camera.position;
     // from 90 m up every tuft is rejected anyway: no sow, no field, sow again on the way down
     if (p.y - drapeY(p.x, p.z, 'ground') > GRASS_UP) { if (grassMesh.count) grassMesh.count = 0; grassBusy = false; grassAt = null; return; }
@@ -40140,6 +40202,7 @@ float pinOccGate() {
   const _kqB = new THREE.Quaternion();   // the ground pins' billboard pose
   function updateTransit(now, dt) {
     if (!septaReady) return;
+    if (window.__dbg && !window.__dbg.busLanes) busLaneProbes();   // Round 251
     if (!SEPTA.on) {
       if (septaSolid.count || septaBadge.count) { septaSolid.count = 0; septaBadge.count = 0; }
       busObstClear();
@@ -40161,13 +40224,24 @@ float pinOccGate() {
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
           const sn = septaSnapRoad(v.x, v.z, 20);
-          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.lane = Math.min(CAR_OFFW[sn[5]], Math.max(0, sn[4] - SEPTA_KIND[v.kind].w / 2 - 0.1)); v.off = !insideLimit(v.x, v.z); }
+          v.rnx = null;
+          if (sn) {
+            v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.lane = Math.min(CAR_OFFW[sn[5]], Math.max(0, sn[4] - SEPTA_KIND[v.kind].w / 2 - 0.1)); v.off = !insideLimit(v.x, v.z);
+            // Round 251: near the eye, the traffic run's own lane (busLaneSnap), which overwrites the snap and the lane
+            if (BUS_LANES && trafficReady && (v.x - camera.position.x) ** 2 + (v.z - camera.position.z) ** 2 < (NEAR_R + BUS_LANE_PAD) ** 2) busLaneSnap(v, sn);
+          }
           else { v.snx = null; v.off = !insideLimit(v.x, v.z) || !septaSnapRoad(v.x, v.z, 140); }   // beyond the flight limit, or no drawn street within 140 m: off the map
+          if (v.rnx == null) v.lnD = null;
         }
         // Round 207 (Mike: "a lot of cars clipping through the septa busses"): on the centreline a bus straddled both
         // directions' lanes; it keeps the right-hand lane of its way, at the typical traffic's own offset for the street's
-        // class (CAR_OFFW), short of the kerb
-        if (v.snx != null) { const ln = BUS_YIELD ? v.lane || 0 : 0; wx = v.snx + Math.sin(v.yaw) * ln; wz = v.snz + Math.cos(v.yaw) * ln; }
+        // class (CAR_OFFW), short of the kerb. Round 251: on a run's lane it eases across to it at BUS_LANE_RATE, square to
+        // the run, never jumping a lane
+        if (v.snx != null && v.rnx != null) {
+          const k = BUS_LANE_RATE * dt;
+          v.lnD = v.lnD == null ? v.lane : v.lnD + clamp(v.lane - v.lnD, -k, k);
+          wx = v.snx + v.rnx * v.lnD; wz = v.snz + v.rnz * v.lnD;
+        } else if (v.snx != null) { const ln = BUS_YIELD ? v.lane || 0 : 0; wx = v.snx + Math.sin(v.yaw) * ln; wz = v.snz + Math.cos(v.yaw) * ln; }
       }
       if (v.dx === undefined) { v.dx = wx; v.dz = wz; }
       const kS = 1 - Math.exp(-dt * 7);
@@ -46338,6 +46412,65 @@ float pinOccGate() {
     }
     PARKED.ready = true;
   }
+  // Round 251: a bus street (a SEPTA stop within PARK_BUS_R of the run's line) parks no car a bus in its lane would touch
+  // going round it (parkedBusClear: the bus, rigid and 12.2 m long, at its lane as busLaneOf lays it, centred every 1.5 m
+  // within PARK_BUS_SWEEP of the slot, either way the street runs, PARK_BUS_AIR clear of the car). On a straight block the
+  // lane rule already leaves the rows BUS_LANE_AIR; this takes the cars on a bend's outside and inside where a 7 m street
+  // with both kerbs parked turns 15 to 50 degrees mid-block, the last places the buses' survey found a bus in a parked car,
+  // as the city signs a bus route's tight bends no parking. Under ?buslane=old it lays as before; __dbg.parkSlant()
+  // counts it with the slant rule
+  const PARK_BUS_R = 25, PARK_BUS_SWEEP = 9, PARK_BUS_AIR = 0.05;
+  PARKED.busSweep = PARK2 && !/[?&](buslane=old|busyield=0)\b/.test(location.search); PARKED.busN = 0;   // BUS_LANES, read from the link: the traffic section runs under the tests without the page's flags
+  function parkedBusRun(r) {
+    if (r.pkBus !== undefined) return r.pkBus;
+    let hit = false;
+    for (let j = 0; j < r.xs.length && !hit; j++) {
+      const gx = Math.floor(r.xs[j] / 40), gz = Math.floor(r.zs[j] / 40);
+      for (let dx = -1; dx <= 1 && !hit; dx++) for (let dz = -1; dz <= 1 && !hit; dz++) {
+        const a = PARKED.stops.get((gx + dx) * 100003 + gz + dz);
+        if (a) for (let i = 0; i < a.length; i += 2) if ((a[i] - r.xs[j]) ** 2 + (a[i + 1] - r.zs[j]) ** 2 < PARK_BUS_R * PARK_BUS_R) { hit = true; break; }
+      }
+    }
+    return (r.pkBus = hit);
+  }
+  const _pkB = {};
+  // run r's bus lanes and bends, once (r.pkBL): [direction, lane] pairs, whether any lane was squeezed, and the arc of
+  // every vertex that turns more than PARK_BUS_TURN. On a straight piece a lane busLaneOf did not squeeze stands
+  // BUS_LANE_AIR clear of the rows, so only a slot near a bend, or on a squeezed street, is swept
+  const PARK_BUS_TURN = 0.07;
+  function parkedBusLanes(r) {
+    if (r.pkBL) return r.pkBL;
+    const sp = SEPTA_KIND.bus, hw = parkHalfW(r), n = r.oneway ? carLaneCount(r) : 1, lanes = [], bends = [];
+    let sq = false;
+    for (let bdir = 1; bdir >= (r.oneway ? 1 : -1); bdir -= 2) for (let li = 0; li < n; li++) {
+      lanes.push(bdir, busLaneOf(r, bdir, r.oneway ? bdir * carOffset(r, li) : CAR_OFFW[r.cls], null, sp.w / 2, hw));
+      sq = sq || busLaneOf.squeezed;
+    }
+    for (let j = 1; j + 1 < r.xs.length; j++) {
+      const a = Math.atan2(r.zs[j] - r.zs[j - 1], r.xs[j] - r.xs[j - 1]), b = Math.atan2(r.zs[j + 1] - r.zs[j], r.xs[j + 1] - r.xs[j]), t = Math.abs(wrapPi(b - a));
+      if (t > PARK_BUS_TURN) bends.push(r.cum[j], Math.sin(Math.min(t, Math.PI / 2)));
+    }
+    return (r.pkBL = { lanes, sq, bends });
+  }
+  // a slot of run r at arc s, its car (kind) at (x, z) on heading yaw, u right of the run's line: false where a bus round
+  // the run in its lane would touch it. Swept only near a bend that could close the room across between the lane and the
+  // car (a bus's end leaves a bend by up to its half length times the turn's sine), or on a squeezed street
+  function parkedBusClear(r, s, x, z, yaw, kind, u) {
+    const B = parkedBusLanes(r), M = CAR_MODELS[kind], sp = SEPTA_KIND.bus, reach = PARK_BUS_SWEEP + sp.l / 2 + M.l / 2;
+    let room = Infinity;
+    for (let i = 0; i < B.lanes.length; i += 2) room = Math.min(room, Math.abs(u - B.lanes[i] * B.lanes[i + 1]) - sp.w / 2 - M.w / 2);
+    let need = B.sq ? Infinity : 0;
+    for (let i = 0; i < B.bends.length; i += 2) if (Math.abs(B.bends[i] - s) < reach) need = Math.max(need, sp.l / 2 * B.bends[i + 1] + 0.3);
+    if (room > need) return true;
+    const chx = Math.cos(yaw), chz = -Math.sin(yaw);
+    for (let i = 0; i < B.lanes.length; i += 2) {
+      for (let q = -PARK_BUS_SWEEP; q <= PARK_BUS_SWEEP; q += 1.5) {
+        carSample(r, s + q, B.lanes[i], B.lanes[i + 1], _pkB);
+        if (boxGap(_pkB.x, _pkB.z, Math.cos(_pkB.yaw), -Math.sin(_pkB.yaw), sp.l / 2, sp.w / 2, x, z, chx, chz, M.l / 2, M.w / 2) < PARK_BUS_AIR) return false;
+      }
+    }
+    return true;
+  }
   function parkedNearStop(x, z) {
     const gx = Math.floor(x / 40), gz = Math.floor(z / 40);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) {
@@ -46369,6 +46502,7 @@ float pinOccGate() {
     const hw = parkHalfW(r), hy = runHydrants(r, ri);
     const sides = parkedSides(r, hw);
     if (!sides.length) return;
+    const busSt = PARKED.busSweep && parkedBusRun(r);
     const oc = r.cls >= 5 ? 0 : r.cls === 4 ? 1 : 2, C = PARKED.cell, P2 = PARK_PITCH / 2, tr = PARK_TRIM[r.cls <= 3 ? 0 : 1];
     const trim0 = r.conn && r.conn[0] && r.conn[0].length ? tr : 3, trim1 = r.conn && r.conn[1] && r.conn[1].length ? tr : 3;
     for (const side of sides) {
@@ -46386,7 +46520,9 @@ float pinOccGate() {
         if (PARKED.jx && parkedAtJunction(r, sl, side, u, CAR_MODELS[kind].l)) continue;   // a junction or its crosswalks (Round 240)
         carSample(r, sl, dir, r.oneway ? side * u : u, _pkS);
         if (PARKED.jx && PARKED.jxCar && !parkedCarClear(r, _pkS.x, _pkS.z, _pkS.yaw, CAR_MODELS[kind].l)) continue;   // and the car itself clear of every street across it
+        if (PARKED.slant && parkedInSlant(r, sl, _pkS.x, _pkS.z, _pkS.yaw)) { PARKED.slantN++; if (PARKED.slantEx.length < 16) PARKED.slantEx.push([Math.round(_pkS.x), Math.round(_pkS.z), ri, r.cls]); continue; }   // nor inside a street that meets it at a slant (Round 251)
         if (parkedNearStop(_pkS.x, _pkS.z)) continue;
+        if (busSt && !parkedBusClear(r, sl, _pkS.x, _pkS.z, _pkS.yaw, kind, side * u)) { PARKED.busN++; continue; }   // a bus street: clear of a bus round its bends (Round 251)
         const key = Math.floor(_pkS.x / C) * 100003 + Math.floor(_pkS.z / C);
         let a = PARKED.slots.get(key); if (!a) PARKED.slots.set(key, a = []);
         a.push(_pkS.x, _pkS.y, _pkS.z, _pkS.yaw, kind, roll, oc + blk);
@@ -46436,7 +46572,7 @@ float pinOccGate() {
   function parkedJunctions(r) {
     if (r.pkJ) return r.pkJ;
     if (!SRG.off) septaRoadFreeze();   // the grid's arrays are replaced when it freezes: read them after
-    const tJ = performance.now(), C = SEPTA_RG_CELL, a = SRG.seg, ids = SRG.ids, n = r.xs.length, out = [], near = [], M = PARK_JX_NEAR;
+    const tJ = performance.now(), C = SEPTA_RG_CELL, a = SRG.seg, ids = SRG.ids, n = r.xs.length, out = [], near = [], slant = [], M = PARK_JX_NEAR;
     if (!_pkStamp || _pkStamp.length < SRG.n) { _pkStamp = new Uint32Array(SRG.n + 1024); _pkStampN = 0; }
     const st = ++_pkStampN, bb = new Float32Array(n * 4);   // each piece's box, grown by M (PARK_JX_END at the run's two ends)
     for (let j = 0; j + 1 < n; j++) {
@@ -46454,13 +46590,13 @@ float pinOccGate() {
         const ax = a[k * 4], az = a[k * 4 + 1], bx = a[k * 4 + 2], bz = a[k * 4 + 3], L = Math.hypot(bx - ax, bz - az);
         if (L < 0.5) continue;
         const dx = (bx - ax) / L, dz = (bz - az) / L, sx0 = Math.min(ax, bx), sx1 = Math.max(ax, bx), sz0 = Math.min(az, bz), sz1 = Math.max(az, bz);
-        let own = -1, close = false, met = false;
+        let own = -1, close = false, met = false, shallow = false;
         for (let j = 0; j + 1 < n; j++) {
           if (sx0 > bb[j * 4 + 1] || sx1 < bb[j * 4] || sz0 > bb[j * 4 + 3] || sz1 < bb[j * 4 + 2]) continue;   // nowhere near this piece
           const lj = r.cum[j + 1] - r.cum[j];
           if (lj < 0.01) continue;
           const px = r.xs[j], pz = r.zs[j], hx = (r.xs[j + 1] - px) / lj, hz = (r.zs[j + 1] - pz) / lj, den = hx * dz - hz * dx;
-          if (Math.abs(den) < PARK_JX_SIN) continue;   // along the run, or crossing it at under 30 degrees
+          if (Math.abs(den) < PARK_JX_SIN) { shallow = true; continue; }   // along the run, or crossing it at under 30 degrees (Round 251: the slant rule's)
           close = true;   // a candidate for the backstop: within the piece's box grown by PARK_JX_NEAR, across it
           const wx = ax - px, wz = az - pz, t = (wx * dz - wz * dx) / den, v = (wx * hz - wz * hx) / den;
           if (t < (j ? -PARK_JX_EXT : -PARK_JX_END) || t > lj + (j + 2 < n ? PARK_JX_EXT : PARK_JX_END) || v < -PARK_JX_EXT || v > L + PARK_JX_EXT) continue;   // past either end too: a run can stop short of the street it meets
@@ -46475,9 +46611,10 @@ float pinOccGate() {
           const w = SRG.hw[k] / 10, g = w + PARK_JX_CLR + 3.5;
           near.push(sx0 - g, sx1 + g, sz0 - g, sz1 + g, ax, az, dx, dz, L, w, own < 0 ? (parkedRunOwn(r, (ax + bx) / 2, (az + bz) / 2, dx, dz) ? 1 : 0) : own);
         }
+        if (shallow && !(parkedLineD(r, ax, az) < PARK_JX_OWN && parkedLineD(r, bx, bz) < PARK_JX_OWN)) slant.push(ax, az, bx, bz, SRG.hw[k] / 10);   // Round 251: at a slant here and not wholly the run's own street (parkedInSlant)
       }
     }
-    r.pkN = Float32Array.from(near);
+    r.pkN = Float32Array.from(near); r.pkS = Float32Array.from(slant);
     VSTAT.jxMs += performance.now() - tJ; VSTAT.jxRuns++;
     return (r.pkJ = Float32Array.from(out));
   }
@@ -46519,6 +46656,43 @@ float pinOccGate() {
       if ((Math.abs(qx * uz - qz * ux) - N[i + 9]) / sn - len / 2 < PARK_JX_CLR) return false;
     }
     return true;
+  }
+  // Round 251: a car inside the roadway of a street that meets its run at under 30 degrees (a merge at a slant, a street
+  // drawn over another). Round 240's rules take the streets that cross at 30 degrees or more and Round 236's the parallel
+  // ones beyond a kerb, so these stood in the middle of the asphalt, and the buses' survey (__dbg.busParkSurvey) found
+  // them as the last cars a bus on a 7 m street could not pass: at the Y where a diagonal meets the grid, along a short
+  // connector, where two ways of one street part. A slot goes where its car's centre lies more than PARK_SLANT_IN inside
+  // such a street's drawn half width (SRG, never a motorway), unless the street is the run's own: its piece passing within
+  // PARK_JX_OWN of the run's centre line beside the car. A street alongside (Round 236's) is left to ?parkmid=1. ?parkslant=0 parks them as before; __dbg.parkSlant() counts them
+  const PARK_SLANT_IN = 0.3;
+  PARKED.slant = PARK2 && !/[?&]parkslant=0\b/.test(location.search); PARKED.slantN = 0; PARKED.slantEx = [];
+  const _pkC = {};
+  // the drawn pieces a slot of run r must ask (r.pkS, a to b and half width, five a piece), found by parkedJunctions' own
+  // scan of the pieces near the run: those at under 30 degrees to a piece of it that are not wholly its own street (both
+  // ends within PARK_JX_OWN of its line), so a straight block with no other street at a slant asks nothing
+  function parkedLineD(r, x, z) {
+    let b = Infinity;
+    for (let j = 0; j + 1 < r.xs.length; j++) { const ax = r.xs[j], az = r.zs[j], ex = r.xs[j + 1] - ax, ez = r.zs[j + 1] - az, L2 = ex * ex + ez * ez, t = L2 > 1e-6 ? clamp(((x - ax) * ex + (z - az) * ez) / L2, 0, 1) : 0; b = Math.min(b, Math.hypot(ax + ex * t - x, az + ez * t - z)); }
+    return b;
+  }
+  function parkedSlantCands(r) { if (!r.pkS) parkedJunctions(r); return r.pkS; }
+  function parkedInSlant(r, s, x, z, yaw) {
+    const P = parkedSlantCands(r);
+    if (!P.length) return false;
+    carSample(r, s, 1, 0, _pkC);
+    const hx = Math.cos(yaw), hz = -Math.sin(yaw), cx = _pkC.x, cz = _pkC.z;
+    for (let i = 0; i < P.length; i += 5) {
+      const ax = P[i], az = P[i + 1], dx = P[i + 2] - ax, dz = P[i + 3] - az, L2 = dx * dx + dz * dz;
+      const L = Math.sqrt(L2);
+      if (Math.abs(hx * dz - hz * dx) / L >= PARK_JX_SIN) continue;   // at 30 degrees or more: Round 240's
+      if (!PARK_MED && Math.abs(hx * dx + hz * dz) / L >= PARK_MED_COS) continue;   // alongside: Round 236's, which ?parkmid=1 parks again
+      const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+      if (Math.hypot(ax + dx * t - x, az + dz * t - z) >= P[i + 4] - PARK_SLANT_IN) continue;   // the car's centre is not in its roadway
+      const tc = clamp(((cx - ax) * dx + (cz - az) * dz) / L2, 0, 1);
+      if (Math.hypot(ax + dx * tc - cx, az + dz * tc - cz) < PARK_JX_OWN) continue;   // the run's own street
+      return true;
+    }
+    return false;
   }
   // the same test over every drawn street piece within a cell of the car (never a motorway), not the run's candidates:
   // __dbg.parkJunctions' own measure, at the zebra's 3.8 m (PARKED.jxK the piece it last found)
@@ -46886,12 +47060,14 @@ float pinOccGate() {
     VSTAT.jxMs = 0; VSTAT.jxRuns = 0;   // Round 240: the share of this lay that went on the runs' crossings (parkedJunctions)
     const ex = camera.position.x, ey = camera.position.y, ez = camera.position.z, R = Math.min(PARKED.r, NEAR_R), C = PARKED.cell;
     for (const p of PARKED.meshes) p.n = 0;
+    PARKED_HIT.clear();   // Round 251: the drawn cars, for the buses (busLaneDodge)
     const h = clock.minutes / 60, night = h < 6 || h >= 20, small = h >= 2 && h < 6;
     let total = 0, near = 0;
     const put = (x, y, z, yaw, kind, roll, d) => {
       const lod = d < PARKED.near ? 0 : 1, p = PARKED.meshes[kind * 2 + lod];
       if (p.n >= PARKED.cap) return;
       const i = p.n++;
+      parkedHitAdd(PARKED_HIT, x, z, yaw, kind);
       _sp.set(x, y, z); _sq.setFromAxisAngle(TRAFFIC_UP, yaw); _ss.set(1, 1, 1); _sm.compose(_sp, _sq, _ss);
       p.m.setMatrixAt(i, _sm);
       const pc = carPaint(hash01(roll * 3.7 + 1.3));
@@ -47051,6 +47227,22 @@ float pinOccGate() {
       [PARKED.slots, PARKED.expanded, PARKED.slotN, PARKED.jx] = keep;
       PARKED.jxCar = true;
       return { ms: Math.round(performance.now() - t0), clr: PARK_JX_CLR, before, runs, after };
+    };
+    // Round 251: every slot the city lays with and without the slant rule (parkedInSlant), by class, and a few it takes
+    if (window.__dbg && !window.__dbg.parkSlant) window.__dbg.parkSlant = () => {
+      const t0 = performance.now(), keep = [PARKED.slots, PARKED.expanded, PARKED.slotN, PARKED.slant, PARKED.slantN, PARKED.slantEx, PARKED.busN], o = { on: keep[3], sweep: PARKED.busSweep, slots: 0, slant: 0, bus: 0, busRuns: 0, byCls: {} };
+      PARKED.expanded = new Uint8Array(trafficRuns.length); PARKED.slant = true; PARKED.slantEx = [];
+      for (let ri = 0; ri < trafficRuns.length; ri++) {
+        const r = trafficRuns[ri];
+        if (r.cls < 2) continue;
+        PARKED.slots = new Map(); PARKED.slotN = 0; PARKED.slantN = 0; PARKED.busN = 0;
+        parkedExpand(ri);
+        o.slots += PARKED.slotN; o.slant += PARKED.slantN; o.bus += PARKED.busN; if (r.pkBus) o.busRuns++;
+        if (PARKED.slantN) o.byCls[r.cls] = (o.byCls[r.cls] || 0) + PARKED.slantN;
+      }
+      o.ex = PARKED.slantEx;
+      [PARKED.slots, PARKED.expanded, PARKED.slotN, PARKED.slant, PARKED.slantN, PARKED.slantEx, PARKED.busN] = keep;
+      return Object.assign(o, { share: +(o.slant / (o.slots + o.slant + o.bus)).toFixed(4), busShare: +(o.bus / (o.slots + o.slant + o.bus)).toFixed(4), ms: Math.round(performance.now() - t0) });
     };
     // one run's crossings and line, for a look at a slot the survey lists
     if (window.__dbg && !window.__dbg.parkJxRun) window.__dbg.parkJxRun = (ri) => {
@@ -48004,6 +48196,7 @@ float pinOccGate() {
     trafficCreateFleet();
     PERF.traffic = { sample: Math.round(tSample), loop: Math.round(tLink - tWays), link: Math.round(tFleet - tLink), fleet: Math.round(performance.now() - tFleet), ways: hdr[1] };   // Round 220: integer ms, and the ways
     trafficReady = true;
+    if (BUS_LANES) busRunCells();   // Round 251: the buses' run index, behind the veil
     if (CLOSE_TRAFFIC && CLOSURES.recs.length) closureTraffic();   // a closures file that landed first (Round 207)
   });
   function trafficFrac() {
@@ -48301,6 +48494,262 @@ float pinOccGate() {
       }
     }
     return gap;
+  }
+  // ---- the buses' lanes (Round 251. Mike, with a screenshot of a bus half inside a parked car on S 4th Street between
+  // Chestnut and Walnut: "is it possible to not have the busses clip parked cars? Can the bus always stay in the lane
+  // closest to it's real world position?"). Round 207 stood a bus CAR_OFFW of its class right of the drawn street's
+  // centreline (septaSnapRoad), which is the two-way streets' lane, and it knew nothing of the kerbs that park: on a
+  // one-way street that put the bus over the right-hand row (S 4th Street there is one lane between two rows, 7 m drawn:
+  // the bus 1.6 m off the middle, its flank 1.2 m into the parked cars). Now a bus near the eye snaps to the typical
+  // traffic's own run (busRunSnap: the cars and the parked rows are laid on it; the nearest within the drawn street's
+  // reach, a run across the bus's heading counted BUS_RUN_TURN metres farther, so at a junction it keeps its own street;
+  // a motorway only when the drawn street there is one) and takes that run's lanes (busLaneOf): a one-way street's lanes
+  // as the traffic lays them (parkedShift included), the one nearest the vehicle's own fix, kept until another is
+  // BUS_LANE_HYST nearer so the scatter between fixes does not swap it; a two-way street's lane on the bus's own side,
+  // since a fix over the centreline is scatter, not a bus in the oncoming lane. Then it is held clear of every kerb that
+  // parks (parkedSides: the widest parked car's inner flank with BUS_LANE_AIR to spare) and of a bare kerb by 0.1 m, and a
+  // street too narrow for both takes the middle of what is left. Past NEAR_R + BUS_LANE_PAD a bus is not drawn and keeps
+  // Round 207's rule. ?buslane=old keeps it everywhere; __dbg.busLanes() lists the drawn buses' lanes and the nearest
+  // parked car to each, __dbg.busParkSurvey(o) places a bus at every lane of every street round a point under both rules
+  // against every kerb slot, and __dbg.busAt(x, z, heading) parks a test bus
+  const BUS_RUN_CELL = 80, BUS_RUN_TURN = 8, BUS_RUN_AGREE = 3, BUS_LANE_AIR = 0.15, BUS_LANE_HYST = 1.0, BUS_LANE_RATE = 1.6, BUS_LANE_PAD = 200;
+  const BUSRUN = { off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, ms: 0, snaps: 0, falls: 0, squeezed: 0, dodged: 0 };
+  const BUS_NO_SIDES = [];
+  // every run in the 80 m cells its box touches, once (behind the veil, as the traffic step ends): a dense index over the
+  // runs' extent, a count pass, a prefix sum and a fill pass, as SRG's (a Map of arrays was 64,000 of them on the heap)
+  function busRunCells() {
+    const t0 = performance.now(), C = BUS_RUN_CELL, n = trafficRuns.length, bb = new Int32Array(n * 4);
+    let gx0 = Infinity, gz0 = Infinity, gx1 = -Infinity, gz1 = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const xs = trafficRuns[i].xs, zs = trafficRuns[i].zs;
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let j = 0; j < xs.length; j++) { if (xs[j] < x0) x0 = xs[j]; if (xs[j] > x1) x1 = xs[j]; if (zs[j] < z0) z0 = zs[j]; if (zs[j] > z1) z1 = zs[j]; }
+      const o = i * 4; bb[o] = Math.floor(x0 / C); bb[o + 1] = Math.floor(x1 / C); bb[o + 2] = Math.floor(z0 / C); bb[o + 3] = Math.floor(z1 / C);
+      gx0 = Math.min(gx0, bb[o]); gx1 = Math.max(gx1, bb[o + 1]); gz0 = Math.min(gz0, bb[o + 2]); gz1 = Math.max(gz1, bb[o + 3]);
+    }
+    if (!n) { gx0 = gz0 = 0; gx1 = gz1 = -1; }
+    const w = gx1 - gx0 + 1, h = gz1 - gz0 + 1, off = new Int32Array(w * h + 1);
+    for (let pass = 0, ids = null, fill = null; pass < 2; pass++) {
+      for (let i = 0; i < n; i++) {
+        const o = i * 4;
+        for (let gz = bb[o + 2]; gz <= bb[o + 3]; gz++) for (let gx = bb[o]; gx <= bb[o + 1]; gx++) {
+          const c = (gz - gz0) * w + gx - gx0;
+          if (pass) ids[fill[c]++] = i; else off[c + 1]++;
+        }
+      }
+      if (!pass) { for (let c = 0; c < w * h; c++) off[c + 1] += off[c]; ids = new Int32Array(off[w * h]); fill = off.slice(0, w * h); BUSRUN.ids = ids; }
+    }
+    Object.assign(BUSRUN, { off, gx0, gz0, w, h, ms: +(performance.now() - t0).toFixed(1) });
+  }
+  const _brs = { ri: -1, px: 0, pz: 0, ux: 1, uz: 0, d: 0 };
+  // the run nearest (x, z) within maxD, heading (hx, hz), or null (one shared answer: copy what you keep); a motorway
+  // only with mot
+  function busRunSnap(x, z, maxD, hx, hz, mot) {
+    if (!BUSRUN.off) busRunCells();
+    const C = BUS_RUN_CELL, B = BUSRUN, ids = B.ids;
+    let best = Infinity, out = null;
+    for (let gz = Math.max(B.gz0, Math.floor((z - maxD) / C)); gz <= Math.min(B.gz0 + B.h - 1, Math.floor((z + maxD) / C)); gz++)
+      for (let gx = Math.max(B.gx0, Math.floor((x - maxD) / C)); gx <= Math.min(B.gx0 + B.w - 1, Math.floor((x + maxD) / C)); gx++) {
+        const c = (gz - B.gz0) * B.w + gx - B.gx0;
+        for (let q = B.off[c]; q < B.off[c + 1]; q++) {
+          const ri = ids[q], r = trafficRuns[ri], xs = r.xs, zs = r.zs;
+          if (r.cls === 0 && !mot) continue;
+          for (let j = 0; j + 1 < xs.length; j++) {
+            const ax = xs[j], az = zs[j], dx = xs[j + 1] - ax, dz = zs[j + 1] - az, L2 = dx * dx + dz * dz;
+            if (L2 < 1e-6) continue;
+            const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1), px = ax + dx * t, pz = az + dz * t, d = Math.hypot(x - px, z - pz);
+            if (d > maxD || d >= best) continue;
+            const L = Math.sqrt(L2), score = d + (1 - Math.abs((dx * hx + dz * hz) / L)) * BUS_RUN_TURN;
+            if (score < best) { best = score; out = _brs; _brs.ri = ri; _brs.px = px; _brs.pz = pz; _brs.ux = dx / L; _brs.uz = dz / L; _brs.d = d; }
+          }
+        }
+      }
+    return out;
+  }
+  // a bus's place across run r, in metres right of its own heading (bdir: 1 along the run, -1 against it): the lane nearest
+  // latB (its fix, the same way), or the lane it holds (keep) while that is within BUS_LANE_HYST of the nearest; clear of
+  // the kerbs (hwD: the drawn street's half width where it stands, for a kerb that parks nothing). busLaneOf.lane is the
+  // lane chosen before the kerbs' clamp (the next call's keep), busLaneOf.squeezed true where no place clears both kerbs
+  function busLaneOf(r, bdir, latB, keep, half, hwD) {
+    const n = r.oneway ? carLaneCount(r) : 1;
+    let best = 0, bd = Infinity, kv = 0, kd = Infinity;
+    for (let i = 0; i < n; i++) {
+      const o = r.oneway ? bdir * carOffset(r, i) : CAR_OFFW[r.cls], e = Math.abs(latB - o);
+      if (e < bd) { bd = e; best = o; }
+      if (keep != null && Math.abs(o - keep) < 0.6 && e < kd) { kd = e; kv = o; }
+    }
+    const ln = kd <= bd + BUS_LANE_HYST ? kv : best;
+    busLaneOf.lane = ln;
+    // run r's side +1 is its right; the bus's right is the run's side bdir
+    const hw = parkHalfW(r), sides = PARKED.on && !r.closed && parkedRunOK(r) ? parkedSides(r, hw) : BUS_NO_SIDES;
+    const room = (s) => sides.indexOf(s) >= 0 ? hw - parkKerbIn(5) - CAR_MODELS[5].w / 2 - BUS_LANE_AIR - half : Math.min(hw, hwD > 0 ? hwD : hw) - 0.1 - half;
+    const hi = room(bdir), lo = -room(-bdir);
+    busLaneOf.squeezed = hi < lo;
+    return hi >= lo ? clamp(ln, lo, hi) : (hi + lo) / 2;
+  }
+  busLaneOf.lane = 0; busLaneOf.squeezed = false;
+  // The last check, against the parked cars themselves: a bus is rigid and 12.2 m long, so on a curving street its ends
+  // leave the curve, and a few rows stand where the lane rule cannot see them (a car of a street that meets this one at a
+  // slant, parked inside its roadway: Round 240 left those). busLaneDodge measures the bus, BUS_DODGE_AHEAD on and
+  // BUS_DODGE_LONG longer so it moves across before it reaches the car, against the drawn parked cars (PARKED_HIT, made by
+  // every lay: nothing is drawn past PARKED.r, so nothing there can be touched), and where it would come within
+  // BUS_LANE_AIR of one it takes the nearest place across the street, a quarter metre at a time inside its kerbs, that
+  // clears them, else the one with the most room
+  const BUS_DODGE_AHEAD = 3, BUS_DODGE_LONG = 4, PARKED_HIT_CELL = 20;
+  const PARKED_HIT = new Map();   // 20 m cells of x, z, heading x, heading z, kind
+  function parkedHitAdd(G, x, z, yaw, kind) {
+    const k = Math.floor(x / PARKED_HIT_CELL) * 100003 + Math.floor(z / PARKED_HIT_CELL);
+    let a = G.get(k); if (!a) G.set(k, a = []);
+    a.push(x, z, Math.cos(yaw), -Math.sin(yaw), kind);
+  }
+  // the widest gap between a box (centre, unit heading, half length and width) and every car in grid G within reach,
+  // under 0 where it overlaps one; busParkedGap.near the nearest car's place and kind
+  function busParkedGap(G, x, z, hx, hz, hl, hw) {
+    let g = Infinity;
+    const gx = Math.floor(x / PARKED_HIT_CELL), gz = Math.floor(z / PARKED_HIT_CELL), R2 = (hl + 3.5) ** 2;
+    for (let i = gx - 1; i <= gx + 1; i++) for (let j = gz - 1; j <= gz + 1; j++) {
+      const a = G.get(i * 100003 + j);
+      if (a) for (let q = 0; q < a.length; q += 5) {
+        if ((a[q] - x) ** 2 + (a[q + 1] - z) ** 2 > R2) continue;
+        const M = CAR_MODELS[a[q + 4]], e = boxGap(x, z, hx, hz, hl, hw, a[q], a[q + 1], a[q + 2], a[q + 3], M.l / 2, M.w / 2);
+        if (e < g) { g = e; busParkedGap.near = [Math.round(a[q] * 10) / 10, Math.round(a[q + 1] * 10) / 10, a[q + 4]]; }
+      }
+    }
+    return g;
+  }
+  busParkedGap.near = null;
+  // ln, or the nearest place within lim either side of the middle that keeps the bus (kind sp) on the run's point
+  // (px, pz), heading (hx, hz), BUS_LANE_AIR clear of every car in G
+  function busLaneDodge(G, px, pz, hx, hz, ln, sp, lim) {
+    const rx = -hz, rz = hx, cx = px + hx * BUS_DODGE_AHEAD, cz = pz + hz * BUS_DODGE_AHEAD, hl = sp.l / 2 + BUS_DODGE_LONG, hw = sp.w / 2;
+    const gapAt = (o) => busParkedGap(G, cx + rx * o, cz + rz * o, hx, hz, hl, hw);
+    let bg = gapAt(ln), best = ln;
+    busLaneDodge.moved = false;
+    if (bg >= BUS_LANE_AIR) return ln;
+    for (let k = 1; k <= 24; k++) for (let s = 1; s >= -1; s -= 2) {
+      const o = ln + s * k * 0.25;
+      if (o < -lim || o > lim) continue;
+      const e = gapAt(o);
+      if (e >= BUS_LANE_AIR) { busLaneDodge.moved = true; return o; }
+      if (e > bg) { bg = e; best = o; }
+    }
+    busLaneDodge.moved = best !== ln;
+    return best;
+  }
+  busLaneDodge.moved = false;
+  // the snap and the lane for a bus near the eye, from its drawn street's snap sn (septaSnapRoad's answer); false (and v
+  // left on sn) where no run agrees with the drawn street
+  function busLaneSnap(v, sn, G = PARKED_HIT) {
+    const hx = Math.cos(v.yawT), hz = -Math.sin(v.yawT), dS = Math.hypot(v.x - sn[0], v.z - sn[1]);
+    const b = busRunSnap(v.x, v.z, Math.min(20, dS + BUS_RUN_AGREE), hx, hz, sn[5] === 0);
+    if (!b) { BUSRUN.falls++; v.lri = -1; return false; }
+    const r = trafficRuns[b.ri], bdir = Math.abs(wrapPi(Math.atan2(-b.uz, b.ux) - v.yawT)) <= Math.PI / 2 ? 1 : -1;
+    const latB = bdir * ((v.x - b.px) * -b.uz + (v.z - b.pz) * b.ux);
+    const sp = SEPTA_KIND[v.kind];
+    let lane = busLaneOf(r, bdir, latB, v.lri >= 0 && v.lnKeep != null ? v.lnKeep : null, sp.w / 2, sn[4]);
+    v.lnKeep = busLaneOf.lane; v.lsq = busLaneOf.squeezed;
+    if (G.size) lane = busLaneDodge(G, b.px, b.pz, b.ux * bdir, b.uz * bdir, lane, sp, Math.max(0, Math.min(parkHalfW(r), sn[4] > 0 ? sn[4] : Infinity) - 0.1 - sp.w / 2));
+    v.ldg = G.size ? busLaneDodge.moved : false;
+    v.snx = b.px; v.snz = b.pz; v.sdx = b.ux; v.sdz = b.uz; v.rnx = -b.uz * bdir; v.rnz = b.ux * bdir;
+    v.lane = lane; v.lri = b.ri;
+    BUSRUN.snaps++; if (v.lsq) BUSRUN.squeezed++; if (v.ldg) BUSRUN.dodged++;
+    return true;
+  }
+  // the probes (installed by updateTransit under ?dev): busLanes() the drawn buses, each with its run, lane, the lane it
+  // is drawn at and the gap to the nearest parked car drawn (boxGap: under 0 it touches one); busParkSurvey({ x, z, r,
+  // step, jit, ms }) a bus at every lane of every street of class 2 to 5 whose middle lies within r of (x, z), every step
+  // metres each way it runs, its fix at the lane's centre (scattered up to jit metres), placed by Round 207's rule (old)
+  // and this round's (new) and measured against every kerb slot there whatever the hour's fill, South Broad's median
+  // row included; busAt(x, z, heading, route, id) a test bus standing at (x, z) on a compass heading until it is moved
+  function busLaneProbes() {
+    const D = window.__dbg;
+    D.busAt = (x, z, hdg = 0, route = '57', id = 'TEST') => {
+      septaUpsert('v' + id, 'bus', route, SEPTA_GEO.lat0 - z / SEPTA_GEO.mz, x / SEPTA_GEO.mx + SEPTA_GEO.lon0, hdg, { dest: 'Test', late: 0, next: '' });
+      const v = septaVeh.get('v' + id); v.lastSeen = Infinity; v.snT = undefined;
+      return v.id;
+    };
+    D.busLanes = () => {
+      let parked = 0;
+      for (const a of PARKED_HIT.values()) parked += a.length / 5;
+      const buses = BUS_OB.drawn.map((v) => {
+        const sp = SEPTA_KIND[v.kind], r = v.rnx != null && v.lri >= 0 ? trafficRuns[v.lri] : null;
+        busParkedGap.near = null;
+        const gap = busParkedGap(PARKED_HIT, v.dx, v.dz, Math.cos(v.yaw), -Math.sin(v.yaw), sp.l / 2, sp.w / 2);   // the bus as drawn, against the cars as drawn
+        return { id: v.id, route: v.route, at: [Math.round(v.dx), Math.round(v.dz)], fix: [Math.round(v.x), Math.round(v.z)], run: r ? v.lri : -1, cls: r ? r.cls : null, oneway: r ? !!r.oneway : null,
+          lanes: r ? carLaneCount(r) : null, lane: +(v.lane || 0).toFixed(2), drawn: v.lnD == null ? null : +v.lnD.toFixed(2), squeezed: !!(r && v.lsq), dodged: !!(r && v.ldg), gap: gap === Infinity ? null : +gap.toFixed(2), near: busParkedGap.near };
+      });
+      return { on: BUS_LANES, buses, parked, touching: buses.filter((b) => b.gap !== null && b.gap < 0).length, dodged: BUSRUN.dodged, index: { ms: BUSRUN.ms, cells: BUSRUN.w * BUSRUN.h, refs: BUSRUN.ids ? BUSRUN.ids.length : 0, kb: BUSRUN.ids ? Math.round((BUSRUN.off.byteLength + BUSRUN.ids.byteLength) / 1024) : 0 }, snaps: BUSRUN.snaps, falls: BUSRUN.falls, squeezed: BUSRUN.squeezed };
+    };
+    D.busParkSurvey = (o = {}) => {
+      if (!PARKED.ready) return 'no parked cars';
+      if (!SRG.off) septaRoadFreeze();
+      const t0 = performance.now(), cx = o.x ?? camera.position.x, cz = o.z ?? camera.position.z, R = o.r ?? 1500, step = o.step ?? 5, jit = o.jit ?? 0, ms = o.ms ?? 35000, C = PARKED.cell;
+      const S = new Map(), RR = (R + 40) ** 2;
+      let slots = 0;
+      const add = (x, z, yaw, kind) => { parkedHitAdd(S, x, z, yaw, kind); slots++; };
+      for (let gx = Math.floor((cx - R - 40) / C); gx <= Math.floor((cx + R + 40) / C); gx++) for (let gz = Math.floor((cz - R - 40) / C); gz <= Math.floor((cz + R + 40) / C); gz++) {
+        const rows = parkedCellSlots(gx * 100003 + gz);
+        for (let i = 0; i < rows.length; i += 7) if ((rows[i] - cx) ** 2 + (rows[i + 2] - cz) ** 2 < RR) add(rows[i], rows[i + 2], rows[i + 3], rows[i + 4]);
+      }
+      for (let i = 0; i < BROAD_SLOTS.length; i += 6) if ((BROAD_SLOTS[i] - cx) ** 2 + (BROAD_SLOTS[i + 1] - cz) ** 2 < RR) add(BROAD_SLOTS[i], BROAD_SLOTS[i + 1], BROAD_SLOTS[i + 3], parkedKind(hash01(BROAD_SLOTS[i + 4] * 17.3)));
+      const BL = SEPTA_KIND.bus.l / 2, BW = SEPTA_KIND.bus.w / 2;
+      let gapNear = null;   // the slot the last gapAt measured nearest: x, z, kind
+      const gapAt = (x, z, hx, hz) => { busParkedGap.near = null; const g = busParkedGap(S, x, z, hx, hz, BL, BW); gapNear = busParkedGap.near; return g; };
+      const tally = () => ({ n: 0, clip: 0, worst: Infinity, byKind: {}, ex: [] }), A = tally(), B = tally();
+      const note = (T, g, r, ri, x, z, more) => {
+        T.n++; T.worst = Math.min(T.worst, g);
+        if (g >= 0) return;
+        T.clip++;
+        const k = r.cls + (r.oneway ? 'o' : 't') + (r.oneway ? carLaneCount(r) : 1); T.byKind[k] = (T.byKind[k] || 0) + 1;
+        if (T.ex.length < (o.ex || 10) && hash01(ri * 0.37 + x * 0.013) < (o.exP ?? 0.3)) T.ex.push([Math.round(x), Math.round(z), ri, +g.toFixed(2), gapNear, ...(more || [])]);
+      };
+      const P = {}, keep = [BUSRUN.snaps, BUSRUN.falls, BUSRUN.squeezed];
+      let runs = 0, squeezed = 0, dodged = 0, fell = 0, cut = false;
+      const keepD = BUSRUN.dodged;
+      for (let ri = 0; ri < trafficRuns.length && !cut; ri++) {
+        const r = trafficRuns[ri];
+        if (r.cls < 2 || (r.mx - cx) ** 2 + (r.mz - cz) ** 2 > R * R) continue;
+        if (o.busOnly && !parkedBusRun(r)) continue;   // only the streets with a stop (parkedBusRun)
+        runs++;
+        const n = r.oneway ? carLaneCount(r) : 1;
+        for (const dir of r.oneway ? [1] : [1, -1]) for (let li = 0; li < n; li++) {
+          const off = r.oneway ? carOffset(r, li) : CAR_OFFW[r.cls];
+          for (let s = 6; s < r.len - 6; s += step) {
+            carSample(r, s + (jit ? (hash01(ri + s * 0.17) - 0.5) * jit : 0), dir, off + (jit ? (hash01(ri * 3.1 + s * 0.29) - 0.5) * 2 * jit : 0), P);
+            const sn = septaSnapRoad(P.x, P.z, 20);
+            if (!sn) continue;
+            {   // Round 207: CAR_OFFW right of the drawn street's centreline, short of its kerb
+              const ry = Math.atan2(-sn[3], sn[2]), yaw = Math.abs(wrapPi(ry - P.yaw)) <= Math.PI / 2 ? ry : ry + Math.PI, ln = Math.min(CAR_OFFW[sn[5]], Math.max(0, sn[4] - BW - 0.1));
+              const x = sn[0] + Math.sin(yaw) * ln, z = sn[1] + Math.cos(yaw) * ln;
+              note(A, gapAt(x, z, Math.cos(yaw), -Math.sin(yaw)), r, ri, x, z);
+            }
+            const v = { x: P.x, z: P.z, yawT: P.yaw, kind: 'bus', lri: -1 };
+            if (busLaneSnap(v, sn, o.dodge === false ? new Map() : S)) {
+              const x = v.snx + v.rnx * v.lane, z = v.snz + v.rnz * v.lane;
+              if (v.lsq) squeezed++;
+              if (v.ldg) dodged++;
+              note(B, gapAt(x, z, v.rnz, -v.rnx), r, ri, x, z, [v.lri, +v.lane.toFixed(2), trafficRuns[v.lri].cls, trafficRuns[v.lri].oneway ? 1 : 0, +parkHalfW(trafficRuns[v.lri]).toFixed(2)]);
+            } else fell++;
+          }
+          if (performance.now() - t0 > ms) { cut = true; break; }
+        }
+      }
+      [BUSRUN.snaps, BUSRUN.falls, BUSRUN.squeezed] = keep; BUSRUN.dodged = keepD;
+      const fin = (T) => Object.assign(T, { worst: T.worst === Infinity ? null : +T.worst.toFixed(2), clipKm: +(T.clip * step / 1000).toFixed(2) });
+      return { ms: Math.round(performance.now() - t0), cut, at: [Math.round(cx), Math.round(cz)], r: R, step, jit, runs, slots, km: +(B.n * step / 1000).toFixed(1), old: fin(A), new: fin(B), squeezed, dodged, fell };
+    };
+  }
+  // the gap between two boxes on the ground (centres, unit headings, half lengths and half widths): the widest
+  // separation over their four axes, negative where they overlap (by at least that much)
+  function boxGap(ax, az, ahx, ahz, al, aw, bx, bz, bhx, bhz, bl, bw) {
+    const dx = bx - ax, dz = bz - az;
+    let g = -Infinity;
+    for (const [nx, nz] of [[ahx, ahz], [-ahz, ahx], [bhx, bhz], [-bhz, bhx]]) {
+      const ra = al * Math.abs(ahx * nx + ahz * nz) + aw * Math.abs(-ahz * nx + ahx * nz);
+      const rb = bl * Math.abs(bhx * nx + bhz * nz) + bw * Math.abs(-bhz * nx + bhx * nz);
+      g = Math.max(g, Math.abs(dx * nx + dz * nz) - ra - rb);
+    }
+    return g;
   }
   function trafficAdvance(now,dt) {
     trafficLeaders();trafficFrame++;
