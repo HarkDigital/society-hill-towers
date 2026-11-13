@@ -34,7 +34,7 @@ def cut(src, start, end):
 SCRIPT = r'''
 const THREE = require(THREE_PATH);
 global.THREE = THREE;
-const REAL = true, isTouch = false, POST = { on: true }, location = { search: '' };
+const REAL = true, isTouch = false, POST = { on: true }, location = { search: '' }, LIT_FLOORS = false;
 const LAYER = { park: 0.06, plaza: 0.1, deck: 0.14, sidewalk: 0.16, road: 0.24, footway: 0.32, basin: 0.36, pool: 0.38 };
 const nightUniform = { value: 0 }, sunWUniform = { value: new THREE.Vector3(0, 1, 0) };
 const postU = { uExposure: { value: 1.06 } }, gradeU = { uCon: { value: 1.05 } };

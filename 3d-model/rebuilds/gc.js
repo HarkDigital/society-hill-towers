@@ -41,6 +41,14 @@
         glass: K.glass(),
         door: K.mat('#2f3d33', { rough: 0.6 })                 // hunter-green doors
       };
+      // Stage 2 (Round 247, the plan's ART-3, behind the app's ?floods=1): the hall is floodlit every night; the marble and the
+      // cella's walls take a warm uplight in their own colour, fading up the columns, never the roof or the glass. A part of
+      // the rebuilds' family (K.fam), so no program of its own; own copies of the two kit materials, which other rebuilds share
+      const GCY = { value: 0 };
+      const flood = (m) => K.fam(m.clone(), { id: 'gc-flood', decl: 'uniform float uNight, uGcFl, uGcY0',
+        uniforms: { uNight: api.night || { value: 0 }, uGcFl: { value: api.floods ? 1 : 0 }, uGcY0: GCY },
+        emis: 'totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.8, 0.58) * 0.65 * uGcFl * uNight * (1.0 - smoothstep(0.45, 0.75, abs(vRbN.y))) * mix(1.0, 0.45, smoothstep(0.0, 14.0, vRbW.y - uGcY0));' });
+      M.col = flood(M.col); M.wall = flood(M.wall);
       // the lawn apron: in the app, the app's own bare-ground meadow material (groundSurfMat, the non-vertex-colour
       // one, COLORS.ground 0x243818; the wide ground's vertex tint is 1 outside Fairmount), so the apron is the same
       // lawn; in the viewer a plain lawn colour
@@ -69,6 +77,7 @@
       const gBase = gTop + 0.03;                                  // the foot of the bottom riser
       const RISE = 6.833 * FT / (NSTEP + 1);                      // 6'-10" in eleven risers
       const yS = gBase + (NSTEP + 1) * RISE;                      // stylobate top
+      GCY.value = yS;   // Round 247: the floodlights fade up from the stylobate
       const yF = gMin - 1.5;                                      // foundation
       if (api.where === 'app') {
         stepLine.sort((a, b) => a - b);

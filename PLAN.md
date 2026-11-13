@@ -202,7 +202,11 @@ gate), batch 2 (the landmark rebuilds in one program family: 40 programs to 8 at
 three looks, on by default since Mike's pick on Nov 13: roofs from the photographs held to today's brightness,
 the entry orbit's sharp shadows, the far ring's measured forms; `?roofpick=0`, `?orbitsh=0`, `?farforms=0` refuse; city.b64 changed in
 roof words only, through `pack_city.py --against`). Page one is published for his picks:
-https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private).
+https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private). Batch 4 (Nov 13): page two's four looks behind flags, off by
+default: `?litfloors=1`, `?frontclock=1`, `?snowlies=1` (with `?wx=snowday`), `?floods=1` (the museum, Independence Hall,
+Founder's Hall). Page two is published for his picks: https://claude.ai/artifact/9ZXdfhaYjJmJGvNS3BfiB1 (private).
+Left of page two: door lamps and light from shops (STREET-6), the skins' weathering (ART-5 c). Then the straighter day toe
+and `?streetfloor=lit`, and the one deploy.
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence
 Hall and Founder's Hall; generated fronts and skins answering the clock and the weather; door lamps and light out of
 open shops; snow that lies as long as the real snow.

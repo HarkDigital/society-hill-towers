@@ -4365,6 +4365,14 @@ RB.kit = (function () {
         glass: K.glass(),
         door: K.mat('#2f3d33', { rough: 0.6 })                 // hunter-green doors
       };
+      // Stage 2 (Round 247, the plan's ART-3, behind the app's ?floods=1): the hall is floodlit every night; the marble and the
+      // cella's walls take a warm uplight in their own colour, fading up the columns, never the roof or the glass. A part of
+      // the rebuilds' family (K.fam), so no program of its own; own copies of the two kit materials, which other rebuilds share
+      const GCY = { value: 0 };
+      const flood = (m) => K.fam(m.clone(), { id: 'gc-flood', decl: 'uniform float uNight, uGcFl, uGcY0',
+        uniforms: { uNight: api.night || { value: 0 }, uGcFl: { value: api.floods ? 1 : 0 }, uGcY0: GCY },
+        emis: 'totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.8, 0.58) * 0.65 * uGcFl * uNight * (1.0 - smoothstep(0.45, 0.75, abs(vRbN.y))) * mix(1.0, 0.45, smoothstep(0.0, 14.0, vRbW.y - uGcY0));' });
+      M.col = flood(M.col); M.wall = flood(M.wall);
       // the lawn apron: in the app, the app's own bare-ground meadow material (groundSurfMat, the non-vertex-colour
       // one, COLORS.ground 0x243818; the wide ground's vertex tint is 1 outside Fairmount), so the apron is the same
       // lawn; in the viewer a plain lawn colour
@@ -4393,6 +4401,7 @@ RB.kit = (function () {
       const gBase = gTop + 0.03;                                  // the foot of the bottom riser
       const RISE = 6.833 * FT / (NSTEP + 1);                      // 6'-10" in eleven risers
       const yS = gBase + (NSTEP + 1) * RISE;                      // stylobate top
+      GCY.value = yS;   // Round 247: the floodlights fade up from the stylobate
       const yF = gMin - 1.5;                                      // foundation
       if (api.where === 'app') {
         stepLine.sort((a, b) => a - b);
@@ -22267,9 +22276,31 @@ vec2 wRing(vec2 rc, float tt) {
   // floor and a ceiling (interior mapping, van Dongen 2008), lit by the lamp at night and by the window by day (roomDay).
   // A host that sets neither draws exactly what it did. A host that binds the clock (occBind) defines ROOM_OCC; one that
   // does not keeps the old shares (0.48 of the homes, 0.54 of the suites)
-  const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) } };
+  // Stage 2 (Round 247, the plan's AERIAL-7 part 2, behind ?litfloors=1, uLitFl): an office's rooms light by the floor, as
+  // the glass towers' have since Round 192: a floor is on or off (at 1.29 times the clock's office share), and an on floor
+  // lights one run of rooms along a zone of 8 to 16 (0.55 to 1 of it, every eighth room dark), so a tower shows bands and
+  // part floors instead of suites of two or three at random. The same lit share (1.29 x 0.775 x 0.88 = 0.88 of the clock's,
+  // as the suites' 0.88 floors on), the same cleaners. Shader text either way, so it turns on later with no compile
+  const LIT_FLOORS = /[?&]litfloors=1\b/.test(location.search);
+  // Round 247 (the plan's ART-3, behind ?floods=1): the floodlights on the landmarks that stood dark at night (the Art
+  // Museum's wash sheets, Independence Hall's and Founder's Hall's flood in their own materials)
+  const FLOODS = /[?&]floods=1\b/.test(location.search), FLOOD_N = {};
+  const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) }, uLitFl: { value: LIT_FLOORS ? 1 : 0 } };
   function occBind(shader) {
     shader.uniforms.uOcc = occU.uOcc;
+    shader.uniforms.uLitFl = occU.uLitFl;
+    shader.fragmentShader = '#define ROOM_OCC\n' + shader.fragmentShader;
+  }
+  // Round 247: the hosts that never bound the clock (the house fronts, the tower skins, the town strips) bind ROOM_OCC
+  // through their own uniform, at the old fixed shares (the const below) so they draw what they did, and take uLitFl.
+  // The house fronts' rooms follow the clock under ?frontclock=1 (the plan's ART-5 b: three houses in four at 48% of their
+  // rooms at every hour, 0.36, where the clock gives 0.41 at 21:30 and 0.06 at 03:00): its value is occU's own vector
+  const occFixU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) } };
+  const FRONT_CLOCK = /[?&]frontclock=1\b/.test(location.search);
+  const frOccU = { value: FRONT_CLOCK ? occU.uOcc.value : occFixU.uOcc.value };
+  function occFixBind(shader, u) {
+    shader.uniforms.uOcc = u || occFixU.uOcc;
+    shader.uniforms.uLitFl = occU.uLitFl;
     shader.fragmentShader = '#define ROOM_OCC\n' + shader.fragmentShader;
   }
   // the shares by the clock: [minute of the day, share], piecewise linear and wrapping at midnight
@@ -22289,9 +22320,9 @@ vec2 wRing(vec2 rc, float tt) {
   }
   const WINDOW_INTERIOR_GLSL = `
     #ifdef ROOM_OCC
-    uniform vec4 uOcc;
+    uniform vec4 uOcc; uniform float uLitFl;
     #else
-    const vec4 uOcc = vec4(0.48, 0.54, 0.0, 0.0);
+    const vec4 uOcc = vec4(0.48, 0.54, 0.0, 0.0); const float uLitFl = 0.0;
     #endif
     vec3 roomRay = vec3(0.0, 0.0, 1.0); float roomPar = 0.0;
     float roomHash(vec2 p) {
@@ -22322,6 +22353,14 @@ vec2 wRing(vec2 rc, float tt) {
       float floorHash=roomHash(vec2(id.y+seed*21.0,seed+5.7));
       float floorOn=step(.12,floorHash);
       float on=mix(step(1.0-uOcc.x,r),max(step(1.0-uOcc.y,zone)*floorOn,uOcc.z*step(floorHash,.08)),office);
+      if(uLitFl>.5&&office>.5){
+        // Round 247 (?litfloors=1): the floor's switch, then one run of rooms along each zone of the floor
+        float zl=8.0+floor(roomHash(vec2(id.y,seed*3.3))*9.0);
+        float r0=floor(roomHash(vec2(id.y+3.7,seed))*zl);
+        float rl=max(1.0,floor(mix(.55,1.0,roomHash(vec2(id.y+7.1,seed*1.9)))*zl+.5));
+        float fOn=min(uOcc.y*1.29,1.0);
+        on=max(step(roomHash(vec2(id.y*1.37+seed*21.0,seed+9.1)),fOn)*step(mod(id.x-r0,zl),rl-.5)*step(.12,r),uOcc.z*step(floorHash,.08));
+      }
       ${REAL ? `
       // a lamp's brightness skewed toward the dim (a reading lamp, a hallway left on) with the odd bright room, and its
       // colour from the lamps people buy: 2700 K for most homes, 3000 and 4000 K for some; 3500 to 4000 K in offices,
@@ -28245,9 +28284,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
       sh.uniforms.uNight = nightUniform; sh.uniforms.uTvSun = sunWUniform;
+      if (!sh.uniforms.uTvFlood) sh.uniforms.uTvFlood = { value: new THREE.Vector2(0, 45) };   // Round 247: the tavern has no flood
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aTv; varying vec4 vTv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTv = aTv * 255.0;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + tvGlsl(nS, nE) + '\n' + WINDOW_INTERIOR_GLSL)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec2 uTvFlood;\n' + tvGlsl(nS, nE) + '\n' + WINDOW_INTERIOR_GLSL)
         .replace('#include <map_fragment>', [
           'float tvMd = floor(vTv.x + 0.5), tvId = floor(vTv.y + 0.5); bool tvIsEl = tvMd < 0.5;',
           'tvWN = inverseTransformDirection(normalize(vNormal), viewMatrix); tvWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
@@ -28319,6 +28359,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           '    vec3 tvRd = mix(vec3(0.30), roomDay(tvRuv, tvRid, 0.37, 0.0), tvRes);',
           '    float tvCv = clamp(dot(normalize(cameraPosition - tvWP), normalize(tvWN)), 0.0, 1.0), tvFr = 0.04 + 0.96 * pow(1.0 - tvCv, 5.0);',
           '    totalEmissiveRadiance += tvRd * (0.06 + 0.13 * max(uTvSun.y, 0.0)) * tvGlass * (1.0 - tvFr) * (1.0 - uNight); } }',
+          // Round 247 (?floods=1): the floodlights from the ground, the walls' own colour lit warm and fading up the tower; never
+          // the glass or the roofs
+          'if (uTvFlood.x > 0.0 && uNight > 0.001) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.8, 0.58) * uTvFlood.x * uNight * (1.0 - tvGlass) * (1.0 - smoothstep(0.45, 0.75, abs(tvWN.y))) * mix(1.0, 0.35, smoothstep(0.0, uTvFlood.y, tvWP.y - uTvY0));',
         ].join('\n'));
       glassOpticsPatch(sh, { mask: 'tvGlass', normal: 'tvWN', uv: 'tvPuv', id: 'tvPid', seed: 'vTv.w * 0.37', coating: 0.09, roughness: 0.09, depth: 0.85,
         horizon: 'clamp((24.0 - (tvWP.y - uTvY0)) / 55.0, 0.0, 0.42)' });
@@ -28870,6 +28913,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   const IH_SW = ['brick', 'shingle', 'paint', 'stone'];
   const IH_EL = ['sashG', 'sashU', 'sashW', 'door', 'tdoor', 'palladian', 'arch', 'clock', 'oculus', 'wdoor', 'cellar'];   // the first three glazed
   const ihU = {
+    uTvFlood: { value: new THREE.Vector2(FLOODS ? 0.9 : 0, 45) },   // Round 247 (?floods=1): the floodlights, their strength and the height they fade by
     uTvArt: { value: 0 }, uTvY0: { value: 0 }, uTvE: { value: new THREE.Vector2(1, 0) }, uTvAtW: { value: 2048 },
     uTvEv: { value: new THREE.Vector2(-100, 12.55) },   // no pent; the cornice's bed moulding over the walls
     uTvSoot: { value: new THREE.Vector2(17.5, 20.2) },  // the end chimneys' heads
@@ -37821,6 +37865,15 @@ if (uOlLamp > 0.001) {
           c.copy(cGold);
           mass(56, 61, sv * 71.5 - 18, sv * 71.5 + 18, T + 17.5, T + 19, 3);
         }
+        // Stage 2 (Round 247, the plan's ART-3, behind ?floods=1): the museum is floodlit every night in the real city and
+        // stood dark here. A warm uplight on each mass's own footprint grown 0.6 m (never a box across the court), in its
+        // own colour every night (slot -1: no theme, and no slot taken, so no later building's colour moves)
+        if (FLOODS) {
+          const FLOOD = new THREE.Color(1.0, 0.8, 0.58);
+          const wash = (u0, u1, v0, v1, y1) => sheetOf(buildingGeom(quad(u0 - 0.6, u1 + 0.6, v0 - 0.6, v1 + 0.6), null, y1 + 0.4, T - 0.6), -1, 0.45, true, FLOOD);
+          wash(-40, 15, -40, 40, T + 25); wash(-70, -40, -95, 95, T + 19); wash(-40, 58, 48, 95, T + 19); wash(-40, 58, -95, -48, T + 19);
+          FLOOD_N.museum = 4;
+        }
         // The light stone pedestal on the upper landing now carries Rocky.
         const rockyU = 38, rockyV = 0, rockyBaseY = T + 0.9;
         {
@@ -39251,6 +39304,7 @@ if (uOlLamp > 0.001) {
       THREE, K, where: 'app',
       ground: (x, z) => { const y = groundMeshY(x, z); return y == null || !Number.isFinite(y) ? siteY(x, z, 'ground') : y; },
       night: nightUniform, lamp: lampUniform, lampU: lampMapU, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
+      floods: FLOODS,   // Round 247: ?floods=1, Founder's Hall's floodlights (gc.js)
       time: waterU.uTime, foam: REAL ? (waterArtLoad(), { tex: waterArtU.tFoam, on: waterArtU.uFoamOn, m: waterArtU.uFoamM }) : null,   // realism, water: the dam's white water (ww.js)
       occupy: (ring, top, pad) => {
         REBUILD_OCC.push({ id: 'def', ring, bb: rbBox(ring), pad: pad || 0, top: top || null });
@@ -39625,6 +39679,7 @@ if (uOlLamp > 0.001) {
           '  vFrSun = vec3(dot(uSunW, frX) * rk * (1.0 - 2.0 * pu) / cols / max(length(instanceMatrix[0].xyz), 0.1), uSunW.y * rk * (1.0 - 2.0 * pv) / rows / (aFr.w > 0.0 ? Hi : max(Hw, 0.1)), step(0.03, sTz) * step(0.0, uSunW.y)); }\n' +
           'vSeed = aFr.y; vBase = aFr.z;')
         .replace('#include <project_vertex>', '#include <project_vertex>\nvWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 0.0, 1.0));');
+      if (REAL) occFixBind(sh, frOccU);   // Round 247: the fronts' rooms, by the clock under ?frontclock=1, by the floor under ?litfloors=1
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uFrMV; uniform vec4 uFrA; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrT; varying vec3 vFrSun; vec4 frMask; float frBar; vec2 frUvS; vec3 frDay, frBlur;\n' + (REAL ? WINDOW_INTERIOR_GLSL : ''))
         // the storey remap: the ground floor and the band under the cornice at the image's own scale, the upper storeys
         // between them repeated (the middle ones) or dropped (from the middle) to fill the wall, each at its own height
@@ -43779,7 +43834,7 @@ if (uOlLamp > 0.001) {
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
-    if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowAcc, uTexelS: { value: 1.5 / S.AH } });
+    if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowFall, uTexelS: { value: 1.5 / S.AH } });   // Round 247: the falling term
     if (lit) cardShadowReach(sh);   // the realism pass: its shadow lookup out of its own crown
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; ' + TREE_VARY + (lit ? ' uniform float uSnowAcc; uniform float uTexelS;' : '') + '\n' + TREE_PICK)
@@ -44371,7 +44426,7 @@ if (uOlLamp > 0.001) {
     // 0.79 + 0.42 * vh about its centre, vh in [0, 1), and the sway adds under 0.07 of the unit shape
     const CROWN_GROW = 1.21, CROWN_SLACK = 0.1;
     const canopySway = (sh) => {   // the leaves move: a slow sway from the wind, per tree, plus a flutter; the crown is lit on top and dark underneath
-      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
+      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uSnowAcc = wxSurfU.uSnowFall;   // Round 247: a crown sheds its snow (the falling term)
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vCY; uniform float uSnowAcc;')
         .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp);' +
@@ -56925,6 +56980,7 @@ float pinOccGate() {
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
           if (REAL) {
             sh.uniforms.uSkinG = skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF; sh.uniforms.uSkinLate = skinU.uSkinLate;
+            occFixBind(sh);   // Round 247: the old shares, and the floors under ?litfloors=1
             sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uSkinG, uSkinF; uniform vec2 uSkinLate; varying float vSeed; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
               .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>\n' + [
                 // the realism pass (buildings 7, night 2): each pane its own (a hash of its bay and floor), its glass a
@@ -57356,6 +57412,7 @@ float pinOccGate() {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed, aTnOff; attribute vec4 aTnCell, aTnGrid; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid;')
           .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed; vTnOff = aTnOff; vTnCell = aTnCell; vTnGrid = aTnGrid;');
         if (SKIN_GLASS) skinGlassPatch(sh);   // first: it marks map_fragment, which the cells' read below replaces
+        occFixBind(sh);   // Round 247: the old shares, and the floors under ?litfloors=1
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uTnLod; uniform vec2 uSkinLate; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
           .replace('#include <map_fragment>', [
             // the cell wrapped by hand: its own rect in the atlas, the gradients the unwrapped coordinate's (no seam where
@@ -58287,6 +58344,7 @@ float pinOccGate() {
     if (themeSheet) {
       const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w, hs = themeSheet.userData.house;
       for (let i = 0; i < sl.length; i++) {
+        if (sl[i] < 0) { const o = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]); a.array[i * 3] = o.r * w[i]; a.array[i * 3 + 1] = o.g * w[i]; a.array[i * 3 + 2] = o.b * w[i]; continue; }   // Round 247: a flood in its own colour every night (slot -1)
         let c = slotCol(sl[i]);
         if (hs && hs[i * 3] >= 0 && sl[i] < 4) c = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]).lerp(THEME.cur[sl[i]], THEME.on);   // its own colour on a plain night
         a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i];
@@ -59417,6 +59475,7 @@ float pinOccGate() {
     WX.temp = cur.temperature_2m == null ? null : cur.temperature_2m;
     WX.precip = Math.max(cur.precipitation || 0, (cur.rain || 0) + (cur.showers || 0));
     WX.snowfall = cur.snowfall || 0;
+    WX.snowDepth = cur.snow_depth == null ? null : cur.snow_depth;   // Round 247: metres lying (the model's analysis), ?snowlies
     WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
     // the deck is the low and mid cloud: a high veil alone (Mike's photo, a thin cirrostratus
     // over a half-covered cumulus sky reported as 80+ total) must not close the sky. Round 88
@@ -59469,6 +59528,8 @@ float pinOccGate() {
     hail: { cloud_cover: 100, precipitation: 13, weather_code: 96, wind_speed_10m: 46, temperature_2m: 68 },
     snow: { cloud_cover: 94, snowfall: 1.1, weather_code: 73, wind_speed_10m: 14, temperature_2m: 28 },
     blizzard: { cloud_cover: 100, snowfall: 3.4, weather_code: 75, wind_speed_10m: 38, temperature_2m: 21 },
+    // Round 247: the day after a storm, a clear sky over 15 cm lying (it shows the snow only under ?snowlies=1)
+    snowday: { cloud_cover: 6, weather_code: 0, wind_speed_10m: 8, temperature_2m: 25, snow_depth: 0.15 },
     sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
   };
   const wxForced = (/[?&]wx=([a-z]+)/i.exec(location.search) || [])[1];
@@ -59480,7 +59541,7 @@ float pinOccGate() {
     if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden) return;
     if (wxRetry) { clearTimeout(wxRetry); wxRetry = 0; }
     try {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=snowfall&forecast_hours=12&temperature_unit=fahrenheit',
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation,rain,showers,snowfall,snow_depth,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m&hourly=snowfall&forecast_hours=12&temperature_unit=fahrenheit',
         { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
         .then(r => (r && r.ok ? r.json() : Promise.reject(new Error('http ' + (r && r.status)))))
         .then((js) => { wxOkT = performance.now(); wxBackoff = 60000; applyWx(js); })
@@ -59756,8 +59817,10 @@ float pinOccGate() {
   // wxSetTargets derives from the WMO code; applyLighting reads gloom/flash/fog
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
+  const SNOW_LIES = /[?&]snowlies=1\b/.test(location.search);   // Round 247: the snow lies as long as the feed's depth
+  const smoothstep01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   const WXFX = {
-    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,
+    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, snowFall: 0, tSnowFall: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,
     tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0, tHaze: 1, tHazeTint: 0, tCirrus: 0, cirrusPin: null,   // cirrus: the realism pass two (R5), WX.high or a pin
     storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, boltSoft: false, dayF: 1, boltGap: [2600, 9000],
   };
@@ -59791,13 +59854,19 @@ float pinOccGate() {
     F.tGloom = F.storm ? clamp(0.55 + 0.45 * F.tRain, 0, 1) : 0.5 * F.tRain;
     F.tSnowGround = F.tSnow > 0.02 ? clamp(0.35 + 0.5 * F.tSnow, 0, 0.85) : 0;
     if (WX.temp != null && WX.temp > 38) F.tSnowGround *= 0.25;   // too warm to stick: slush at best
+    // Round 247 (the plan's REALDATA-3, behind ?snowlies=1): the snow lies as long as the feed's depth says it does (today
+    // it left the ground 17 minutes after the last flake). The falling term goes on as it was (tSnowFall) for what only
+    // falling snow whitens: the tree crowns and cards, the sky's milk and the fog's grey, so the day after a storm is a white
+    // city under a clear sky; the roofs, ground, kerbs, ruts, roof kit, cars and the snow's picture take the lying term
+    F.tSnowFall = F.tSnowGround;
+    if (SNOW_LIES && WX.snowDepth != null) F.tSnowGround = Math.max(F.tSnowGround, 0.85 * smoothstep01((WX.snowDepth - 0.01) / 0.05));
     F.tWet = (F.tRain > 0.02 || iceCode) ? clamp(0.35 + 0.65 * F.tRain, 0, 1) : 0;
     F.tHaze = AQI.ok ? AQI.k : 1; F.tHazeTint = AQI.ok ? AQI.tint : 0;   // the air quality rides along (applyAqi)
     F.tCirrus = F.cirrusPin != null ? F.cirrusPin : clamp(WX.high || 0, 0, 1);   // the realism pass two: the high cloud for the dome's cirrus
     if (!F.seeded) {   // first report of the session: land in the ongoing weather, don't fade into it
       F.seeded = true;
       F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail;
-      F.snowGround = F.tSnowGround; F.wet = F.tWet; F.haze = F.tHaze; F.hazeTint = F.tHazeTint; F.cirrus = F.tCirrus;
+      F.snowGround = F.tSnowGround; F.snowFall = F.tSnowFall; F.wet = F.tWet; F.haze = F.tHaze; F.hazeTint = F.tHazeTint; F.cirrus = F.tCirrus;
     }
   }
   // ---- weather on surfaces: snow lies on whatever faces up (roofs, roads,
@@ -59810,7 +59879,7 @@ float pinOccGate() {
   // literal includes), plain-assigned everywhere hookless; water (liquify),
   // vehicles, glass, street text and poles keep their own programs, which
   // also keeps moving things from wearing the weather.
-  const wxSurfU = { uSnowAcc: { value: 0 }, uWet: { value: 0 } };
+  const wxSurfU = { uSnowAcc: { value: 0 }, uSnowFall: { value: 0 }, uWet: { value: 0 } };   // uSnowFall: Round 247, the falling term
   // ground cover for the bare-earth planes: the single pale tone blanketing
   // every block interior and riverside flat read as permanent snow from the
   // air. A two-octave world-space mottle now breaks them into grass and dry
@@ -61753,6 +61822,10 @@ float pinOccGate() {
     const sgTau = F.tSnowGround > F.snowGround ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600);
     F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / sgTau));
     wxSurfU.uSnowAcc.value = F.snowGround;
+    // the falling term eases by the same law; without ?snowlies it is the lying term to the bit
+    if (SNOW_LIES) { const sfTau = F.tSnowFall > F.snowFall ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600); F.snowFall += (F.tSnowFall - F.snowFall) * (1 - Math.exp(-dt / sfTau)); }
+    else F.snowFall = F.snowGround;
+    wxSurfU.uSnowFall.value = F.snowFall;
     snow2Step(F);   // the realism round two: the snow's picture in the bare ground's alley slot while it lies
     wxSurfU.uWet.value = REAL ? F.wet : F.wet * (0.45 + 0.55 * F.dayF);   // the realistic look: a street is as wet by night as by day
     wxFxStep(now, dt);   // the wet city's glints, rings, halos and grade (the realism pass)
@@ -62083,7 +62156,7 @@ float pinOccGate() {
       cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
       ch.lerp(_c2.set(0x525b66).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.62);
     }
-    const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowGround * 0.3);
+    const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowFall * 0.3);   // Round 247: the falling term (lying snow leaves the sky clear)
     if (snowSky > 0.003) {      // snow days read milk, not blue — during the fall and while cover lies
       cz.lerp(_c2.set(0xb6bec8).multiplyScalar(0.15 + 0.85 * dayF), snowSky);
       ch.lerp(_c2.set(0xd6dade).multiplyScalar(0.15 + 0.85 * dayF), snowSky * 0.9);
@@ -62120,7 +62193,7 @@ float pinOccGate() {
     scene.fog.color.copy(ch);
     // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
     const murk = Math.max(WXFX.rain * 0.4, WXFX.snow * 0.6, WXFX.gloom * 0.5);
-    scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4, WXFX.snowGround * 0.3));
+    scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4, WXFX.snowFall * 0.3));
     scene.fog.color.lerp(_c2.set(0xa88a62).multiplyScalar(0.12 + 0.88 * dayF), WXFX.hazeTint * 0.7);   // smoke browns the air itself
     // night air is shorter: the clear-air 16 km let the far ring's lit windows mass into a
     // white band on the horizon (the post target resolves its edges in linear light, where a

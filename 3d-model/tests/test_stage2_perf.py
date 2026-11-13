@@ -92,7 +92,7 @@ class Family(unittest.TestCase):
 
     def test_the_parts(self):
         info = self.out['info']
-        self.assertEqual(sorted(info['parts']), sorted(['dl-lampwash', 'elst-lit', 'esp-night-ground', 'esp-night-wall', 'esp-night-wall-flood',
+        self.assertEqual(sorted(info['parts']), sorted(['dl-lampwash', 'elst-lit', 'esp-night-ground', 'esp-night-wall', 'esp-night-wall-flood', 'gc-flood',
             'rtm-glass', 'rtm-mas', 'rtm-metal', 'rtm-sky', 't30-base', 't30-glass', 't30-lime', 't30-roof', 't30-shed', 't30-trim',
             'ww-apron', 'ww-foam', 'ww-glass', 'ww-wash']))
         self.assertEqual(info['ver'], len(info['parts']))

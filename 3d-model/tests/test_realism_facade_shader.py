@@ -125,7 +125,7 @@ class Clock(unittest.TestCase):
     def run_js(self, body):
         a = SRC.index('  const occU = ')
         block = SRC[a:SRC.index('  const WINDOW_INTERIOR_GLSL = `', a)]
-        js = 'const THREE = require(%s);\nconst REAL = true; const clock = { y: 2026, m: 10, d: 12, minutes: 0 };\n' % json.dumps(str(ROOT / 'three.min.js')) + block + body
+        js = 'const THREE = require(%s);\nconst REAL = true; const clock = { y: 2026, m: 10, d: 12, minutes: 0 };\nconst LIT_FLOORS = false, location = { search: "" };\n' % json.dumps(str(ROOT / 'three.min.js')) + block + body
         r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
