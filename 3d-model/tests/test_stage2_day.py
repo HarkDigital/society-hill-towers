@@ -1,12 +1,12 @@
-"""Stage 2 of the Nov 10 plan, the first view by day (Round 247): three looks behind flags for Mike's first side by side
-of the train, each off by default so the page draws what it did.
+"""Stage 2 of the Nov 10 plan, the first view by day (Round 247): three looks for Mike's first side by side of the train,
+on by default since his pick (Nov 13: "The shader updates look great, wrap that into the next deploy").
 
-- ?roofpick=photo|held (AERIAL-1): a flat cap whose colour is the orthophoto's sample carries a mark in its floor byte
+- ?roofpick=held by default, photo or 0 (AERIAL-1): a flat cap whose colour is the orthophoto's sample carries a mark in its floor byte
   (1, or 2 after the far ring's lift) and takes its kind by that sample; unsampled caps are dealt at the photographs'
   shares; held scales each tier's kinds back to today's mean. Shader text either way, uRoofPick.x the switch.
-- ?farforms=1 (REALDATA-4 step A): pack_city.py packs a merged strip's measured form in codes 5 to 7, read as 4, 1 and 2
-  under the flag and as 0 (the lottery, as before) without it; city.b64 changed in roof words only.
-- ?orbitsh=1 (AERIAL-2 step 1): the far map's switch at 360 m, so the entry orbit is in the near map."""
+- ?farforms=0 refuses (REALDATA-4 step A): pack_city.py packs a merged strip's measured form in codes 5 to 7, read as 4, 1 and 2
+  and as 0 (the lottery) under ?farforms=0; city.b64 changed in roof words only.
+- ?orbitsh=0 refuses (AERIAL-2 step 1): the far map's switch at 360 m, so the entry orbit is in the near map."""
 import math
 from pathlib import Path
 import unittest
@@ -23,9 +23,10 @@ def roof_inv(t):
 
 
 class RoofPick(unittest.TestCase):
-    def test_off_by_default(self):
-        self.assertIn("const ROOF_PICK = (/[?&]roofpick=(photo|held)\\b/.exec(location.search) || [])[1] || '';", SRC)
-        self.assertIn("uRoofPick: { value: new THREE.Vector4(ROOF_PICK ? 1 : 0, 0.0754, 0.211, 0.367) },", SRC)
+    def test_on_by_default_since_mikes_pick(self):
+        self.assertIn("const ROOF_PICK = (/[?&]roofpick=(photo|held|0)\\b/.exec(location.search) || [])[1] || 'held';", SRC)
+        self.assertIn("const ROOF_PICK_ON = REAL && ROOF_PICK !== '0';", SRC)
+        self.assertIn("uRoofPick: { value: new THREE.Vector4(ROOF_PICK_ON ? 1 : 0, 0.0754, 0.211, 0.367) },", SRC)
         self.assertIn("const ROOF_HOLD = ROOF_PICK === 'held' ? [0.739, 0.925] : [1, 1];", SRC)
 
     def test_thresholds_are_the_palettes_bins(self):
@@ -59,8 +60,8 @@ class RoofPick(unittest.TestCase):
 
 
 class FarForms(unittest.TestCase):
-    def test_the_page_reads_them_only_under_the_flag(self):
-        self.assertIn('const FAR_FORMS = /[?&]farforms=1\\b/.test(location.search);', SRC)
+    def test_the_page_reads_them_unless_refused(self):
+        self.assertIn("const FAR_FORMS = !/[?&]farforms=0\\b/.test(location.search);", SRC)
         self.assertIn('const FAR_FORM_OF = [0, 0, 0, 0, 0, 4, 1, 2];', SRC)
         a = SRC.index('      if (rb[1] >= 5) rb[1] = FAR_FORMS ? FAR_FORM_OF[rb[1]] : 0;')
         # remapped before anything reads the form, colStats' keys included
@@ -87,9 +88,9 @@ class FarForms(unittest.TestCase):
 
 
 class OrbitShadows(unittest.TestCase):
-    def test_the_switch_moves_only_under_the_flag(self):
+    def test_the_switch_at_360_unless_refused(self):
         self.assertIn('wideH: 250,', SRC)
-        self.assertIn("if (/[?&]orbitsh=1\\b/.test(location.search)) FARSH.wideH = 360;", SRC)
+        self.assertIn("if (!/[?&]orbitsh=0\\b/.test(location.search)) FARSH.wideH = 360;", SRC)
         # the orbit flies at 318.5 m: the flag's switch, less its 30 m hysteresis, stays over it
         self.assertGreater(360 - 30, 700 * math.cos(1.22) + 78 - 1)
 

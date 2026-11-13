@@ -199,7 +199,8 @@ The first view by day (side-by-side page one): each flat roof takes its kind fro
 its measured roof forms; crisp shadows in the entry orbit.
 On the stage2 branch (Nov 13, not deployed): batch 1 (the program diet's first cuts, the backdrops last, the cloud
 gate), batch 2 (the landmark rebuilds in one program family: 40 programs to 8 at their poses), batch 3 (page one's
-three looks behind flags, off by default: `?roofpick=photo|held`, `?orbitsh=1`, `?farforms=1`; city.b64 changed in
+three looks, on by default since Mike's pick on Nov 13: roofs from the photographs held to today's brightness,
+the entry orbit's sharp shadows, the far ring's measured forms; `?roofpick=0`, `?orbitsh=0`, `?farforms=0` refuse; city.b64 changed in
 roof words only, through `pack_city.py --against`). Page one is published for his picks:
 https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private).
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence

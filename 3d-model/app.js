@@ -3343,7 +3343,7 @@
   // flat rows. It now packs a strip's measured form in the codes no single building uses, 5 flat, 6 gable, 7 hip (the
   // strip's members by area, see strip_form there); the page reads them as 4, 1 and 2 under ?farforms=1 and as 0, the
   // lottery as before, without it, so the default draws exactly what it did. Only roof words changed in city.b64
-  const FAR_FORMS = /[?&]farforms=1\b/.test(location.search);
+  const FAR_FORMS = !/[?&]farforms=0\b/.test(location.search);   // on by default since Mike's pick (Nov 13); ?farforms=0 the lottery
   const FAR_FORM_OF = [0, 0, 0, 0, 0, 4, 1, 2];
   function roofBits(roofW, packed) {
     if (roofW == null || roofW === -1) return [-1, 0, 0];
@@ -5465,7 +5465,7 @@
   // one (0.29 m). At 360 the outer districts' buildings stay in the near map up to the orbit and a little over; the near
   // map then redraws about once a second there with their roofs (Round 188: about 1 ms on an M2 Max). A computer's only:
   // a phone has no far map. JavaScript alone, so it can be turned on later with no compile
-  if (/[?&]orbitsh=1\b/.test(location.search)) FARSH.wideH = 360;
+  if (!/[?&]orbitsh=0\b/.test(location.search)) FARSH.wideH = 360;   // on by default since Mike's pick (Nov 13); ?orbitsh=0 the old 250
   const farRes = (pick) => (pick === 'sharper' ? 4096 : 2048);
   FARSH.can = POST.on && REAL && !LITE && !/[?&]shadowwide=0\b/.test(location.search) && gfxPick() !== 'smoother';
   if (FARSH.can) {
@@ -52591,10 +52591,13 @@ float pinOccGate() {
   // districts and the core; y for the far ring's lifted caps and every unsampled roof), from the replay of today's lottery
   // and the pick over wide.b64's and city.b64's flat sampled roofs by area (devlog Round 247): the kind term's mean goes
   // 0.470 to 0.637 in the outer districts and 0.526 to 0.569 in the far ring, so one scale would open a seam at York Street
-  const ROOF_PICK = (/[?&]roofpick=(photo|held)\b/.exec(location.search) || [])[1] || '';
+  // Mike, Nov 13, on the side by side: "The shader updates look great, wrap that into the next deploy": held by default,
+  // ?roofpick=photo the paler pick, ?roofpick=0 the old lottery
+  const ROOF_PICK = (/[?&]roofpick=(photo|held|0)\b/.exec(location.search) || [])[1] || 'held';
   const ROOF_HOLD = ROOF_PICK === 'held' ? [0.739, 0.925] : [1, 1];
+  const ROOF_PICK_ON = REAL && ROOF_PICK !== '0';
   const roofArtU = { uRoofArt: { value: null }, uRoofOn: { value: 0 }, uRoofM: { value: 8 }, uRoofPad: { value: new THREE.Vector2(0.0625, 0.015625) }, uRoofOwn: { value: 0.75 }, uRoofDbg: { value: 0 },
-    uRoofPick: { value: new THREE.Vector4(ROOF_PICK ? 1 : 0, 0.0754, 0.211, 0.367) }, uRoofHold: { value: new THREE.Vector2(ROOF_HOLD[0], ROOF_HOLD[1]) },
+    uRoofPick: { value: new THREE.Vector4(ROOF_PICK_ON ? 1 : 0, 0.0754, 0.211, 0.367) }, uRoofHold: { value: new THREE.Vector2(ROOF_HOLD[0], ROOF_HOLD[1]) },
     uRoofMean: { value: [new THREE.Vector3(0.1, 0.1, 0.1), new THREE.Vector3(0.3, 0.3, 0.3), new THREE.Vector3(0.6, 0.6, 0.6), new THREE.Vector3(0.3, 0.28, 0.25)] } };
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
     uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 },
