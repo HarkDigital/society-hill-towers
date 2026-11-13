@@ -35,8 +35,12 @@ class CoreRoofs(unittest.TestCase):
         self.assertIn('const CORE_FACADE_GAIN = 0.52, CORE_ROOF_GAIN = ROOF_GAIN, CORE_ROOF_SAT = 1.2;', s)
         self.assertIn('cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);', s)
         self.assertIn('coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);', s)
-        # the roof-only saturation is the core's alone: the tiers' shader source is unchanged
-        self.assertRegex(s, re.escape("satR ? '  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(") + r".*step\(0\.7, n\.y\)\);' : '',")
+        # the roof-only saturation is the core's alone. Since Round 247 (Stage 2's program diet) the gains are each material's
+        # uniform uFabG and the line is in both, the tiers' at 1.0 (mix(L, c, 1.0) is c): one program for both
+        self.assertIn("'  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, uFabG.w), step(0.7, n.y));',", s)
+        self.assertIn('shader.uniforms.uFabG = { value: new THREE.Vector4(gW, gR, sat, satR || 1.0) };', s)
+        self.assertEqual(s.count("customProgramCacheKey = () => 'fabric'"), 2)
+        self.assertNotIn("=> 'fabric-core'", s)
 
 
 if __name__ == '__main__':

@@ -129,7 +129,7 @@ class Wiring(unittest.TestCase):
         b = SRC[SRC.index('  async function build() {'):SRC.index('  build().then(() => {')]
         self.assertIn('    wxHookAll(true);', b[:b.index("bootMark('ready')")])
         self.assertNotIn('wxHookAll(', tail)
-        self.assertIn("    facade(coreMat, 'fabric-core|wx');", SRC)
+        self.assertIn("    facade(coreMat, 'fabric|wx');", SRC)
         self.assertLess(tail.index(call), tail.index('requestAnimationFrame(frame);'))
         self.assertIn('if (window.__dbg) window.__dbg.vdepth = vdepthDbg;', tail)
 

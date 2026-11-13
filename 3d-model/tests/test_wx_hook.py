@@ -66,7 +66,7 @@ const wxSurfacePatch = (sh) => { sh.log.push('wx'); };
 const wxSurfaceLate = (sh) => { sh.log.push('late'); };
 const facadeCity = (sh) => { sh.log.push('facade'); }, facadeCore = (sh) => { sh.log.push('facade-core'); };
 const cityMat = new Mat(); cityMat.onBeforeCompile = facadeCity; cityMat.customProgramCacheKey = () => 'fabric';
-let coreMat = cityMat.clone(); coreMat.onBeforeCompile = facadeCore; coreMat.customProgramCacheKey = () => 'fabric-core';
+let coreMat = cityMat.clone(); coreMat.onBeforeCompile = facadeCore; coreMat.customProgramCacheKey = () => 'fabric';
 HOOK
 const compile = (m) => { const sh = { log: [] }; m.onBeforeCompile(sh, null); return sh.log.join(','); };
 const own = (m) => Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile');
@@ -134,18 +134,18 @@ out.over = PERF.wxHook.over; out.warned = warned.length;
     def test_the_wrappers_and_the_keys_are_the_old_blocks(self):
         r = self.r
         self.assertEqual(r['first'], {'city': 'facade,wx', 'core': 'facade-core,wx', 'surf': 'wx,surf,late', 'ground': 'wx,ground,late', 'plain': 'wx', 'flat': '', 'water': 'water', 'basic': ''})
-        self.assertEqual(r['keys'], {'city': 'fabric|wx', 'core': 'fabric-core|wx', 'surf': True, 'ground': True, 'plain': True, 'water': 'water'})
+        self.assertEqual(r['keys'], {'city': 'fabric|wx', 'core': 'fabric|wx', 'surf': True, 'ground': True, 'plain': True, 'water': 'water'})
         self.assertTrue(r['plainIsThePatch'])            # the bare function, so every plain material shares r149's default key
         self.assertEqual(r['untouched'], [True, True, True])   # a hook of its own, flat shading, not a standard material
         self.assertEqual(r['mats1'], 5)
         # the text itself, once each in the page: the facade's wrapper, the flats' wrapper and key, the bare patch
         f = HOOK
         self.assertIn('m.onBeforeCompile = (sh, r) => { prev(sh, r); wxSurfacePatch(sh); };', f)
-        self.assertIn("facade(cityMat, 'fabric|wx');\n    facade(coreMat, 'fabric-core|wx');", f)
+        self.assertIn("facade(cityMat, 'fabric|wx');\n    facade(coreMat, 'fabric|wx');", f)
         self.assertIn('m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); wxSurfaceLate(sh); };', f)
         self.assertIn("m.customProgramCacheKey = () => 'wx|' + prev.toString();", f)
         self.assertIn("if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;\n        if (m.flatShading) continue;\n        m.onBeforeCompile = wxSurfacePatch;", f)
-        for line in ("facade(cityMat, 'fabric|wx');", "facade(coreMat, 'fabric-core|wx');", "m.customProgramCacheKey = () => 'wx|' + prev.toString();", 'm.onBeforeCompile = wxSurfacePatch;'):
+        for line in ("facade(cityMat, 'fabric|wx');", "m.customProgramCacheKey = () => 'wx|' + prev.toString();", 'm.onBeforeCompile = wxSurfacePatch;'):
             self.assertEqual(SRC.count(line), 1, line)
 
     def test_idempotent(self):

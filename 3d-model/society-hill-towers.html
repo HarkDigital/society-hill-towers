@@ -3397,7 +3397,7 @@ RB.kit = (function () {
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uElN;')
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= uElN;');
         };
-        m.customProgramCacheKey = () => 'elst-' + key;
+        m.customProgramCacheKey = () => 'elst-lit';   // Stage 2's program diet (Round 247): the four lit materials' shaders are one text, each reading its own uElN, so one program serves all four (r149 runs a material's hook even where it finds the program by key)
         return m;
       };
       const mStrip = lit('#fff4de', 2.6, 'lamp', 'strip');          // the LED strips
@@ -9706,7 +9706,11 @@ RB.add({
     renderer.setRenderTarget(postRT);
     AO.copied = false;
     const farDraw = farShadowPre(cam);   // the far shadow map, when its box or the sun has moved (see FARSH)
-    gpuT('scene');
+    // Round 247: the backdrops' order, and its A/B in every other sampled window of the timer (BACKDROP)
+    const oldOrder = GPUT.live && BACKDROP.ab && Math.floor(GPUT.fid / GPUT_EVERY) % 2 === 1;
+    BACKDROP.sky.renderOrder = oldOrder ? 0 : BACKDROP.sky0;
+    if (BACKDROP.apron) BACKDROP.apron.renderOrder = oldOrder ? -1 : BACKDROP.apron0;
+    gpuT(oldOrder ? 'sceneB' : 'scene');
     renderer.render(sc, cam);
     if (farDraw) farShadowPost();
     POST.calls = renderer.info.render.calls; POST.tris = renderer.info.render.triangles;
@@ -13342,6 +13346,18 @@ RB.add({
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(5200, 32, 18), skyMat);
   sky.frustumCulled = false;
+  // Stage 2 (Round 247, the plan's FRAME-2): the two full-screen backdrops draw LAST among the opaques, so the depth test
+  // rejects them wherever the city already stands. The dome writes no depth and sits on the far plane; the apron lies 8 m
+  // under the river beds; neither is coplanar with anything, so the picture is the same sample for sample. Today the sky
+  // drew first (the lowest material id) and the apron at -1 'drawn first': on a GPU with an early depth test and no hidden
+  // surface removal (every desktop GPU but Apple's) the apron's ground program, fifteen samplers and two shadow kernels,
+  // ran under the whole horizon and was then covered. Both stay under 50, the river mirror's sweep line (reflSweep), and
+  // out of the mirror as before. In alternate sampled windows of the GPU timer (BACKDROP.ab) both go back to the old order
+  // and the scene pass is labelled sceneB, so the perf beacons carry both orders from every Chrome desktop. ?backdrop=first
+  // keeps the old order throughout (no A/B)
+  const BACKDROP_FIRST = /[?&]backdrop=first\b/.test(location.search);
+  const BACKDROP = { sky, apron: null, sky0: BACKDROP_FIRST ? 0 : 45, apron0: BACKDROP_FIRST ? -1 : 40, ab: !BACKDROP_FIRST };
+  sky.renderOrder = BACKDROP.sky0;
   scene.add(sky);
 
 
@@ -22669,6 +22685,10 @@ vec2 wRing(vec2 rc, float tt) {
   {
     const facadeHook = (gW, gR, sat, satR) => (shader) => {
       Object.assign(shader.uniforms, roofArtU);   // Round 185: the flat roofs' generated textures
+      // Stage 2's program diet (Round 247): the gains are this material's uniforms, never literals in the text, so the outer city
+      // and the core share one program (they were 'fabric' and 'fabric-core', the largest shader in the page compiled twice):
+      // uFabG = (walls, roofs, saturation, the roofs' saturation, 1 leaving them as they are), uFabR the roofs' own 0.9 of theirs
+      shader.uniforms.uFabG = { value: new THREE.Vector4(gW, gR, sat, satR || 1.0) }; shader.uniforms.uFabR = { value: +(gR * 0.9).toFixed(3) };
       Object.assign(shader.uniforms, wallArtU);   // the realism pass: the walls' and the pitched roofs' materials, the snow
       if (SF_PARTA) Object.assign(shader.uniforms, sfPartU);   // Round 189: the painted shop floors' shopfronts
       shader.uniforms.uFabSnow = wxSurfU.uSnowAcc; shader.uniforms.uFabWet = wxSurfU.uWet;   // the weather, laid after the gains (see below)
@@ -22691,7 +22711,7 @@ vec2 wRing(vec2 rc, float tt) {
           'uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9];',
           'uniform sampler2D uPitchArt; uniform float uPitchOn, uPitchPad, uPitchPx; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];',
           'uniform sampler2D uSnowArt; uniform float uSnowOn, uSnowM; uniform vec3 uSnowMean; uniform vec4 uRoofKindK;',
-          'uniform float uFabSnow, uFabWet; uniform vec4 uFabK;',
+          'uniform float uFabSnow, uFabWet; uniform vec4 uFabK; uniform vec4 uFabG; uniform float uFabR;',
           SF_PARTA ? 'uniform sampler2D uSfArt, uSfMaskA; uniform float uSfOn; uniform vec4 uSfGen[24], uSfGenD;' : '',
           'float fabSnowW = 0.0; vec3 fabRoomDay = vec3(0.0);',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
@@ -22747,10 +22767,10 @@ vec2 wRing(vec2 rc, float tt) {
           // colour (the material has no map) and lays the snow and the wet itself at its end, after the gains and the art.
           // ?real=0 keeps the weather's own colour under the gains, as it was
           ...(REAL ? ['  diffuseColor = vec4(diffuse, opacity);', '#include <color_fragment>'] : []),
-          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + sat.toFixed(2) + ');',
+          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, uFabG.z);',
           '  vec3 n = normalize(vWNorm);',
-          '  diffuseColor.rgb *= mix(' + gW.toFixed(2) + ', ' + gR.toFixed(2) + ', step(0.7, n.y));',
-          satR ? '  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + satR.toFixed(2) + '), step(0.7, n.y));' : '',
+          '  diffuseColor.rgb *= mix(uFabG.x, uFabG.y, step(0.7, n.y));',
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, uFabG.w), step(0.7, n.y));',
           '  float stF = vStyle + 0.5;',
           '  float variantF = floor(stF / 32.0);',
           '  int st = int(stF - variantF * 32.0);',
@@ -22767,7 +22787,7 @@ vec2 wRing(vec2 rc, float tt) {
           '  if (st == 3 && !coping && n.y > 0.35 && n.y < 0.985 && uPitchOn > 0.5) {',
           '    vec2 dn = normalize(n.xz + vec2(1.0e-5, 0.0));',
           '    vec2 pw = vec2(dot(vWPos.xz, vec2(-dn.y, dn.x)), vWPos.y / sqrt(max(1.0 - n.y * n.y, 0.02)));',
-          '    float pGn = mix(' + gW.toFixed(3) + ', ' + gR.toFixed(3) + ', step(0.7, n.y));',
+          '    float pGn = mix(uFabG.x, uFabG.y, step(0.7, n.y));',
           '    vec3 pc = diffuseColor.rgb / pGn;',
           '    float pL = dot(pc, vec3(0.2126, 0.7152, 0.0722)), pMx = max(pc.r, max(pc.g, pc.b));',
           '    float pSat = (pMx - min(pc.r, min(pc.g, pc.b))) / max(pMx, 1.0e-3);',
@@ -22790,7 +22810,7 @@ vec2 wRing(vec2 rc, float tt) {
           '    diffuseColor.rgb *= 0.9 + 0.2 * fract(psd * 5.31);',
           '  } else if (coping) {',
           '    float cps = fract(sin(vBase * 13.1 + vTint * 7.7) * 43758.5453);',
-          '    diffuseColor.rgb = (cps < 0.5 ? vec3(0.62, 0.58, 0.51) : (cps < 0.8 ? vec3(0.50, 0.25, 0.16) : vec3(0.60, 0.61, 0.63))) * ' + gW.toFixed(3) + ';',
+          '    diffuseColor.rgb = (cps < 0.5 ? vec3(0.62, 0.58, 0.51) : (cps < 0.8 ? vec3(0.50, 0.25, 0.16) : vec3(0.60, 0.61, 0.63))) * uFabG.x;',
           '  } else if (n.y > 0.7) {',
           '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
           '    float rn = shtVN(vWPos.xz * 0.9) * 0.6 + shtVN(vWPos.xz * 5.0) * 0.4;',
@@ -22811,7 +22831,7 @@ vec2 wRing(vec2 rc, float tt) {
           // the seed: a house's ground height to the centimetre (a row on one block face shares its wall colour, and so its
           // tint, but no two houses stand at the same base to a centimetre), with the tint
           '      float rsd = fract(sin(vBase * 371.3 + vTint * 91.7) * 43758.5453);',
-          '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + gR.toFixed(3) + ';',
+          '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uFabG.y;',
           '      float rk = rsd < 0.36 ? 1.0 : (rsd < 0.66 ? 0.0 : (rsd < 0.86 ? 2.0 : 3.0));',   // silver, tar, white, gravel
           '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
           // (the realism pass: the gravel at a third of the others' scale, its stones 3 to 8 cm, not the cobbles 8 m made them)
@@ -22841,8 +22861,8 @@ vec2 wRing(vec2 rc, float tt) {
           // roof's own mean, its kind's colour at the same share, so a house keeps its kind at any distance; each kind's
           // albedo spread by uRoofKindK (the means had come out 0.013 to 0.109, a narrow grey band), and a tone a house
           '      float rKk = rk < 0.5 ? uRoofKindK.x : (rk < 1.5 ? uRoofKindK.y : (rk < 2.5 ? uRoofKindK.z : uRoofKindK.w));',
-          '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
-          '      vec3 rFar = mix(diffuseColor.rgb, rMean * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
+          '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * uFabR * rKk, uRoofOwn);',
+          '      vec3 rFar = mix(diffuseColor.rgb, rMean * uFabR * rKk, uRoofOwn);',
           '      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',
           '      if (uRoofDbg > 0.5) { float rD = uRoofDbg > 1.5 ? rv : rk; diffuseColor.rgb = rD < 0.5 ? vec3(0.3, 0.0, 0.0) : (rD < 1.5 ? vec3(0.0, 0.3, 0.0) : (rD < 2.5 ? vec3(0.0, 0.0, 0.3) : vec3(0.3, 0.3, 0.0))); }',   // 1 the kinds, 2 the variants (the realism round two)
           '    }',
@@ -23369,7 +23389,7 @@ vec2 wRing(vec2 rc, float tt) {
           // its own colour; the panels keep their drawn seams over it, the siding its laps
           // (its tile coordinate and gradients ahead of the branch, which the glass's edge splits within a pixel quad)
           ...(WALL_ART_DEV ? [
-            '      float wk = uWallOn > 0.5 ? fabWallKind(st, diffuseColor.rgb / ' + gW.toFixed(3) + ', brickish, wsd) : -1.0;',
+            '      float wk = uWallOn > 0.5 ? fabWallKind(st, diffuseColor.rgb / uFabG.x, brickish, wsd) : -1.0;',
             '      vec2 wT = fabWallT(wk, vec2(uW, v), vTint * 3.1 + vBase * 0.013), wTx = dFdx(wT), wTy = dFdy(wT);',
             '      if (wk > -0.5 && wallM > 0.01) {',
             '        col = fabWallArt(col, wk, wT, wTx, wTy, wallM * (wk > 7.5 ? 0.7 : 1.0) * uFabK.w, wk < 2.5 ? 0.75 : 0.45);',
@@ -23474,7 +23494,7 @@ vec2 wRing(vec2 rc, float tt) {
             '  else if (abs(n.y) < 0.35 && st == 3 && variantF > 1.5 && variantF < 2.5 && uWallOn > 0.5) {',
             '    vec2 dirB = normalize(n.xz + vec2(1.0e-5, 0.0));',
             '    float bsd = fract(sin(vTint * 91.3 + vBase * 17.1) * 43758.5453);',
-            '    float bk = fabWallKind(0, diffuseColor.rgb / ' + gW.toFixed(3) + ', step(diffuseColor.g * 1.12, diffuseColor.r), bsd);',
+            '    float bk = fabWallKind(0, diffuseColor.rgb / uFabG.x, step(diffuseColor.g * 1.12, diffuseColor.r), bsd);',
             '    vec2 bT = fabWallT(bk, vec2(dot(vWPos.xz, vec2(-dirB.y, dirB.x)), v), vTint * 3.1 + vBase * 0.013), bTx = dFdx(bT), bTy = dFdy(bT);',
             '    if (bk > -0.5) diffuseColor.rgb = fabWallArt(diffuseColor.rgb, bk, bT, bTx, bTy, 1.0, bk < 2.5 ? 0.75 : 0.45);',
             '  }',
@@ -23521,7 +23541,7 @@ vec2 wRing(vec2 rc, float tt) {
     coreMat = cityMat.clone();   // r149's clone drops the hook; assigned fresh
     if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
     coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);
-    coreMat.customProgramCacheKey = () => 'fabric-core';
+    coreMat.customProgramCacheKey = () => 'fabric';   // Round 247: one program with the outer city's, its gains its own uniforms
   }
   // the realism pass: the walls' and the pitched roofs' atlases as they decode (wallArtU), the snow the first time it lies
   function wallArtTex(im, aniso) {
@@ -40625,7 +40645,9 @@ if (uOlLamp > 0.001) {
       const apron = new THREE.Mesh(ag, farGroundMat);
       apron.position.set(ax, TERRAIN.bed - 8, az);
       apron.frustumCulled = false;
-      apron.renderOrder = -1;   // drawn first: it is behind everything and never coplanar with anything
+      apron.renderOrder = BACKDROP.apron0;   // Round 247: drawn last among the opaques (BACKDROP): it is behind everything and never coplanar with anything
+      BACKDROP.apron = apron;
+      apron.userData.reflK = 0;   // Round 247: at 40 it is inside the mirror's sweep line; its material (wxSurf) kept it out before, and this names it
       groupCity.add(apron);
     }
     // the Schuylkill's pool between the outer districts' box and the NW hills patch: the
@@ -56598,6 +56620,20 @@ float pinOccGate() {
       k === 6 ? '  if (kn.y > 0.5) { vec2 g = vec2(kp.x / 1.1, kp.z / 1.0); float fr = max(1.0 - smoothstep(0.02, 0.05, abs(fract(g.x) - 0.5) * 2.0 - 0.94), 1.0 - smoothstep(0.02, 0.05, abs(fract(g.y) - 0.5) * 2.0 - 0.94)); float cell = 1.0 - smoothstep(0.0, 0.04, abs(fract(kp.x / 0.157) - 0.5) * 2.0 - 0.94); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 + 0.25 * cell * kd), vec3(0.22, 0.22, 0.23), fr * kd); }' : '',
       '}',
     ].join('\n') : '';
+    // Stage 2's program diet (Round 247): one program for every kind but the deck (eight became two). Each kind's detail is
+    // a branch on its material's uKitKind, uniform across a draw; the deck's (kind 5) stays its own program, since it ends
+    // in a discard that would cost every kind's draws their early depth test. Kinds 3, 4 and 7 draw no detail of their own
+    const KIT_SHARED = (k) => !(REAL && k === 5);
+    const kitDetailShared = () => {
+      if (!REAL) return '';
+      const one = kitDetail(0), head = one.slice(0, one.indexOf('\n')), body = [];
+      for (let k = 0; k < kinds.length; k++) {
+        if (!KIT_SHARED(k)) continue;
+        const d = kitDetail(k), mid = d.slice(d.indexOf('\n') + 1, d.lastIndexOf('\n'));
+        if (mid.trim()) body.push('  if (abs(uKitKind - ' + k.toFixed(1) + ') < 0.5) {\n' + mid + '\n  }');
+      }
+      return [head, ...body, '}'].join('\n');
+    };
     // the realism pass (the review: in snow every coping drew a brown line across the white roofs, since the kit's own
     // hook keeps the weather's re-hook off it): snow on whatever of the kit faces up, at the snowy roofs' own white, and
     // after dark a snowy face glows no more than a snowy roof (a dry one as it always did)
@@ -56605,16 +56641,18 @@ float pinOccGate() {
     for (const [ki, kd] of kinds.entries()) {
       const g = mergeColored(kd.parts);
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: ki === 6 ? 0.35 : 0.75, metalness: 0.1 });
+      const shared = KIT_SHARED(ki);
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uNight = nightUniform;
+        sh.uniforms.uKitKind = { value: ki };
         if (REAL) sh.uniforms.uKitSnow = wxSurfU.uSnowAcc;
         if (REAL) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vKL; varying vec3 vKN;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKL = position; vKN = normal;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;' + (REAL ? '\nvarying vec3 vKL; varying vec3 vKN; uniform float uKitSnow; vec3 kitGlow = vec3(0.0);' : ''))
-          .replace('#include <color_fragment>', '#include <color_fragment>\n' + kitDetail(ki) + (REAL ? '\n' + KIT_SNOW : ''))
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight; uniform float uKitKind;' + (REAL ? '\nvarying vec3 vKL; varying vec3 vKN; uniform float uKitSnow; vec3 kitGlow = vec3(0.0);' : ''))
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + (shared ? kitDetailShared() : kitDetail(ki)) + (REAL ? '\n' + KIT_SNOW : ''))
           .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += ' + (REAL ? 'kitGlow' : 'diffuseColor.rgb') + ' * uNight * ' + ROOF_NIGHT.toFixed(3) + ';');
       };
-      mat.customProgramCacheKey = () => 'roofkit-' + ki + (REAL ? '-real' : '');
+      mat.customProgramCacheKey = () => (shared ? 'roofkit' : 'roofkit-' + ki) + (REAL ? '-real' : '');
       const m = new THREE.InstancedMesh(g, mat, kd.cap);
       m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = !isTouch;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -57720,12 +57758,15 @@ float pinOccGate() {
     // over the light's colour into the HDR target or ACES), frosted grey by day
     const lensMat = (k, day) => {
       const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
+      // Stage 2's program diet (Round 247): the day grey and the night gain are this material's uniform (uLensK), so the
+      // cobras' lens and the lanterns' glass share one program (keyed by their numbers before)
       m.onBeforeCompile = (sh) => {
         sh.uniforms.uLensOn = R.lensOn;
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLensOn;')
-          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(vec3(' + day.toFixed(2) + '), diffuseColor.rgb * ' + k.toFixed(2) + ', uLensOn);');
+        sh.uniforms.uLensK = { value: new THREE.Vector2(day, k) };
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLensOn; uniform vec2 uLensK;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb = mix(vec3(uLensK.x), diffuseColor.rgb * uLensK.y, uLensOn);');
       };
-      m.customProgramCacheKey = () => 'lamp-lens-' + k + '-' + day;
+      m.customProgramCacheKey = () => 'lamp-lens';
       return m;
     };
     R.lens = inst(new THREE.PlaneGeometry(0.5, 0.2).rotateX(Math.PI / 2).translate(POLE_HEAD.arm, POLE_HEAD.y - 0.005, 0), lensMat(4.0, 0.3), 'lamp-lenses');
@@ -60697,6 +60738,8 @@ float pinOccGate() {
   // wind offset as the sky's clouds; the surfaces and the trees darken under it by day
   const cloudShU = { uCloudOff: skyMat.uniforms.uCloudOff, uCloudCov: skyMat.uniforms.uCloud, uCloudSh: { value: 0 }, uCloudSlant: { value: new THREE.Vector2() } };
   function cloudShadowPatch(shader, worldExpr) {
+    // Stage 2 (Round 247, RENDER-4 part 2): cloudShade returns 0 at once where the strength is 0 (every night, uCloudSh being
+    // dayF times the rest): the result was already multiplied by it, so no pixel changes; sixteen hashes leave every lit fragment after dark
     if (shader.fragmentShader.indexOf('float cloudShade(') !== -1) return;   // chained patches each ask for it; once is enough
     shader.uniforms.uCloudOff = cloudShU.uCloudOff; shader.uniforms.uCloudCov = cloudShU.uCloudCov; shader.uniforms.uCloudSh = cloudShU.uCloudSh; shader.uniforms.uCloudSlant = cloudShU.uCloudSlant;
     shader.fragmentShader = shader.fragmentShader
@@ -60704,7 +60747,7 @@ float pinOccGate() {
         'uniform vec2 uCloudOff, uCloudSlant; uniform float uCloudCov, uCloudSh;',
         'float cshh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float cshn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(cshh(i), cshh(i + vec2(1.0, 0.0)), f.x), mix(cshh(i + vec2(0.0, 1.0)), cshh(i + vec2(1.0, 1.0)), f.x), f.y); }',
-        'float cloudShade(vec2 wp){ vec2 cp = (wp + uCloudSlant) * 0.0008 + uCloudOff * 0.8; float f = 0.5 * cshn(cp) + 0.25 * cshn(cp * 2.1 + 13.1) + 0.125 * cshn(cp * 4.3 + 41.7) + 0.0625 * cshn(cp * 8.9 + 7.7); float thr = 0.60 - clamp(uCloudCov, 0.0, 1.0) * 0.40; return ' + (REAL ? 'smoothstep(thr + 0.04, thr + 0.11, f)' : 'smoothstep(thr, thr + 0.14, f)') + ' * uCloudSh; }',
+        'float cloudShade(vec2 wp){ if (uCloudSh <= 0.0) return 0.0; vec2 cp = (wp + uCloudSlant) * 0.0008 + uCloudOff * 0.8; float f = 0.5 * cshn(cp) + 0.25 * cshn(cp * 2.1 + 13.1) + 0.125 * cshn(cp * 4.3 + 41.7) + 0.0625 * cshn(cp * 8.9 + 7.7); float thr = 0.60 - clamp(uCloudCov, 0.0, 1.0) * 0.40; return ' + (REAL ? 'smoothstep(thr + 0.04, thr + 0.11, f)' : 'smoothstep(thr, thr + 0.14, f)') + ' * uCloudSh; }',
         'void main() {',
       ].join('\n'));
     // the realism pass (sky-light#5): a cloud's shadow is the sun's light taken away, not a stain on the albedo (which
@@ -60931,7 +60974,7 @@ float pinOccGate() {
   // flush's render (flushUploads) and once more as build() ends, for what the steps after the last flush made, so a
   // material is wrapped after its creation-time hook and before its first compile, and each program compiles once, in
   // the variant the frames use. What it does, as the block did:
-  //   the facade (cityMat, coreMat): the facade shader first, then the weather, keyed 'fabric|wx' and 'fabric-core|wx';
+  //   the facade (cityMat, coreMat): the facade shader first, then the weather, both keyed 'fabric|wx' since Round 247 (the gains are uniforms);
   //   a flat that carries userData.wxSurf (surfMat, groundSurfMat and any hook built on them): WRAPPED, so the shader
   //     runs the material's own patch first and the snow lands over it (the later replace lands earlier in the shader),
   //     keyed on the wrapped hook (gotcha 15), with the gutters after every hook (wxSurfaceLate);
@@ -60985,7 +61028,7 @@ float pinOccGate() {
       WX_OWN.set(m, { own: prev, laid: m.onBeforeCompile }); H.mats++;
     };
     facade(cityMat, 'fabric|wx');
-    facade(coreMat, 'fabric-core|wx');
+    facade(coreMat, 'fabric|wx');   // Round 247: the core shares the outer city's program (its gains are uniforms)
     const over = last ? new Set() : null;
     scene.traverse((o) => {
       const ms = o.material;

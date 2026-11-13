@@ -57,7 +57,7 @@
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uElN;')
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= uElN;');
         };
-        m.customProgramCacheKey = () => 'elst-' + key;
+        m.customProgramCacheKey = () => 'elst-lit';   // Stage 2's program diet (Round 247): the four lit materials' shaders are one text, each reading its own uElN, so one program serves all four (r149 runs a material's hook even where it finds the program by key)
         return m;
       };
       const mStrip = lit('#fff4de', 2.6, 'lamp', 'strip');          // the LED strips

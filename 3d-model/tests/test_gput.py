@@ -86,8 +86,10 @@ class Gput(unittest.TestCase):
     def test_every_pass_is_labelled(self):
         s = self.s
         post = cut(s, '  function renderPost(sc, cam) {', '\n  }\n')
-        for lab in ('scene', 'ao', 'bloom', 'comp'):
+        for lab in ('ao', 'bloom', 'comp'):
             self.assertIn("gpuT('" + lab + "')", post)
+        # Round 247: the scene pass is 'scene', or 'sceneB' in the sampled windows that draw the backdrops in their old order
+        self.assertIn("gpuT(oldOrder ? 'sceneB' : 'scene');", post)
         self.assertIn("    postSize();\n    gpuPoll();", post)
         self.assertIn("const prev = gpuNow(), lab = FARSH.pending ? 'shadowFar' : 'shadow', c0 = renderer.info.render.calls, t0 = performance.now();\n      if (FARSH.pending) GPUT.sfd++; else GPUT.sdn++;", s)
         refl = cut(s, '  function reflRender(sc, cam) {', '\n  }\n')

@@ -466,7 +466,7 @@ class ProgramRelease(unittest.TestCase):
         for gone in ('onBeforeCompile', 'customProgramCacheKey', '.dispose()'):
             self.assertNotIn(gone, s, gone)
         hook = cut(src, '  function wxHookAll(last) {', '\n  }\n')
-        self.assertIn("facade(cityMat, 'fabric|wx');\n    facade(coreMat, 'fabric-core|wx');", hook)
+        self.assertIn("facade(cityMat, 'fabric|wx');\n    facade(coreMat, 'fabric|wx');", hook)
         self.assertIn("m.customProgramCacheKey = () => 'wx|' + prev.toString();", hook)
         self.assertIn('m.onBeforeCompile = wxSurfacePatch;', hook)
         self.assertNotIn('dispose', hook)
