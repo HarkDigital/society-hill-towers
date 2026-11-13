@@ -197,7 +197,12 @@ Two constraints that produce silent garbage when broken:
   45 s while the page carries on, leaving you unsure which captures are real.
 
 The canvas never includes the HUD or any DOM card. For those, take the pane's own
-screenshot instead, which means the pane has to be visible.
+screenshot instead, which means the pane has to be visible, or run `render.mjs --dom`
+(Round 246), which saves the composited page from headless Chrome: the labels, the
+placards and the cards over the canvas, in device pixels. The event placards come up on
+demand with `__dbg.scoreTest(); __dbg.concertTest()` in a pose's `js`. In zsh pass
+`--touch --w 740 --h 360` literally: an unquoted `$extra` is one argument there, and
+the run silently renders a computer.
 
 ### 7b. Measure pins and flicker instead of eyeballing them
 
