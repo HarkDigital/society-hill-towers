@@ -14661,6 +14661,28 @@ Park up close, computer and phone in landscape, before and after).
   carry no picture, so the concert card's image is not in the set). Checked: no failed step and no console error in any
   of the six runs; zsh does not split an unquoted `$extra`, so pass `--touch --w 740 --h 360` literally.
 
+## Round 247 — Google Analytics switched on for the website (Nov 13)
+
+Mike: "Can we hook up Google Analytics to the philly3d.com site?", then a screenshot of the Google tag's install page
+(container GTM-NL6QL99D, the gtm.js snippet with no config line).
+
+- Round 164's dormant loader takes the measurement ID: `GA_ID = 'G-7VC7EP3YK2'`. The ID was read from the published
+  container itself (`gtm.js?id=GTM-NL6QL99D` names one GA4 destination, G-7VC7EP3YK2), and `gtag/js?id=G-7VC7EP3YK2`
+  serves the same container, so the loader is unchanged: philly3d.com only (ON_SITE), never the app, never a dev or
+  scratch host, Google signals and ad personalization off in the config call. Google's snippet was not pasted into
+  template.html: it would run inside the app, whose privacy manifest and App Store labels declare no analytics.
+  `tests/test_privacy.py` now also holds GA_ID to the G- form, so the GTM- container ID cannot be pasted in its place.
+- The stream's Enhanced measurement came with "page changes based on browser history events" on (`vtp_historyEvents`
+  true in the served gtag.js). updateHash calls `history.replaceState` every 500 ms in flight, so with it on every flight
+  logs a page view twice a second. It is a property setting, not a code one. Switched off at Mike's word (Admin, Data
+  streams, Philly 3D, Enhanced measurement, Page views, advanced settings) before the deploy, and proved in the served
+  gtag.js: with it on the container carries a `__ccd_em_page_view` tag with `"vtp_historyEvents":true`, with it off that
+  tag is gone and the other six enhanced-measurement tags are as they were (the load's page view comes from the config
+  call). `curl -s 'https://www.googletagmanager.com/gtag/js?id=G-7VC7EP3YK2' | grep -c __ccd_em_page_view` must read 0.
+- The property: Google signals off, event data kept 2 months (the shortest); user data was kept 14 months and is 2 months
+  since this round at Mike's word ("Yes, 2 months"), so the privacy policy's "the shortest time Google Analytics allows"
+  holds for both.
+
 ## Round 248 — a new share image: Center City at golden hour (Nov 13)
 
 The link preview (`og.png`, 1200 by 630, the `og:image` and `twitter:image` of every philly3d.com share) was still Round

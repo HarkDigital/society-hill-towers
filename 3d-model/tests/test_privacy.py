@@ -54,6 +54,7 @@ class Privacy(unittest.TestCase):
         self.assertEqual(self.app.count('googletagmanager.com/gtag/js'), 1)
         block = self.app[self.app.index("  const GA_ID = '"):]
         block = block[:block.index("  const beaconSeen")]
+        self.assertRegex(block, r"^  const GA_ID = 'G-[A-Z0-9]{10}';")   # the GA4 measurement ID, never the GTM- container's
         self.assertIn('if (GA_ID && ON_SITE) {', block)
         self.assertIn("allow_google_signals: false, allow_ad_personalization_signals: false", block)
         self.assertIn("const ON_SITE = !IN_APP && /(^|\\.)philly3d\\.com$/.test(location.hostname);", self.app)
