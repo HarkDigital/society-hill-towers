@@ -14660,3 +14660,28 @@ Park up close, computer and phone in landscape, before and after).
   (the canvas alone never carries them). The poses drive `__dbg.scoreTest()` and `__dbg.concertTest()` (the test shows
   carry no picture, so the concert card's image is not in the set). Checked: no failed step and no console error in any
   of the six runs; zsh does not split an unquoted `$extra`, so pass `--touch --w 740 --h 360` literally.
+
+## Round 248 — a new share image: Center City at golden hour (Nov 13)
+
+The link preview (`og.png`, 1200 by 630, the `og:image` and `twitter:image` of every philly3d.com share) was still Round
+38's Aug 26 capture: the pre-realism flat boxes at dusk. A new one, rendered from the model, at Mike's pick of three
+candidates (golden hour, dusk with the windows coming on, a night in Eagles green; he took golden hour).
+
+- The pose: the eye at (-950, 300, -380) over Washington Square West, looking at (-1900, 140, -900), the camera's fov set
+  to 40 (the page's 58 is too wide for a card), June 20, 2026 at 20:24, nine minutes before sunset: the sun sets right
+  behind the Comcast towers, with Liberty Place, City Hall and the PSFS sign in front. Every live layer and label is off
+  (flights, ships, Amtrak, closures, markers, art, stations, events, street and neighbourhood names), traffic and the
+  streetlamps on, `?wx=clear` (8% cloud, the air at Good) and `?lights=off` (the crowns in their own white).
+  `brand/og_pose.json` holds it as a `render.mjs` pose. The render, from a staged copy (the page and `art/`, outside
+  Dropbox): `node .claude/skills/philly3d-capture/scripts/render.mjs --dir <staged 3d-model> --poses brand/og_pose.json
+  --out <dir> --query "dev=1&dpr=1&wx=clear&lights=off&rkcheck=0" --w 2400 --h 1260 --frames 40 --png`, saved as
+  `brand/og_raw.png` (RGB, 3.4 MB), then `python3 brand/make_brand.py og`.
+- What the search found: facing the sun at 19:55 the haze washes the city out to a yellow-green; at 20:52 the dusk is a
+  muddy brown; the front-lit views (the Parkway from over the Art Museum) are flat daylight, since the model's sun warms
+  only in its last minutes. The light reads best in the ten minutes before sunset, looking into it.
+- `make_brand.py`: the lockup is centred at the card's foot (it was at the lower left), so a platform's centre-square
+  crop keeps the whole wordmark with the skyline and City Hall; `make_brand.py og` rebuilds only the share card, leaving
+  the favicons and icons alone (the script reproduces the approved card to the pixel). 873 KB. A 256-colour palette took
+  it to 272 KB but lost the sun and the Liberty Places' blue, so the card stays full colour.
+- `og:image:alt` describes the new picture. The URL is unchanged, so Facebook, iMessage and Slack keep their cached
+  preview until they refetch it (Facebook's Sharing Debugger forces one); a renamed file would change it at once.

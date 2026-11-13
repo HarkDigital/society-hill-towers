@@ -1,0 +1,22 @@
+[
+ {
+  "name": "og_raw",
+  "pos": [
+   -950,
+   300,
+   -380
+  ],
+  "look": [
+   -1900,
+   140,
+   -900
+  ],
+  "clock": [
+   2026,
+   6,
+   20,
+   1224
+  ],
+  "js": "for (const id of ['btnFlights','btnShips','btnAmtrak','btnClosures','btnMarkers','btnArt','btnStations','btnConcerts','btnStreets','btnPlaces','btnLabels','btnStops','btnCivic']) { const el = document.getElementById(id); if (el && el.classList.contains('on')) el.click(); } __dbg.camera.fov = 40; __dbg.camera.updateProjectionMatrix(); 1"
+ }
+]
