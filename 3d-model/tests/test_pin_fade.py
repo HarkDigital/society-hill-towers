@@ -99,7 +99,7 @@ console.log(JSON.stringify({ s, renders, landed }));''')
         self.assertEqual(first + 21, drawn + 1)                      # shown the frame that image lands (LAT 1)
         rise = s[first:first + 14]
         self.assertEqual(rise, sorted(rise))
-        self.assertGreaterEqual(sum(1 for v in rise if 0 < v < 1), 10)   # an ease over 0.2 s, not a snap
+        self.assertGreaterEqual(sum(1 for v in rise if 0 < v < 1), 6)    # an ease over 0.12 s (Round 247; 0.2 before), not a snap
         self.assertEqual(s[-1], 1)
 
     def test_a_covered_answer_hides_at_once(self):
@@ -116,8 +116,9 @@ console.log(JSON.stringify({ s, landed }));''')
         self.assertTrue(all(v == 0 for v in s[k:]))                  # 1 to 0 in one frame
         self.assertLessEqual(k, 2)
 
-    def test_showing_after_covered_needs_two_images_and_the_dwell(self):
-        # covered by the image of frame 30, clear again from the image of frame 32: it waits for two clear images and PIN_DWELL
+    def test_showing_after_covered_needs_the_dwell(self):
+        # covered by the image of frame 30, clear again from the image of frame 32: it waits for one clear image and PIN_DWELL
+        # (Round 247, Mike: the pins flash when flying; Round 169 waited for two images and 0.3 s, ?pinshow=old)
         out = self.run_js('''
 run(30);
 truth = (x, f) => (f >= 30 && f < 32 ? 0 : 1);
@@ -126,7 +127,8 @@ console.log(JSON.stringify({ s }));''')
         s = out['s']
         hid = s.index(0)
         up = next(i for i in range(hid, len(s)) if s[i] > 0)
-        self.assertGreaterEqual(up - hid, 18)                        # PIN_DWELL: 0.3 s at 60 fps, from the covered answer
+        self.assertGreaterEqual(up - hid, 6)                         # PIN_DWELL: 0.1 s at 60 fps, from the covered answer
+        self.assertLessEqual(up - hid, 9)                            # and no longer: a brief cover is a brief absence
         self.assertEqual(s[-1], 1)
 
     def test_one_image_brings_back_a_pin_that_was_only_unknown(self):
@@ -265,8 +267,11 @@ console.log(JSON.stringify({ kinds: f.map((q) => q[1][0]).join(''), reach: PIN_O
         self.assertGreater(out['reach'], 900)
 
     def test_constants_and_wiring(self):
-        self.assertIn('const PIN_FADE = 0.2, PIN_HOLD = 0.45, PIN_DWELL = 0.3;', SRC)
-        self.assertIn('const PIN_OCC_MOVE_EVERY = isTouch ? 2 : 1;', SRC)
+        self.assertIn("const PIN_FADE = typeof location !== 'undefined' && /[?&]pinshow=old\\b/.test(location.search) ? 0.2 : 0.12, PIN_SHOW_OLD = PIN_FADE === 0.2;", SRC)
+        self.assertIn('const PIN_HOLD = 0.45, PIN_DWELL = PIN_SHOW_OLD ? 0.3 : 0.1, PIN_COV_IMGS = PIN_SHOW_OLD ? 2 : 1;', SRC)
+        # Round 247: a phone draws an image every frame while it moves too (?pinmove=2 its old every 2nd); the harness above
+        # keeps 2 for a phone, the cadence rule's own test
+        self.assertIn("const PIN_OCC_MOVE_EVERY = isTouch && typeof location !== 'undefined' && /[?&]pinmove=2\\b/.test(location.search) ? 2 : 1;", SRC)
         self.assertIn('const PIN_OCC_FULL_EVERY = isTouch ? 10 : 1;', SRC)
         self.assertIn('const PIN_OCC_READ_EVERY = isTouch ? 4 : 2;', SRC)   # the reads' synchronous landing, at most this often
         self.assertIn('if (A.sync || frameNo - A.at < PIN_OCC_READ_EVERY) return;', SRC)

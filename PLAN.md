@@ -206,6 +206,11 @@ https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private). Batch 4 (Nov 13): p
 default: `?litfloors=1`, `?frontclock=1`, `?snowlies=1` (with `?wx=snowday`), `?floods=1` (the museum, Independence Hall,
 Founder's Hall). Page two is published for his picks: https://claude.ai/artifact/9ZXdfhaYjJmJGvNS3BfiB1 (private).
 His picks (Nov 13): the fronts' clock, the floods and the lying snow on by default; the lit floors kept off.
+The pins (Nov 13, Mike: flashing when flying): a pin comes back 0.1 s after a cover with a 0.12 s fade (it took about half
+a second), and a phone draws the pins' occlusion image every frame while it moves; in scripted flights no pin shows through a
+building on either path (a phone showed 62 to 98 pin-frames before). The phone's GPU cost of the every-frame image is to be
+read from the beacons after the deploy (`fg`, `gt`).
+The loading screen says Philly3D, with the facts row gone (Mike, Nov 13).
 Left of page two: door lamps and light from shops (STREET-6), the skins' weathering (ART-5 c). Then the straighter day toe
 and `?streetfloor=lit`, and the one deploy.
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence

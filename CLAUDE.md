@@ -100,10 +100,9 @@ before any visual round rather than rediscovering it.
   shader reads the latest images itself (`PIN_GATE`, `PIN_GATE_GLSL`: the packed depth, NEAREST, with each image's own view and projection, the CPU's 3 by 3 rule
   and need exactly) and collapses a pin whose tip is covered, outside the image, past its reach or with no image yet, so no readback latency applies to hiding;
   the CPU's state (`pinOccStep`, `pinOccJudge`) hides at once on a covered answer (no fade, hold or dwell), takes unknown as hidden (a pin coming into view,
-  `pinZone`, waits for an image drawn after its arrival) and shows with the old guard (one image after an unknown; two images or `PIN_HOLD` 0.45 s, and
-  `PIN_DWELL` 0.3 s since the last covered answer, after a covered one) and the 0.2 s fade in (`PIN_FADE`); Round 143's 5 by 5 stay-visible test is gone (it
-  showed pins whose own 3 by 3 was covered); drawing an image is apart from reading it back: while the eye moves an image every drawn frame on a computer and
-  every 2nd on a phone (`PIN_OCC_MOVE_EVERY`), and at once when the newest no longer holds the screen widened 1.25 times (`pinOccCovers`), a still eye that
+  `pinZone`, waits for an image drawn after its arrival) and shows with a guard (one image after an unknown; one image or `PIN_HOLD` 0.45 s, and
+  `PIN_DWELL` 0.1 s since the last covered answer, after a covered one) and the 0.12 s fade in (`PIN_FADE`; Round 247, Mike: "The pins appear to be flashing when flying": a flight's covers are mostly three frames or fewer, and Round 169's two images, 0.3 s and 0.2 s fade turned each into half a second off; `?pinshow=old` keeps them); Round 143's 5 by 5 stay-visible test is gone (it
+  showed pins whose own 3 by 3 was covered); drawing an image is apart from reading it back: while the eye moves an image every drawn frame (`PIN_OCC_MOVE_EVERY`; a phone's every 2nd until Round 247 put every pin it showed through a building in a scripted flight on an image a frame old, `?pinmove=2` keeps it), and at once when the newest no longer holds the screen widened 1.25 times (`pinOccCovers`), a still eye that
   has moved since the newest image drawing one at once, one a stop (the review: a phone stops on a frame that drew none as often as not, and waiting for the
   still cadence showed a fading-in pin through an edge for up to 0.3 s); a pin the half-mile reconcile only moved to another slot keeps its own state
   (`pinOccCarry`: the nearest tip of the frame before within `PIN_CARRY` 30 m, the distance that makes a slot new; the review found up to twenty pins at once

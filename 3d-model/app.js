@@ -55716,7 +55716,11 @@ float pinOccGate() {
   //   tip past A's reach (a flight, a ship, a placard) reads A for what stands within it and B for the rest (occImgBoth):
   //   what stands a kilometre off shifts about a pixel in the frames B is older. A computer draws the complete image every
   //   frame
-  const PIN_OCC_MOVE_EVERY = isTouch ? 2 : 1;   // drawn frames between images while the eye moves or turns
+  // drawn frames between images while the eye moves or turns. Round 247: every frame on a phone too (it was every 2nd): in
+  // a scripted flight over Old City at 30 fps every pin a phone showed through a building (62 to 98 pin-frames a 20 s pass) was
+  // shown from an image a frame old, and each one popped over the edge for a frame and then hid; at every frame, none.
+  // ?pinmove=2 keeps the phone's old cadence
+  const PIN_OCC_MOVE_EVERY = isTouch && typeof location !== 'undefined' && /[?&]pinmove=2\b/.test(location.search) ? 2 : 1;
   const PIN_OCC_FULL_EVERY = isTouch ? 10 : 1;  // drawn frames between complete images while it moves and a tip stands past PIN_NEAR
   // drawn frames between reads issued: the read's landing (getBufferSubData) is a synchronous call that waits while the GPU process
   // catches up with the frame before, 4 to 5 ms of a phone-sized page's main thread in headless Chrome on an M2, so the CPU's state
@@ -56167,7 +56171,14 @@ float pinOccGate() {
   // hiding is at once. A pin's state (pinOccArrays): tgt shown or not; lin its fade; why it is hidden (0 unknown, 2 covered);
   // okC and okT the images and seconds its tip has read clear while hidden; age the seconds since its last covered answer;
   // arr the frame it came into view (an image drawn before then says nothing of it); on whether it is in view
-  const PIN_FADE = 0.2, PIN_HOLD = 0.45, PIN_DWELL = 0.3;
+  // Round 247 (Mike, Nov 13: "The pins appear to be flashing when flying sometimes"): a flight's occlusions are brief (half
+  // of them three frames or fewer at 30 fps: a pin sliding past a building's edge or roofline), and a pin covered for a tenth
+  // of a second stayed hidden for about half of one (two clear images, then 0.3 s since the covered answer, then the 0.2 s
+  // fade), again and again along a flight. Hiding stays at once, and the gate still hides a covered tip the frame its image
+  // is drawn; a pin that was covered now shows on its first clear image once 0.1 s has passed, fading in over 0.12 s.
+  // ?pinshow=old keeps Round 169's guard
+  const PIN_FADE = typeof location !== 'undefined' && /[?&]pinshow=old\b/.test(location.search) ? 0.2 : 0.12, PIN_SHOW_OLD = PIN_FADE === 0.2;
+  const PIN_HOLD = 0.45, PIN_DWELL = PIN_SHOW_OLD ? 0.3 : 0.1, PIN_COV_IMGS = PIN_SHOW_OLD ? 2 : 1;
   function pinOccArrays(cap) {
     return { cap, n: 0, tgt: new Uint8Array(cap), lin: new Float32Array(cap), why: new Uint8Array(cap), okC: new Uint8Array(cap), okT: new Float32Array(cap), age: new Float32Array(cap), arr: new Float64Array(cap), on: new Uint8Array(cap), px: new Float32Array(cap), pz: new Float32Array(cap), t: 0, off: false };
   }
@@ -56186,7 +56197,7 @@ float pinOccGate() {
     if (captured && st.okC[i] < 255) st.okC[i]++;
     st.okT[i] += dt;
     const cov = st.why[i] === 2;
-    if ((st.okC[i] >= (cov ? 2 : 1) || st.okT[i] >= PIN_HOLD) && (!cov || st.age[i] >= PIN_DWELL)) { st.tgt[i] = 1; st.why[i] = 1; st.okC[i] = 0; st.okT[i] = 0; }
+    if ((st.okC[i] >= (cov ? PIN_COV_IMGS : 1) || st.okT[i] >= PIN_HOLD) && (!cov || st.age[i] >= PIN_DWELL)) { st.tgt[i] = 1; st.why[i] = 1; st.okC[i] = 0; st.okT[i] = 0; }
   }
   // a pin's frame: out of view it is hidden; coming into view (or new in its slot) it starts hidden, arrived now; in view it
   // takes the CPU images' answer (ask). Returns nothing: st.tgt and st.lin carry it
