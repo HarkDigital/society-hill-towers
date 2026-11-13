@@ -82,5 +82,38 @@ class Floods(unittest.TestCase):
         self.assertIn('M.col = flood(M.col); M.wall = flood(M.wall);', GC)
 
 
+
+class DoorLamps(unittest.TestCase):
+    """?doorlamps=1 (STREET-6): pools in the near lamp map only, on the splats' own material, no point of light."""
+    def test_off_by_default_and_near_only(self):
+        self.assertIn('const DOOR_LAMPS = REAL && /[?&]doorlamps=1\\b/.test(location.search);', SRC)
+        self.assertIn('r.autoClear = false; if (LAMPDYN.scene && LAMPDYN.n) r.render(LAMPDYN.scene, N.cam);', SRC)
+        far = SRC[SRC.index('  function lampMapUpdate() {'):SRC.index('  const _lmDir = new THREE.Vector3()')]
+        self.assertNotIn('LAMPDYN', far)   # the far map never draws them
+        self.assertIn('D.pts = new THREE.Points(g, LAMPMAP.mat);', SRC)   # no program of its own
+        self.assertNotIn('LAMPMAP.scene.children', SRC)
+
+    def test_the_shops_open_by_the_panels_rule(self):
+        # the CPU's rule is the panels' shader rule (SF_VERT): today's span, last night's running on, the shut weekdays
+        self.assertIn("if (yest >= 0) { const op = Math.floor(yest / 2048), cl = yest - op * 2048; if (cl > 1440 && m <= cl - 1440.5) return true; }", SRC)
+        self.assertIn("'  if (yest >= 0.0) { float o = floor(yest / 2048.0), c = yest - o * 2048.0; if (c > 1440.0) open = max(open, step(m, c - 1440.5)); }',", SRC)
+        self.assertIn('if (sfHrs) sfHrs.set(', SRC)
+
+    def test_doors_only_where_the_picture_has_one(self):
+        self.assertIn('if (LAMPDYN.on && cm.door && hash01(seed * 6.13 + j * 1.31) < 0.6 && dl.n < 2048) {', SRC)
+
+
+class SkinWeather(unittest.TestCase):
+    """?skinwx=1 (ART-5 c): the tile skins' wall share weathers, every term about zero mean, faded by the footprint."""
+    def test_off_by_default_and_mean_held(self):
+        self.assertIn("const SKIN_WX_U = { value: /[?&]skinwx=1\\b/.test(location.search) ? 1 : 0 };", SRC)
+        self.assertIn('sh.uniforms.uSkinWx = SKIN_WX_U;', SRC)
+        line = [l for l in SRC.splitlines() if 'diffuseColor.rgb *= 1.0 + twK * (' in l][0]
+        self.assertIn('(twB - 0.5)', line)       # value noise, mean 0.5
+        self.assertIn('(twS - 0.3875)', line)    # 0.5 x (0.55 + 0.45 x 0.5)
+        self.assertIn('twK = uSkinWx * (1.0 - win)', SRC)   # never the glass
+        self.assertAlmostEqual(0.5 * (0.55 + 0.45 * 0.5), 0.3875)
+
+
 if __name__ == '__main__':
     unittest.main()

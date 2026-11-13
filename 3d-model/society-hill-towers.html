@@ -41995,7 +41995,7 @@ if (uOlLamp > 0.001) {
     const aCell = at(4), aBand = at(4), aDim = at(4), aInfo = at(4), aHours = at(4), aSlot = at(1);
     aSlot.array.fill(-1); aSlot.setUsage(THREE.DynamicDrawUsage);
     const awnWant = [];
-    const M = mesh.instanceMatrix.array, list = new Float32Array(N * 9), names = [];
+    const M = mesh.instanceMatrix.array, list = new Float32Array(N * 9), names = [], sfHrs = DOOR_LAMPS ? new Float32Array(N * 4) : null;
     const gy = (px, pz) => groundMeshY(px, pz) ?? siteY(px, pz, 'ground');
     const byFam = {}, byCls = {};
     let named = 0;
@@ -42033,6 +42033,7 @@ if (uOlLamp > 0.001) {
       // (the hours' fourth float the weekdays it keeps shut, a bit each, Monday the first: the sidecar's seventh value)
       const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, b) => (a < 0 || b < 0 ? -1 : a * 2048 + Math.min(2047, b));
       aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);
+      if (sfHrs) sfHrs.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);   // Round 247: the shops' light (?doorlamps=1)
       const nm = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
       list.set([r.cx + r.nx * face, yS + H * 0.7, r.cz + r.nz * face, r.nx, r.nz, r.w, r.near, nm, k], k * 9);
       byFam[A.fams[r.fam]] = (byFam[A.fams[r.fam]] || 0) + 1; byCls[r.cls] = (byCls[r.cls] || 0) + 1;
@@ -42081,6 +42082,7 @@ if (uOlLamp > 0.001) {
     switched = toShop.size;
     groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere holds every panel: sfInstSphere)
     if (am) { groupCity.add(am); SF.awn.push(am); }
+    SF.hrs = sfHrs;
     SF.mesh = mesh; SF.list = list; SF.names = names; SF.aSlot = aSlot; SF.byFam = byFam; SF.byCls = byCls; SF.named = named;
     SF.cellOf = Int16Array.from(recs, (r) => r.cell); SF.famOf = Uint8Array.from(recs, (r) => r.fam);
     // (the panel's own unit is 16 vertices and stays; its instance streams went at upload above, all but aSfSlot, which the names rewrite)
@@ -56179,6 +56181,15 @@ float pinOccGate() {
   // Round 218: the lite tiers had drawn no near map, so their pools were the far map's 7.8 m wash under every pole
   const LAMPNEAR = { on: REAL, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
   const LAMP_NEAR_EVERY = isTouch ? 250 : 0;
+  // Stage 2 (Round 247, the plan's STREET-6, behind ?doorlamps=1): the night street's small lights, as pools in the near map
+  // only (the far map never sees them): a lamp at about three doors in five of the generated house fronts whose picture has a
+  // door (FRONTS.doors, laid by frontsLay), 2700 K, a 5 m pool on the step and the walk; and the light out of every storefront
+  // open by its own hours (SF.hrs, the panels' own rule), a 6 m pool on the pavement. One small Points of their own on the
+  // splats' material (no program of its own), rewritten when the set changes, which forces the near map's next draw.
+  // No point of light is drawn for them: only their light on the ground and the first storey (Mike's floating orbs, Round 205)
+  const DOOR_LAMPS = REAL && /[?&]doorlamps=1\b/.test(location.search);
+  const SKIN_WX_U = { value: /[?&]skinwx=1\b/.test(location.search) ? 1 : 0 };   // Round 247 (ART-5 c): the tile skins' weathering, below
+  const LAMPDYN = { on: DOOR_LAMPS, cap: 4096, pts: null, scene: null, n: 0, sig: '', doors: 0, shops: 0, min: -1, frGen: -1, at: 0 };
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
   const LAMP_SHOULDER = 0.04;    // the irradiance's shoulder (REAL): only a mast's or a crossing's hot spot is held back, a pool keeps its edge
@@ -57008,6 +57019,19 @@ float pinOccGate() {
               .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= mix(1.0 - 0.3 * tsMask.r * (1.0 - tsBar), 0.6, uSkinF.z);');
             wxSurfacePatch(sh);   // critic gap 8: rain, snow and the clouds' shadows, as on the walls round it
             if (SKIN_GLASS) skinGlassPatch(sh);
+            // Stage 2 (Round 247, the plan's ART-5 c, behind ?skinwx=1, uSkinWx): a tile of about 12 m repeated clean up a whole
+            // tower read as wallpaper. The wall share of the tile (never its glass) takes a broad blotch of its own building,
+            // runs down from each spandrel and a tone a building, every term about zero mean (the tower's colour from afar is
+            // as approved) and faded by the pixel's footprint
+            sh.uniforms.uSkinWx = SKIN_WX_U;
+            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uSkinWx;\nfloat tsVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); float a = fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453), b = fract(sin(dot(i + vec2(1.0, 0.0), vec2(127.1, 311.7))) * 43758.5453), c = fract(sin(dot(i + vec2(0.0, 1.0), vec2(127.1, 311.7))) * 43758.5453), d = fract(sin(dot(i + vec2(1.0, 1.0), vec2(127.1, 311.7))) * 43758.5453); return mix(mix(a, b, f.x), mix(c, d, f.x), f.y); }')
+              .replace('  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, win * uNight); }', [
+                '  if (uSkinWx > 0.001) { vec2 twG = vUv * uSkinG.xy; float twK = uSkinWx * (1.0 - win) * (1.0 - smoothstep(0.3, 1.2, max(fwidth(twG.x), fwidth(twG.y))));',
+                '    float twB = tsVN(twG / vec2(7.0, 5.0) + vSeed * 13.7) * 0.65 + tsVN(twG / vec2(2.3, 1.7) + vSeed * 5.1) * 0.35;',
+                '    float twS = tsVN(vec2(twG.x * 3.1 + vSeed * 7.3, twG.y * 0.35)) * (0.55 + 0.45 * tsVN(vec2(twG.x * 9.7, twG.y * 1.3)));',
+                '    float twT = fract(vSeed * 71.31) - 0.5;',
+                '    diffuseColor.rgb *= 1.0 + twK * (0.36 * (twB - 0.5) - 0.28 * (twS - 0.3875) + 0.10 * twT); }',
+                '  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, win * uNight); }'].join('\n'));
             return;
           }
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
@@ -57475,6 +57499,8 @@ float pinOccGate() {
     };
     let noStreet = 0, laid = 0;
     const want = new Set();
+    const dl = LAMPDYN.on ? (FRONTS.doors || (FRONTS.doors = { a: new Float32Array(4096), n: 0 })) : { a: null, n: 0 };
+    dl.n = 0;
     if (cy < R + 60) {
       const list = [], gx0 = Math.floor(cx / C), gz0 = Math.floor(cz / C), cr = Math.ceil(R / C);
       for (let gx = gx0 - cr; gx <= gx0 + cr; gx++) for (let gz = gz0 - cr; gz <= gz0 + cr; gz++) {
@@ -57547,6 +57573,11 @@ float pinOccGate() {
               porch = true;
             }
           }
+          // Round 247 (?doorlamps=1): a lamp at about three doors in five, its pool 0.6 m out from the door
+          if (LAMPDYN.on && cm.door && hash01(seed * 6.13 + j * 1.31) < 0.6 && dl.n < 2048) {
+            const du = (cm.door[0] + cm.door[2]) / 2 * cw;
+            dl.a[dl.n * 2] = px + rx * du + nx * 0.6; dl.a[dl.n * 2 + 1] = pz + rz * du + nz * 0.6; dl.n++;
+          }
           // a stoop under the door (the realism pass: none, every image paints its own steps, and the doors the bake found
           // put a foam block beside one front in four)
           if (!REAL && cm.door && !porch && gc.stoop < G.stoop.instanceMatrix.count) {
@@ -57578,7 +57609,7 @@ float pinOccGate() {
       FRONTS.perSet[FR_SETS[s]] = Rs.mesh.count;
     });
     for (const k of Object.keys(gc)) { const m = G[k]; if (!m) continue; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
-    FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc;
+    FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc; FRONTS.gen = (FRONTS.gen || 0) + 1;
     let shopWait = false;
     for (const s2 of want) if (FR_SHOPPY.has(s2) && !FRONTS.set[s2].ready) shopWait = true;
     frShopOn.value = shopWait ? 0 : 1;
@@ -60235,7 +60266,55 @@ float pinOccGate() {
   // stretch does not band); mipmapped and anisotropic, so a pool seen edge on from far down the street stays a pool and
   // never crawls. It fades out from 160 to 420 m up, where the far map alone carries the city, and the surfaces blend to
   // the far map on a circle that glides with the eye
+  function lampDynUpdate() {
+    const D = LAMPDYN, N = LAMPNEAR;
+    if (!D.on || !LAMPMAP.mat) return;
+    const minute = Math.floor(clock.minutes), now = performance.now();
+    if (D.pts && minute === D.min && FRONTS.gen === D.frGen && now - D.at < 2000) return;
+    D.min = minute; D.frGen = FRONTS.gen; D.at = now;
+    if (!D.pts) {
+      const g = new THREE.BufferGeometry();
+      for (const [nm, k] of [['position', 3], ['aCol', 3], ['aR', 1]]) g.setAttribute(nm, new THREE.BufferAttribute(new Float32Array(D.cap * k), k).setUsage(THREE.DynamicDrawUsage));
+      g.setDrawRange(0, 0);
+      D.pts = new THREE.Points(g, LAMPMAP.mat); D.pts.frustumCulled = false;
+      D.scene = new THREE.Scene(); D.scene.add(D.pts);
+    }
+    const g = D.pts.geometry, P = g.attributes.position.array, C = g.attributes.aCol.array, R = g.attributes.aR.array;
+    const cx = camera.position.x, cz = camera.position.z, R2 = (N.span * 0.75) ** 2;
+    let n = 0, sig = 0, doors = 0, shops = 0;
+    const add = (x, h, z, r, cr, cg, cb) => { if (n >= D.cap) return; P[n * 3] = x; P[n * 3 + 1] = h; P[n * 3 + 2] = z; C[n * 3] = cr; C[n * 3 + 1] = cg; C[n * 3 + 2] = cb; R[n] = r; sig = (sig * 31 + Math.round(x * 7 + z * 13)) | 0; n++; };
+    const F = FRONTS.doors;
+    if (F) for (let k = 0; k < F.n; k++) { const x = F.a[k * 2], z = F.a[k * 2 + 1]; if ((x - cx) ** 2 + (z - cz) ** 2 > R2) continue; add(x, 2.6, z, 5, 0.7, 0.434, 0.224); doors++; }
+    const L = SF.list, H = SF.hrs;
+    if (L && H) {
+      const m = clock.minutes, dw = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay();
+      for (let k = 0; k < SF.n; k++) {
+        const o = k * 9, x = L[o] + L[o + 3] * 1.4, z = L[o + 2] + L[o + 4] * 1.4;
+        if ((x - cx) ** 2 + (z - cz) ** 2 > R2 || !sfOpenAt(H, k, m, dw)) continue;
+        add(x, 3.2, z, 6, 0.55, 0.46, 0.35); shops++;
+      }
+    }
+    D.doors = doors; D.shops = shops;
+    const sg = n + ':' + sig;
+    if (sg === D.sig) return;
+    D.sig = sg; D.n = n;
+    g.setDrawRange(0, n);
+    for (const a of [g.attributes.position, g.attributes.aCol, g.attributes.aR]) { a.updateRange.offset = 0; a.updateRange.count = n * a.itemSize; a.needsUpdate = true; }
+    N.cx = 1e9;   // the near map draws again at its next turn
+  }
+  // a storefront open now, on the panels' own rule (SF_VERT: today's span, last night's running on, the weekdays it keeps shut)
+  function sfOpenAt(H, k, m, dw) {
+    const o = k * 4, bit = (wd) => wd >= 1 && wd <= 5 && Math.floor(H[o + 3] / 2 ** (wd - 1) + 0.001) % 2 === 1;
+    let today = dw === 0 ? H[o + 2] : (dw === 6 ? H[o + 1] : H[o]), yest = dw === 0 ? H[o + 1] : (dw === 1 ? H[o + 2] : H[o]);
+    const yd = dw === 0 ? 6 : dw - 1;
+    if (dw > 0 && dw < 6 && bit(dw)) today = -1;
+    if (yd > 0 && yd < 6 && bit(yd)) yest = -1;
+    if (today >= 0) { const op = Math.floor(today / 2048), cl = today - op * 2048; if (m >= op && m <= cl - 0.5) return true; }
+    if (yest >= 0) { const op = Math.floor(yest / 2048), cl = yest - op * 2048; if (cl > 1440 && m <= cl - 1440.5) return true; }
+    return false;
+  }
   function lampNearUpdate() {
+    lampDynUpdate();   // Round 247: the door lamps and the shops' light (?doorlamps=1)
     const N = LAMPNEAR, S = N.span, step = S / 16, U = lampMapU;
     const gy = groundMeshY(camera.position.x, camera.position.z), up = camera.position.y - (gy == null || !Number.isFinite(gy) ? 0 : gy);
     const hk = 1 - smooth(160, 420, up);
@@ -60289,7 +60368,8 @@ float pinOccGate() {
     r.getClearColor(_lmCol);
     r.setRenderTarget(N.rt); r.setClearColor(0x000000, 0); r.clear(true, false, false);
     const gprev = gpuNow(); gpuT('lampnear');   // Round 220: the timer's 'lampnear' label, the frames the near map is drawn
-    r.autoClear = false; r.render(LAMPMAP.scene, N.cam); r.autoClear = prevAuto;
+    r.autoClear = false; if (LAMPDYN.scene && LAMPDYN.n) r.render(LAMPDYN.scene, N.cam);   // Round 247: the door lamps and the shops' light (additive: the order is the sum's)
+    r.render(LAMPMAP.scene, N.cam); r.autoClear = prevAuto;
     gpuT(gprev);
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
     mu.uNear.value = 0; mu.uPxPerM.value = LAMPMAP.size / LAMPMAP.span; mu.uStore.value = LAMPMAP.store; mu.uDither.value = 0;
@@ -63889,6 +63969,7 @@ float pinOccGate() {
       cloud: { old: CLOUDZ.old, mode: CLOUDZ.mode, rects: CLOUDZ.n, merged: CLOUDZ.merged, warm: CLOUDZ.warm, box: CLOUDZ.box.toArray(), zVisible: !!(cloudDeckZ && cloudDeckZ.visible), list: CLOUDZ.rects.slice(0, CLOUDZ.n).map((v) => v.toArray()) },
       mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, warmN: MIRZ.warmN || 0, warmP: MIRZ.warmP || 0, warmMs: MIRZ.warmMs || 0 } });   // Round 192: the depth mode, its probe and the deck's programs
     if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
+    if (window.__dbg) window.__dbg.doorLamps = () => ({ on: LAMPDYN.on, n: LAMPDYN.n, doors: LAMPDYN.doors, shops: LAMPDYN.shops, laidDoors: FRONTS.doors ? FRONTS.doors.n : 0, laid: FRONTS.laid, sfHrs: !!SF.hrs, sf: SF.n, nearRenders: LAMPNEAR.renders, nearOn: lampMapU.uLampReal.value.x, lampOn: lampMapU.uLampOn.value, skinWx: SKIN_WX_U.value });   // Round 247
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) Object.assign(window.__dbg, { bankCheck });   // the realism round two (R1): the Schuylkill's banks
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
