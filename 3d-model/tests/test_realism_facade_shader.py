@@ -290,7 +290,7 @@ class RoofKitAndLandmarks(unittest.TestCase):
 
     def test_the_landmarks(self):
         f = fn('landmarkDetail')
-        self.assertIn("if (own) { m.customProgramCacheKey = () => ownKey + '|rbdetail'; return; }", f)
+        self.assertIn("if (own) { m.customProgramCacheKey = () => ownKey.call(m) + '|rbdetail'; return; }", f)   # Round 247: read at each compile (the rebuilds' family keys by its version)
         self.assertIn('m.userData.wxSurf = true;', f)
         self.assertIn('landmarkDetail(mm);', SRC[SRC.index("  step('Rebuilding the landmarks'"):])
 

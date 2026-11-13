@@ -2504,6 +2504,86 @@ RB.kit = (function () {
   };
   K.glass = function (hex) { return K.mat(hex || K.PALETTE.glass, { rough: 0.22, metal: 0.35 }); };
 
+  // ---- the rebuilds' program family (Stage 2's program diet, Round 247). Every rebuild material with a shader hook of its
+  // own (a night wash, the lamp pools, a glass pattern, the dam's foam) joins one program text: each PART (an id, its
+  // uniforms as GLSL declarations, and its code for the hook points) is registered once, every part's code sits in the
+  // shared text behind its own gate on uRbFx, and a material says which part it is through that uniform. So the twenty
+  // programs of six rebuilds are one program for each set of three's own switches (vertex colours, a sided or a detailed
+  // material), and a cold device links two or three where it linked twenty.
+  // The rules: every part reads the family's three varyings (vRbW the world position, vRbN the world normal, vRbUv the uv),
+  // never its own; its code at one hook point is a block of its own (a value carried to a later point is declared in
+  // `main`, at the top of main(), and assigned in the block); its uniforms are declared in `decl` (one name, one type
+  // across the family) and every material is handed every uniform the family declares (an undeclared sampler would keep
+  // another material's unit). The key carries the family's version, so a part registered after a program was linked
+  // makes a new program rather than borrowing one without its code. Parts are registered before the first flush that
+  // draws them ('Rebuilding the landmarks' builds every rebuild, then flushes), so one text serves every load.
+  const FAM = { parts: [], byId: new Map(), uni: new Map(), ver: 0, def: null };
+  const famZero = (type, n) => {
+    const one = () => type === 'float' ? 0 : type === 'vec2' ? new THREE.Vector2() : type === 'vec3' ? new THREE.Vector3() : type === 'vec4' ? new THREE.Vector4() : null;
+    if (!n) return one();
+    const a = []; for (let i = 0; i < n; i++) a.push(one()); return a;
+  };
+  const famDecl = (decl) => {   // 'uniform float a, b; uniform vec4 c[16];' -> [[type, name, n]]
+    const out = [];
+    for (const st of String(decl || '').split(';')) {
+      const m = /^\s*uniform\s+(\w+)\s+(.+?)\s*$/.exec(st);
+      if (!m) { if (st.trim()) throw new Error('K.fam: not a uniform declaration: ' + st.trim()); continue; }
+      for (const v of m[2].split(',')) { const a = /^\s*(\w+)\s*(?:\[\s*(\d+)\s*\])?\s*$/.exec(v); if (!a) throw new Error('K.fam: bad uniform ' + v); out.push([m[1], a[1], a[2] ? +a[2] : 0]); }
+    }
+    return out;
+  };
+  const FAM_POINTS = [['color', '#include <color_fragment>'], ['metal', '#include <metalnessmap_fragment>'], ['light', '#include <lights_fragment_end>'], ['emis', '#include <emissivemap_fragment>']];
+  const famPart = (p) => {
+    const keyOf = (q) => JSON.stringify([q.decl || '', q.common || '', q.main || '', q.color || '', q.metal || '', q.light || '', q.emis || '']);
+    const had = FAM.byId.get(p.id);
+    if (had) { if (keyOf(had) !== keyOf(p)) throw new Error('K.fam: part ' + p.id + ' registered twice with different code'); return had; }
+    for (const [type, name, n] of famDecl(p.decl)) {
+      const u = FAM.uni.get(name);
+      if (u && (u.type !== type || u.n !== n)) throw new Error('K.fam: uniform ' + name + ' is ' + u.type + ' and ' + type);
+      if (!u) FAM.uni.set(name, { type, n });
+    }
+    const q = Object.assign({}, p, { ix: FAM.parts.length + 1 });
+    FAM.parts.push(q); FAM.byId.set(p.id, q); FAM.ver++; FAM.def = null;
+    return q;
+  };
+  const famDefaults = () => {
+    if (FAM.def) return FAM.def;
+    FAM.def = {};
+    for (const [name, u] of FAM.uni) FAM.def[name] = { value: famZero(u.type, u.n) };
+    return FAM.def;
+  };
+  const famText = (sh) => {
+    const gate = (q) => 'if (abs(uRbFx - ' + q.ix + '.0) < 0.5) {';
+    const decls = [];
+    for (const [name, u] of FAM.uni) decls.push('uniform ' + u.type + ' ' + name + (u.n ? '[' + u.n + ']' : '') + ';');
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN; varying vec2 vRbUv;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRbW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRbN = normalize(mat3(modelMatrix) * objectNormal); vRbUv = uv;');
+    let f = sh.fragmentShader.replace('#include <common>', ['#include <common>', 'varying vec3 vRbW; varying vec3 vRbN; varying vec2 vRbUv;', 'uniform float uRbFx;', ...decls,
+      ...new Set(FAM.parts.filter((q) => q.common).map((q) => q.common))].join('\n'));   // a text several parts share (a rebuild's functions) once
+    const mains = [...new Set(FAM.parts.filter((q) => q.main).map((q) => q.main))];
+    if (mains.length) f = f.replace('void main() {', 'void main() {\n' + mains.join('\n'));
+    for (const [pt, inc] of FAM_POINTS) {
+      const blocks = FAM.parts.filter((q) => q[pt]).map((q) => gate(q) + '\n' + q[pt] + '\n}');
+      if (blocks.length) f = f.replace(inc, inc + '\n' + blocks.join('\n'));
+    }
+    sh.fragmentShader = f;
+  };
+  // K.fam(material, part, own): the material joins the family as that part; `own` its own uniform objects (those of its
+  // part's declarations that differ between the part's materials). Returns the material.
+  K.fam = function (m, p, own) {
+    const q = famPart(p), fx = { value: q.ix };
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, famDefaults(), p.uniforms || {}, own || {});
+      sh.uniforms.uRbFx = fx;
+      famText(sh);
+    };
+    m.customProgramCacheKey = () => 'rbfam-' + FAM.ver;
+    m.userData.rbFam = q.id;
+    return m;
+  };
+  K.famInfo = () => ({ ver: FAM.ver, parts: FAM.parts.map((q) => q.id), uniforms: FAM.uni.size });
+
   // ---- builder: merge per material
   K.builder = function () {
     const parts = new Map();
@@ -2909,15 +2989,9 @@ RB.kit = (function () {
       const nightU = { value: 0 }, baseU = { value: base };
       const lampWash = (m) => {
         const c = m.clone();
-        c.onBeforeCompile = (sh) => {
-          sh.uniforms.uNight = nightU; sh.uniforms.uBaseY = baseU;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vWY;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWY; uniform float uNight, uBaseY;')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.7, 0.42) * (uNight * 0.45 * (1.0 - smoothstep(3.0, 16.0, vWY - uBaseY)) + uNight * 0.015);');
-        };
-        c.customProgramCacheKey = () => 'dl-lampwash';
-        return c;
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its height the family's world position
+        return K.fam(c, { id: 'dl-lampwash', decl: 'uniform float uNight, uBaseY', uniforms: { uNight: nightU, uBaseY: baseU },
+          emis: 'totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.7, 0.42) * (uNight * 0.45 * (1.0 - smoothstep(3.0, 16.0, vRbW.y - uBaseY)) + uNight * 0.015);' });
       };
       const mBrick = lampWash(K.mat('#a89a7c'));             // buff roman brick, cleaned in 2016
       const mStone = lampWash(K.mat('#d4cab2'));             // stone: the portals, the belt course, the archivolts
@@ -3392,13 +3466,9 @@ RB.kit = (function () {
       const lit = (hex, k, src, key) => {
         const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(K.stored(hex)), roughness: 0.5, metalness: 0.3, emissive: new THREE.Color(K.stored(hex, 1)), emissiveIntensity: k });
         const U = src === 'night' ? NIGHT : LAMP;
-        m.onBeforeCompile = (sh) => {
-          sh.uniforms.uElN = U;
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uElN;')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= uElN;');
-        };
-        m.customProgramCacheKey = () => 'elst-lit';   // Stage 2's program diet (Round 247): the four lit materials' shaders are one text, each reading its own uElN, so one program serves all four (r149 runs a material's hook even where it finds the program by key)
-        return m;
+        // Stage 2's program diet (Round 247): the four lit materials are one part of the rebuilds' family (K.fam), each reading its
+        // own uElN (r149 runs a material's hook even where it finds the program by key)
+        return K.fam(m, { id: 'elst-lit', decl: 'uniform float uElN', uniforms: { uElN: U }, emis: 'totalEmissiveRadiance *= uElN;' });
       };
       const mStrip = lit('#fff4de', 2.6, 'lamp', 'strip');          // the LED strips
       const mSoffit = lit('#d9dadb', 0.7, 'lamp', 'soffit');        // a roof's underside in their light
@@ -3613,36 +3683,28 @@ RB.kit = (function () {
       function nightPatch(mat, mode, flood) {
         if (!LAMP) return mat;
         const m = mat.clone();
-        m.onBeforeCompile = (sh) => {
-          sh.uniforms.uLampMap = LAMP.uLampMap; sh.uniforms.uLampBox = LAMP.uLampBox; sh.uniforms.uLampOn = LAMP.uLampOn; sh.uniforms.uLampFade = LAMP.uLampFade;
-          sh.vertexShader = sh.vertexShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vEspW; varying vec3 vEspN;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvEspW = (modelMatrix * vec4(transformed, 1.0)).xyz; vEspN = normalize(mat3(modelMatrix) * objectNormal);');
-          const gate = mode === 'ground' ? 'smoothstep(0.35, 0.7, vEspN.y)'
-            : '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vEspN.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - 20.0))';
-          sh.fragmentShader = sh.fragmentShader
-            .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvarying vec3 vEspW; varying vec3 vEspN;\nvoid main() {')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
-              'if (uLampOn > 0.001) {',
-              '  vec3 lwp = vEspW;',
-              '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
-              '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
-              '  float lk = ' + gate + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
-              '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
-              '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
-              flood ? [
-                // ground-mounted floods on the Fairmount front and the two south towers: south faces only, fading upward
-                '  float fFront = step(-2419.0, lwp.x) * step(lwp.x, -2349.0) * smoothstep(-2450.0, -2446.0, lwp.z);',
-                '  float fTw = max(1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2482.45, -2433.85))), 1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2285.6, -2429.0))));',
-                '  float fN = smoothstep(0.25, 0.75, vEspN.z);',
-                '  float fH = mix(1.0, 0.3, smoothstep(0.0, 22.0, lwp.y - 19.5));',
-                '  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.74, 0.46) * (1.6 * uLampOn * max(fFront, fTw) * fN * fH);'
-              ].join('\n') : '',
-              '}'
-            ].join('\n'));
-        };
-        m.customProgramCacheKey = () => 'esp-night-' + mode + (flood ? '-flood' : '');
-        return m;
+        const gate = mode === 'ground' ? 'smoothstep(0.35, 0.7, vRbN.y)'
+          : '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vRbN.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - 20.0))';
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its world position and normal the family's
+        return K.fam(m, { id: 'esp-night-' + mode + (flood ? '-flood' : ''), decl: 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn',
+          uniforms: { uLampMap: LAMP.uLampMap, uLampBox: LAMP.uLampBox, uLampOn: LAMP.uLampOn, uLampFade: LAMP.uLampFade }, emis: [
+            'if (uLampOn > 0.001) {',
+            '  vec3 lwp = vRbW;',
+            '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+            '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+            '  float lk = ' + gate + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+            '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+            '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
+            flood ? [
+              // ground-mounted floods on the Fairmount front and the two south towers: south faces only, fading upward
+              '  float fFront = step(-2419.0, lwp.x) * step(lwp.x, -2349.0) * smoothstep(-2450.0, -2446.0, lwp.z);',
+              '  float fTw = max(1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2482.45, -2433.85))), 1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2285.6, -2429.0))));',
+              '  float fN = smoothstep(0.25, 0.75, vRbN.z);',
+              '  float fH = mix(1.0, 0.3, smoothstep(0.0, 22.0, lwp.y - 19.5));',
+              '  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.74, 0.46) * (1.6 * uLampOn * max(fFront, fTw) * fN * fH);'
+            ].join('\n') : '',
+            '}'
+          ].join('\n') });
       }
       const M = (hex, o, mode, flood) => nightPatch(K.mat(hex, o), mode || 'wall', flood);
 
@@ -5322,36 +5384,29 @@ RB.kit = (function () {
       // 'lamp' the Round 140/146 street-lamp pools on the lower storeys (lampLightPatch's 'wall' gate), 'glow' a
       // fixed colour after dark, 'panes' the lit windows (uv.x = level, uv.y = tint, warm lamp to cool office)
       const hook = (mat, o, key) => {
-        mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uNight = U.night; sh.uniforms.uRtmBase = U.base;
-          sh.uniforms.uLampMap = U.lampMap; sh.uniforms.uLampBox = U.lampBox; sh.uniforms.uLampOn = U.lampOn; sh.uniforms.uLampFade = U.lampFade;
-          if (o.panes) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vPane;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPane = uv;');
-          const code = ['{', 'vec3 lwp = cameraPosition - vViewPosition * mat3(viewMatrix);', 'vec3 wn = inverseTransformDirection(normal, viewMatrix);'];
-          if (o.roof) code.push('totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.3 * smoothstep(0.35, 0.75, wn.y);');
-          if (o.lamp) code.push(
-            'if (uLampOn > 0.001) {',
-            '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
-            '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
-            '  float lk = 0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(wn.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - uRtmBase)) * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
-            '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
-            '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
-            '}');
-          if (o.glow) code.push('totalEmissiveRadiance += vec3(' + o.glow.map((c) => c.toFixed(3)).join(', ') + ') * uNight;');
-          if (o.panes) code.push(
-            'float pLvl = floor(vPane.x + 0.0005) / 100.0, pTn = fract(vPane.x + 0.0005);',
-            'if (uNight > 0.001 && pLvl > 0.001) {',
-            '  vec3 tint = pTn < 0.5 ? mix(vec3(1.0, 0.60, 0.31), vec3(1.0, 0.83, 0.59), pTn * 2.0) : mix(vec3(1.0, 0.86, 0.66), vec3(0.80, 0.88, 1.0), pTn * 2.0 - 1.0);',
-            // a room's light: brighter toward the ceiling, a soft band under it (the app's office wash, simplified)
-            '  float py = vPane.y, pc = (py - 0.84) * 4.3, wash = 0.50 + 0.30 * smoothstep(0.03, 0.85, py) + 0.30 * exp(-pc * pc);',
-            '  totalEmissiveRadiance += tint * pLvl * wash * uNight * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));',
-            '}');
-          code.push('}');
-          sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uNight, uRtmBase, uLampOn; uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade;' + (o.panes ? '\nvarying vec2 vPane;' : ''))
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + code.join('\n'));
-        };
-        mat.customProgramCacheKey = () => 'rtm-' + key;
-        return mat;
+        const code = ['{', 'vec3 lwp = cameraPosition - vViewPosition * mat3(viewMatrix);', 'vec3 wn = inverseTransformDirection(normal, viewMatrix);'];
+        if (o.roof) code.push('totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.3 * smoothstep(0.35, 0.75, wn.y);');
+        if (o.lamp) code.push(
+          'if (uLampOn > 0.001) {',
+          '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+          '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+          '  float lk = 0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(wn.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - uRtmBase)) * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+          '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+          '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
+          '}');
+        if (o.glow) code.push('totalEmissiveRadiance += vec3(' + o.glow.map((c) => c.toFixed(3)).join(', ') + ') * uNight;');
+        if (o.panes) code.push(
+          'float pLvl = floor(vRbUv.x + 0.0005) / 100.0, pTn = fract(vRbUv.x + 0.0005);',
+          'if (uNight > 0.001 && pLvl > 0.001) {',
+          '  vec3 tint = pTn < 0.5 ? mix(vec3(1.0, 0.60, 0.31), vec3(1.0, 0.83, 0.59), pTn * 2.0) : mix(vec3(1.0, 0.86, 0.66), vec3(0.80, 0.88, 1.0), pTn * 2.0 - 1.0);',
+          // a room's light: brighter toward the ceiling, a soft band under it (the app's office wash, simplified)
+          '  float py = vRbUv.y, pc = (py - 0.84) * 4.3, wash = 0.50 + 0.30 * smoothstep(0.03, 0.85, py) + 0.30 * exp(-pc * pc);',
+          '  totalEmissiveRadiance += tint * pLvl * wash * uNight * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));',
+          '}');
+        code.push('}');
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), the panes' uv the family's vRbUv
+        return K.fam(mat, { id: 'rtm-' + key, decl: 'uniform float uNight, uRtmBase, uLampOn; uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade',
+          uniforms: { uNight: U.night, uRtmBase: U.base, uLampMap: U.lampMap, uLampBox: U.lampBox, uLampOn: U.lampOn, uLampFade: U.lampFade }, emis: code.join('\n') });
       };
 
       // ---- materials. The masonry and painted walls are one vertex-coloured material (photo colours, converted by
@@ -6153,11 +6208,9 @@ RB.kit = (function () {
       const SASH = lin('#6f8a7c');                                      // green-grey steel sash (r8, r3 photos)
       const WHITE = lin('#d6d6d0'), PLANT = lin('#8a9096');
       const F_COMMON = [
-        'uniform float uNight;',
-        'varying vec3 vWP; varying vec3 vWN; varying vec2 vDat;',
         'float t30h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
         'vec2 t30loc(vec3 p) { vec2 d = p.xz - vec2(' + fl(OX) + ', ' + fl(OZ) + '); return vec2(d.x * ' + fl(C) + ' + d.y * ' + fl(S) + ', -d.x * ' + fl(S) + ' + d.y * ' + fl(C) + '); }',
-        'float t30kind() { return floor(vDat.x / 4.0 + 0.0001); }',
+        'float t30kind() { return floor(vRbUv.x / 4.0 + 0.0001); }',
         // the floodlight's reach over a surface: every wall and soffit, never a roof (the portico floors a little); the porticos (east of the east
         // concourse wall, west of the west one) and the pavilion above the wings take it whole, the wings a little
         // less, the upper level's base a glimmer
@@ -6171,34 +6224,23 @@ RB.kit = (function () {
         '  return ' + v3(FLOOD) + ' * (w * mix(0.85, 1.0, clamp(yy / 35.5, 0.0, 1.0)) * face);',
         '}'
       ].join('\n');
-      const VERT = (sh) => {
-        sh.uniforms.uNight = NIGHT;
-        sh.vertexShader = sh.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec3 vWP; varying vec3 vWN; varying vec2 vDat;')
-          .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * objectNormal); vDat = uv;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + F_COMMON);
-      };
-      const FLOOD_GLSL = '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse += diffuseColor.rgb * t30flood(vWP, normalize(vWN)) * (uNight * ' + fl(FLOOD_K) + ');';
+      const FLOOD_GLSL = 'reflectedLight.indirectDiffuse += diffuseColor.rgb * t30flood(vRbW, normalize(vRbN)) * (uNight * ' + fl(FLOOD_K) + ');';
       const mk = (name, hex, o, colorCode, lightCode, emisCode) => {
         const m = new THREE.MeshStandardMaterial({ color: lin(hex), roughness: o.rough == null ? 0.85 : o.rough, metalness: o.metal || 0 });
-        m.onBeforeCompile = (sh) => {
-          VERT(sh);
-          if (colorCode) sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + colorCode);
-          if (lightCode) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', lightCode);
-          if (emisCode) sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + emisCode);
-        };
-        m.customProgramCacheKey = () => 't30-' + name;
-        return m;
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its world position, normal and part data
+        // the family's vRbW, vRbN and vRbUv; the glass's room light reaches the emissive point through t30Glow and t30Hall
+        return K.fam(m, { id: 't30-' + name, decl: 'uniform float uNight', uniforms: { uNight: NIGHT }, common: F_COMMON,
+          main: emisCode ? 'float t30Glow = 0.0, t30Hall = 0.0;' : '', color: colorCode || '', light: lightCode || '', emis: emisCode || '' });
       };
       // Alabama limestone walls in coursed ashlar: 0.62 m courses, 1.55 m blocks broken on alternate courses, a faint
       // tone per block; the joints keep their average when they shrink under a pixel and fade out below 2.5 px a course
       const JOINTS = [
-        'vec3 jn = normalize(vWN);',
+        'vec3 jn = normalize(vRbN);',
         'if (abs(jn.y) < 0.5) {',
-        '  vec2 jl = t30loc(vWP);',
+        '  vec2 jl = t30loc(vRbW);',
         '  vec2 jd = vec2(jn.x * ' + fl(C) + ' + jn.z * ' + fl(S) + ', -jn.x * ' + fl(S) + ' + jn.z * ' + fl(C) + ');',
         '  float jh = abs(jd.x) > abs(jd.y) ? jl.y : jl.x;',
-        '  float jy = vWP.y - ' + fl(B) + ';',
+        '  float jy = vRbW.y - ' + fl(B) + ';',
         '  float jrow = floor(jy / 0.62);',
         '  float jcx = jh / 1.55 + 0.5 * mod(jrow, 2.0);',
         '  float dy = abs(fract(jy / 0.62 + 0.5) - 0.5) * 0.62, dx = abs(fract(jcx + 0.5) - 0.5) * 1.55;',
@@ -6215,19 +6257,19 @@ RB.kit = (function () {
       const TRIMFLAG = 'float t30tk = t30kind(); if (abs(t30tk - 1.0) < 0.5) diffuseColor.rgb *= 0.85; else if (abs(t30tk - 2.0) < 0.5) diffuseColor.rgb *= 0.66;';
       // glass: the steel sash as a pattern (cells per kind), a little tone per pane; after dark the rooms light
       const GLASS = [
-        'float gk = t30kind(); float gA = floor((vDat.y + 0.001) / 2.0);',
-        'vec2 g01 = vec2(vDat.x - gk * 4.0, vDat.y - gA * 2.0);',
-        'vec2 gcell = vec2(0.0); float gst = 1.0, gglw = 0.0, grm = 0.0, ghall = 0.0;',
+        'float gk = t30kind(); float gA = floor((vRbUv.y + 0.001) / 2.0);',
+        'vec2 g01 = vec2(vRbUv.x - gk * 4.0, vRbUv.y - gA * 2.0);',
+        'vec2 gcell = vec2(0.0); float gst = 1.0, gglw = 0.0, grm = 0.0;',
         'if (abs(gk - 1.0) < 0.5) { gcell = vec2(6.0, 12.0); gst = 4.0; grm = 1.0; }',          // wing bay, three storeys and the ground-floor mezzanine
         'else if (abs(gk - 2.0) < 0.5) { gcell = vec2(4.0, 3.0); grm = 1.0; }',                          // ground-floor window
         'else if (abs(gk - 3.0) < 0.5) { gcell = vec2(2.0, 3.0); grm = 1.0; }',                          // court and attic lights
-        'else if (abs(gk - 4.0) < 0.5) { gcell = vec2(5.0, 14.0); gglw = 0.42; ghall = 1.0; }',            // portico rear-wall window
-        'else if (abs(gk - 5.0) < 0.5) { gcell = vec2(4.0, 10.0); gglw = 0.55; ghall = 1.0; }',            // concourse clerestory
+        'else if (abs(gk - 4.0) < 0.5) { gcell = vec2(5.0, 14.0); gglw = 0.42; t30Hall = 1.0; }',            // portico rear-wall window
+        'else if (abs(gk - 5.0) < 0.5) { gcell = vec2(4.0, 10.0); gglw = 0.55; t30Hall = 1.0; }',            // concourse clerestory
         'else if (abs(gk - 6.0) < 0.5) { gcell = vec2(max(gA, 1.0), 3.0); gglw = 0.3; }',                  // upper-level side glazing
         'else if (abs(gk - 7.0) < 0.5) { gcell = vec2(4.0, 12.0); gst = 4.0; grm = 1.0; }',          // corner pavilion window
         'else if (abs(gk - 8.0) < 0.5) { gcell = vec2(4.0, 5.0); gglw = 0.5; }',                           // north waiting room
         'else if (abs(gk - 9.0) < 0.5) { gcell = vec2(max(gA, 1.0), 2.0); gglw = 0.35; }',                 // monitors, skylight
-        'else if (abs(gk - 10.0) < 0.5) { gcell = vec2(3.0, 4.0); gglw = 1.0; ghall = 1.0; }',             // bronze-framed doors
+        'else if (abs(gk - 10.0) < 0.5) { gcell = vec2(3.0, 4.0); gglw = 1.0; t30Hall = 1.0; }',             // bronze-framed doors
         'float gbar = 0.0;',
         'if (gcell.x > 0.0) {',
         '  vec2 q = g01 * gcell; vec2 dd = abs(fract(q + 0.5) - 0.5);',
@@ -6239,9 +6281,9 @@ RB.kit = (function () {
         '}',
         'float groom = 0.0;',
         'if (grm > 0.5) { float st = floor(clamp(g01.y, 0.0, 0.999) * gst); groom = step(' + fl(1 - LIT) + ', t30h(vec2(gA, st + 3.0))) * (0.65 + 0.7 * t30h(vec2(st + 5.0, gA + 11.0))); }',
-        'float gglow = max(groom, gglw) * (1.0 - gbar);'
+        't30Glow = max(groom, gglw) * (1.0 - gbar);'
       ].join('\n');
-      const GLASS_EMIS = 'totalEmissiveRadiance += (ghall > 0.5 ? ' + v3(HALL) + ' * ' + fl(HALL_K) + ' : ' + v3(ROOM) + ' * ' + fl(ROOM_K) + ') * gglow * uNight;';
+      const GLASS_EMIS = 'totalEmissiveRadiance += (t30Hall > 0.5 ? ' + v3(HALL) + ' * ' + fl(HALL_K) + ' : ' + v3(ROOM) + ' * ' + fl(ROOM_K) + ') * t30Glow * uNight;';
 
       const mLime = mk('lime', '#aba395', {}, JOINTS, FLOOD_GLSL);            // Alabama limestone walls (photo mean, r3/r6)
       const mTrim = mk('trim', '#b8b0a2', {}, TRIMFLAG, FLOOD_GLSL);          // columns, cornices, caps, a shade fresher
@@ -7142,62 +7184,43 @@ RB.add({
       uWash: { value: new THREE.Color(K.stored('#ffe2b8', 1)) }, uPoolCol: { value: new THREE.Color(K.stored('#ffcf8a', 1)) },
       uX0: { value: G[0] - 9 }, uX1: { value: -3272 }   // the floodlit stretch: the gazebo to the Engine House (not the dam, not the hill)
     };
-    const WASH_GLSL = '#include <emissivemap_fragment>\n{\n' +
-      '  float yb = vWwPos.y < uT - 0.3 ? uW : uT;\n' +                         // the river front is lit from the water, the rest from the terrace
-      '  float up = clamp(1.25 - (vWwPos.y - yb) / 10.0, 0.4, 1.25);\n' +     // uplight: brightest at the foot of the wall
-      '  float side = (1.0 - 0.7 * max(vWwN.y, 0.0)) * step(uX0, vWwPos.x) * step(vWwPos.x, uX1);\n' +   // floodlights hit walls, not floors
+    // Stage 2's program diet (Round 247): the wash, the glass and the foam are parts of the rebuilds' family (K.fam), their
+    // world position, normal and uv the family's vRbW, vRbN and vRbUv
+    const WASH_GLSL = '{\n' +
+      '  float yb = vRbW.y < uT - 0.3 ? uW : uT;\n' +                         // the river front is lit from the water, the rest from the terrace
+      '  float up = clamp(1.25 - (vRbW.y - yb) / 10.0, 0.4, 1.25);\n' +     // uplight: brightest at the foot of the wall
+      '  float side = (1.0 - 0.7 * max(vRbN.y, 0.0)) * step(uX0, vRbW.x) * step(vRbW.x, uX1);\n' +   // floodlights hit walls, not floors
       '  vec3 pool = vec3(0.0);\n' +
-      '  for (int i = 0; i < 16; i++) { vec4 L = uLamps[i]; if (L.w <= 0.0) continue; vec3 dd = vWwPos - L.xyz; pool += exp(-dot(dd, dd) / (L.w * L.w)); }\n' +
+      '  for (int i = 0; i < 16; i++) { vec4 L = uLamps[i]; if (L.w <= 0.0) continue; vec3 dd = vRbW - L.xyz; pool += exp(-dot(dd, dd) / (L.w * L.w)); }\n' +
       '  totalEmissiveRadiance += uLamp * diffuseColor.rgb * (uWash * uWashK * up * side + uPoolCol * uPoolK * pool);\n}';
     function washPatch(m, k, poolK) {
       const own = { uWashK: { value: k }, uPoolK: { value: poolK } };
-      m.onBeforeCompile = (sh) => {
-        Object.assign(sh.uniforms, U, own);
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWwPos, vWwN;')
-          .replace('#include <project_vertex>', '#include <project_vertex>\nvWwPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWwN = normalize(mat3(modelMatrix) * objectNormal);');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWwPos, vWwN;\nuniform float uLamp, uT, uW, uWashK, uPoolK, uX0, uX1;\nuniform vec3 uWash, uPoolCol;\nuniform vec4 uLamps[16];')
-          .replace('#include <emissivemap_fragment>', WASH_GLSL);
-      };
-      m.customProgramCacheKey = () => 'ww-wash-3';
+      K.fam(m, { id: 'ww-wash', decl: 'uniform float uLamp, uT, uW, uWashK, uPoolK, uX0, uX1; uniform vec3 uWash, uPoolCol; uniform vec4 uLamps[16]', uniforms: U, emis: WASH_GLSL }, own);
     }
     washPatch(mStucco, 1.6, 2.5); washPatch(mTrim, 1.7, 2.5); washPatch(mStone, 1.3, 2.5); washPatch(mStoneDk, 0.9, 2.5); washPatch(mBrick, 0.5, 3.0);
-    mGlass.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, { uLamp: LAMP, uGlowCol: { value: new THREE.Color(K.stored('#ffc98a', 1)) }, uIron: { value: new THREE.Color(K.stored('#3e3a33')) } });
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWwF;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWwF = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWwF;\nuniform float uLamp;\nuniform vec3 uGlowCol, uIron;')
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nif (vWwF.y > 0.5) { diffuseColor.rgb = uIron; metalnessFactor = 0.05; roughnessFactor = 0.9; }')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uGlowCol * vWwF.x * uLamp;');
-    };
-    mGlass.customProgramCacheKey = () => 'ww-glass-2';
+    K.fam(mGlass, { id: 'ww-glass', decl: 'uniform float uLamp; uniform vec3 uGlowCol, uIron',
+      uniforms: { uLamp: LAMP, uGlowCol: { value: new THREE.Color(K.stored('#ffc98a', 1)) }, uIron: { value: new THREE.Color(K.stored('#3e3a33')) } },
+      metal: 'if (vRbUv.y > 0.5) { diffuseColor.rgb = uIron; metalnessFactor = 0.05; roughnessFactor = 0.9; }',
+      emis: 'totalEmissiveRadiance += uGlowCol * vRbUv.x * uLamp;' });
     // the white water: streaks tumbling down the face (uv: metres along the crest, metres down), the generated foam when the
     // app has it, value noise otherwise; on the apron the same streaks drift downstream and thin out over 30 m
-    const FOAM_GLSL = 'uniform float uLamp, uTimeF, uFoamOn, uFoamM;\nuniform sampler2D tFoamF;\nvarying vec2 vFoamUv;\n' +
-      'float fh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
+    const FOAM_DECL = 'uniform float uLamp, uTimeF, uFoamOn, uFoamM; uniform sampler2D tFoamF';
+    const FOAM_GLSL = 'float fh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
       'float fn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(fh(i), fh(i + vec2(1.0, 0.0)), u.x), mix(fh(i + vec2(0.0, 1.0)), fh(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
       'float foamAt(vec2 uv, float flow) {\n' +
       '  float n = fn(vec2(uv.x * 0.7, uv.y * 0.18 - uTimeF * flow)) * 0.6 + fn(vec2(uv.x * 2.3, uv.y * 0.5 - uTimeF * flow * 1.7)) * 0.4;\n' +
       '  if (uFoamOn > 0.5) n = 0.35 * n + 0.65 * smoothstep(0.08, 0.5, dot(texture2D(tFoamF, vec2(uv.x, uv.y - uTimeF * flow * 2.0) / uFoamM).rgb, vec3(0.3, 0.59, 0.11)));\n' +
       '  return n;\n}\n';
     const foamPatch = (m, apron) => {
-      m.onBeforeCompile = (sh) => {
-        Object.assign(sh.uniforms, { uLamp: LAMP, uTimeF: TIME, uFoamOn: FOAM.on, uFoamM: FOAM.m, tFoamF: FOAM.tex });
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoamUv;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFoamUv = uv;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FOAM_GLSL)
-          .replace('#include <color_fragment>', '#include <color_fragment>\n' + (apron
-            ? '{ float a = foamAt(vFoamUv, 0.9); float t = vFoamUv.y / 30.0; diffuseColor.a *= smoothstep(0.32, 0.78, a + 0.45 * (1.0 - t)) * (1.0 - smoothstep(0.1, 1.0, t)) * 0.95; }\n'
-            : '{ float a = foamAt(vFoamUv, 1.7); diffuseColor.rgb = mix(vec3(0.05, 0.065, 0.05), diffuseColor.rgb, smoothstep(0.3, 0.65, a + 0.25 * smoothstep(0.0, 2.5, vFoamUv.y))); }\n') +
-            'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
-      };
-      m.customProgramCacheKey = () => apron ? 'ww-apron-1' : 'ww-foam-3';
+      K.fam(m, { id: apron ? 'ww-apron' : 'ww-foam', decl: FOAM_DECL, uniforms: { uLamp: LAMP, uTimeF: TIME, uFoamOn: FOAM.on, uFoamM: FOAM.m, tFoamF: FOAM.tex }, common: FOAM_GLSL,
+        color: (apron
+            ? '{ float a = foamAt(vRbUv, 0.9); float t = vRbUv.y / 30.0; diffuseColor.a *= smoothstep(0.32, 0.78, a + 0.45 * (1.0 - t)) * (1.0 - smoothstep(0.1, 1.0, t)) * 0.95; }\n'
+            : '{ float a = foamAt(vRbUv, 1.7); diffuseColor.rgb = mix(vec3(0.05, 0.065, 0.05), diffuseColor.rgb, smoothstep(0.3, 0.65, a + 0.25 * smoothstep(0.0, 2.5, vRbUv.y))); }\n') +
+          'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;' });
     };
     if (app && FOAM) { foamPatch(mFoam, false); foamPatch(mApron, true); }
     else {
-      mFoam.onBeforeCompile = (sh) => {
-        sh.uniforms.uLamp = LAMP;
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp;')
-          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
-      };
-      mFoam.customProgramCacheKey = () => 'ww-foam-2';
+      K.fam(mFoam, { id: 'ww-foam-plain', decl: 'uniform float uLamp', uniforms: { uLamp: LAMP }, color: 'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;' });
     }
 
     const grp = B.done();
@@ -23580,8 +23603,12 @@ vec2 wRing(vec2 rc, float tt) {
   // kind by the material's own colour (K.mat stores the photo's colour): brick, limestone and brownstone, marble, granite,
   // render, concrete, or none (glass, metal, slate, copper, paint). The kind is a uniform, so every rebuild material
   // shares one program; it keeps the weather (userData.wxSurf)
+  // (a member of the rebuilds' family, K.fam, Round 247, has vRbW and vRbN already: the family declares and writes them, and
+  // this pass reads them as they are)
+  const RB_ART_VARY = 'varying vec3 vRbW; varying vec3 vRbN;';
   const RB_ART_GLSL = ['uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9]; uniform float uRbKind;',
-    'varying vec3 vRbW; varying vec3 vRbN;', ...FAB_ATLAS_FN, ...FAB_WALL_FN].join('\n');
+    RB_ART_VARY, ...FAB_ATLAS_FN, ...FAB_WALL_FN].join('\n');
+  const RB_ART_FAM = RB_ART_GLSL.replace(RB_ART_VARY + '\n', '');
   const _rbC = new THREE.Color(), rbDone = new WeakSet();
   function landmarkKind(m) {
     _rbC.copy(m.color).multiplyScalar(1 / 0.88).convertLinearToSRGB();
@@ -23609,13 +23636,14 @@ vec2 wRing(vec2 rc, float tt) {
     // flush, as it does (a rebuild's meshes are detailed before they join the scene): a plain material the weather had
     // already hooked would read here as one with a hook of its own and lose its place in the weather's wrap
     const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
-    const ownKey = own ? m.customProgramCacheKey() : null;
+    const ownKey = own ? m.customProgramCacheKey : null;   // read at each compile: the family's key carries its version
+    const fam = !!(own && m.userData.rbFam);
     m.onBeforeCompile = (sh, r) => {
       if (own) own.call(m, sh, r);
       Object.assign(sh.uniforms, wallArtU); sh.uniforms.uRbKind = kU;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN;')
+      if (!fam) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRbW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRbN = normalize(mat3(modelMatrix) * objectNormal);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + RB_ART_GLSL)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + (fam ? RB_ART_FAM : RB_ART_GLSL))
         .replace('#include <color_fragment>', ['#include <color_fragment>',
           'if (uWallOn > 0.5) {',
           '  vec3 an = abs(normalize(vRbN)); an *= an; an /= max(an.x + an.y + an.z, 1.0e-4);',
@@ -23629,7 +23657,7 @@ vec2 wRing(vec2 rc, float tt) {
           '  diffuseColor.rgb = acc + c0 * max(0.0, 1.0 - (an.x > 0.01 ? an.x : 0.0) - (an.z > 0.01 ? an.z : 0.0) - (an.y > 0.01 ? an.y : 0.0));',
           '}'].join('\n'));
     };
-    if (own) { m.customProgramCacheKey = () => ownKey + '|rbdetail'; return; }
+    if (own) { m.customProgramCacheKey = () => ownKey.call(m) + '|rbdetail'; return; }
     m.customProgramCacheKey = () => 'rbdetail';
     m.userData.wxSurf = true;   // the weather chains on ahead of it (see the weather's re-hook)
   }

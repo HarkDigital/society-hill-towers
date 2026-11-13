@@ -16351,8 +16351,12 @@ vec2 wRing(vec2 rc, float tt) {
   // kind by the material's own colour (K.mat stores the photo's colour): brick, limestone and brownstone, marble, granite,
   // render, concrete, or none (glass, metal, slate, copper, paint). The kind is a uniform, so every rebuild material
   // shares one program; it keeps the weather (userData.wxSurf)
+  // (a member of the rebuilds' family, K.fam, Round 247, has vRbW and vRbN already: the family declares and writes them, and
+  // this pass reads them as they are)
+  const RB_ART_VARY = 'varying vec3 vRbW; varying vec3 vRbN;';
   const RB_ART_GLSL = ['uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9]; uniform float uRbKind;',
-    'varying vec3 vRbW; varying vec3 vRbN;', ...FAB_ATLAS_FN, ...FAB_WALL_FN].join('\n');
+    RB_ART_VARY, ...FAB_ATLAS_FN, ...FAB_WALL_FN].join('\n');
+  const RB_ART_FAM = RB_ART_GLSL.replace(RB_ART_VARY + '\n', '');
   const _rbC = new THREE.Color(), rbDone = new WeakSet();
   function landmarkKind(m) {
     _rbC.copy(m.color).multiplyScalar(1 / 0.88).convertLinearToSRGB();
@@ -16380,13 +16384,14 @@ vec2 wRing(vec2 rc, float tt) {
     // flush, as it does (a rebuild's meshes are detailed before they join the scene): a plain material the weather had
     // already hooked would read here as one with a hook of its own and lose its place in the weather's wrap
     const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
-    const ownKey = own ? m.customProgramCacheKey() : null;
+    const ownKey = own ? m.customProgramCacheKey : null;   // read at each compile: the family's key carries its version
+    const fam = !!(own && m.userData.rbFam);
     m.onBeforeCompile = (sh, r) => {
       if (own) own.call(m, sh, r);
       Object.assign(sh.uniforms, wallArtU); sh.uniforms.uRbKind = kU;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN;')
+      if (!fam) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRbW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRbN = normalize(mat3(modelMatrix) * objectNormal);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + RB_ART_GLSL)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + (fam ? RB_ART_FAM : RB_ART_GLSL))
         .replace('#include <color_fragment>', ['#include <color_fragment>',
           'if (uWallOn > 0.5) {',
           '  vec3 an = abs(normalize(vRbN)); an *= an; an /= max(an.x + an.y + an.z, 1.0e-4);',
@@ -16400,7 +16405,7 @@ vec2 wRing(vec2 rc, float tt) {
           '  diffuseColor.rgb = acc + c0 * max(0.0, 1.0 - (an.x > 0.01 ? an.x : 0.0) - (an.z > 0.01 ? an.z : 0.0) - (an.y > 0.01 ? an.y : 0.0));',
           '}'].join('\n'));
     };
-    if (own) { m.customProgramCacheKey = () => ownKey + '|rbdetail'; return; }
+    if (own) { m.customProgramCacheKey = () => ownKey.call(m) + '|rbdetail'; return; }
     m.customProgramCacheKey = () => 'rbdetail';
     m.userData.wxSurf = true;   // the weather chains on ahead of it (see the weather's re-hook)
   }

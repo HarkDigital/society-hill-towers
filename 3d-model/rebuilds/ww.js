@@ -581,62 +581,43 @@ RB.add({
       uWash: { value: new THREE.Color(K.stored('#ffe2b8', 1)) }, uPoolCol: { value: new THREE.Color(K.stored('#ffcf8a', 1)) },
       uX0: { value: G[0] - 9 }, uX1: { value: -3272 }   // the floodlit stretch: the gazebo to the Engine House (not the dam, not the hill)
     };
-    const WASH_GLSL = '#include <emissivemap_fragment>\n{\n' +
-      '  float yb = vWwPos.y < uT - 0.3 ? uW : uT;\n' +                         // the river front is lit from the water, the rest from the terrace
-      '  float up = clamp(1.25 - (vWwPos.y - yb) / 10.0, 0.4, 1.25);\n' +     // uplight: brightest at the foot of the wall
-      '  float side = (1.0 - 0.7 * max(vWwN.y, 0.0)) * step(uX0, vWwPos.x) * step(vWwPos.x, uX1);\n' +   // floodlights hit walls, not floors
+    // Stage 2's program diet (Round 247): the wash, the glass and the foam are parts of the rebuilds' family (K.fam), their
+    // world position, normal and uv the family's vRbW, vRbN and vRbUv
+    const WASH_GLSL = '{\n' +
+      '  float yb = vRbW.y < uT - 0.3 ? uW : uT;\n' +                         // the river front is lit from the water, the rest from the terrace
+      '  float up = clamp(1.25 - (vRbW.y - yb) / 10.0, 0.4, 1.25);\n' +     // uplight: brightest at the foot of the wall
+      '  float side = (1.0 - 0.7 * max(vRbN.y, 0.0)) * step(uX0, vRbW.x) * step(vRbW.x, uX1);\n' +   // floodlights hit walls, not floors
       '  vec3 pool = vec3(0.0);\n' +
-      '  for (int i = 0; i < 16; i++) { vec4 L = uLamps[i]; if (L.w <= 0.0) continue; vec3 dd = vWwPos - L.xyz; pool += exp(-dot(dd, dd) / (L.w * L.w)); }\n' +
+      '  for (int i = 0; i < 16; i++) { vec4 L = uLamps[i]; if (L.w <= 0.0) continue; vec3 dd = vRbW - L.xyz; pool += exp(-dot(dd, dd) / (L.w * L.w)); }\n' +
       '  totalEmissiveRadiance += uLamp * diffuseColor.rgb * (uWash * uWashK * up * side + uPoolCol * uPoolK * pool);\n}';
     function washPatch(m, k, poolK) {
       const own = { uWashK: { value: k }, uPoolK: { value: poolK } };
-      m.onBeforeCompile = (sh) => {
-        Object.assign(sh.uniforms, U, own);
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWwPos, vWwN;')
-          .replace('#include <project_vertex>', '#include <project_vertex>\nvWwPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWwN = normalize(mat3(modelMatrix) * objectNormal);');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWwPos, vWwN;\nuniform float uLamp, uT, uW, uWashK, uPoolK, uX0, uX1;\nuniform vec3 uWash, uPoolCol;\nuniform vec4 uLamps[16];')
-          .replace('#include <emissivemap_fragment>', WASH_GLSL);
-      };
-      m.customProgramCacheKey = () => 'ww-wash-3';
+      K.fam(m, { id: 'ww-wash', decl: 'uniform float uLamp, uT, uW, uWashK, uPoolK, uX0, uX1; uniform vec3 uWash, uPoolCol; uniform vec4 uLamps[16]', uniforms: U, emis: WASH_GLSL }, own);
     }
     washPatch(mStucco, 1.6, 2.5); washPatch(mTrim, 1.7, 2.5); washPatch(mStone, 1.3, 2.5); washPatch(mStoneDk, 0.9, 2.5); washPatch(mBrick, 0.5, 3.0);
-    mGlass.onBeforeCompile = (sh) => {
-      Object.assign(sh.uniforms, { uLamp: LAMP, uGlowCol: { value: new THREE.Color(K.stored('#ffc98a', 1)) }, uIron: { value: new THREE.Color(K.stored('#3e3a33')) } });
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWwF;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvWwF = uv;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec2 vWwF;\nuniform float uLamp;\nuniform vec3 uGlowCol, uIron;')
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nif (vWwF.y > 0.5) { diffuseColor.rgb = uIron; metalnessFactor = 0.05; roughnessFactor = 0.9; }')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uGlowCol * vWwF.x * uLamp;');
-    };
-    mGlass.customProgramCacheKey = () => 'ww-glass-2';
+    K.fam(mGlass, { id: 'ww-glass', decl: 'uniform float uLamp; uniform vec3 uGlowCol, uIron',
+      uniforms: { uLamp: LAMP, uGlowCol: { value: new THREE.Color(K.stored('#ffc98a', 1)) }, uIron: { value: new THREE.Color(K.stored('#3e3a33')) } },
+      metal: 'if (vRbUv.y > 0.5) { diffuseColor.rgb = uIron; metalnessFactor = 0.05; roughnessFactor = 0.9; }',
+      emis: 'totalEmissiveRadiance += uGlowCol * vRbUv.x * uLamp;' });
     // the white water: streaks tumbling down the face (uv: metres along the crest, metres down), the generated foam when the
     // app has it, value noise otherwise; on the apron the same streaks drift downstream and thin out over 30 m
-    const FOAM_GLSL = 'uniform float uLamp, uTimeF, uFoamOn, uFoamM;\nuniform sampler2D tFoamF;\nvarying vec2 vFoamUv;\n' +
-      'float fh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
+    const FOAM_DECL = 'uniform float uLamp, uTimeF, uFoamOn, uFoamM; uniform sampler2D tFoamF';
+    const FOAM_GLSL = 'float fh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
       'float fn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(fh(i), fh(i + vec2(1.0, 0.0)), u.x), mix(fh(i + vec2(0.0, 1.0)), fh(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
       'float foamAt(vec2 uv, float flow) {\n' +
       '  float n = fn(vec2(uv.x * 0.7, uv.y * 0.18 - uTimeF * flow)) * 0.6 + fn(vec2(uv.x * 2.3, uv.y * 0.5 - uTimeF * flow * 1.7)) * 0.4;\n' +
       '  if (uFoamOn > 0.5) n = 0.35 * n + 0.65 * smoothstep(0.08, 0.5, dot(texture2D(tFoamF, vec2(uv.x, uv.y - uTimeF * flow * 2.0) / uFoamM).rgb, vec3(0.3, 0.59, 0.11)));\n' +
       '  return n;\n}\n';
     const foamPatch = (m, apron) => {
-      m.onBeforeCompile = (sh) => {
-        Object.assign(sh.uniforms, { uLamp: LAMP, uTimeF: TIME, uFoamOn: FOAM.on, uFoamM: FOAM.m, tFoamF: FOAM.tex });
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoamUv;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFoamUv = uv;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FOAM_GLSL)
-          .replace('#include <color_fragment>', '#include <color_fragment>\n' + (apron
-            ? '{ float a = foamAt(vFoamUv, 0.9); float t = vFoamUv.y / 30.0; diffuseColor.a *= smoothstep(0.32, 0.78, a + 0.45 * (1.0 - t)) * (1.0 - smoothstep(0.1, 1.0, t)) * 0.95; }\n'
-            : '{ float a = foamAt(vFoamUv, 1.7); diffuseColor.rgb = mix(vec3(0.05, 0.065, 0.05), diffuseColor.rgb, smoothstep(0.3, 0.65, a + 0.25 * smoothstep(0.0, 2.5, vFoamUv.y))); }\n') +
-            'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
-      };
-      m.customProgramCacheKey = () => apron ? 'ww-apron-1' : 'ww-foam-3';
+      K.fam(m, { id: apron ? 'ww-apron' : 'ww-foam', decl: FOAM_DECL, uniforms: { uLamp: LAMP, uTimeF: TIME, uFoamOn: FOAM.on, uFoamM: FOAM.m, tFoamF: FOAM.tex }, common: FOAM_GLSL,
+        color: (apron
+            ? '{ float a = foamAt(vRbUv, 0.9); float t = vRbUv.y / 30.0; diffuseColor.a *= smoothstep(0.32, 0.78, a + 0.45 * (1.0 - t)) * (1.0 - smoothstep(0.1, 1.0, t)) * 0.95; }\n'
+            : '{ float a = foamAt(vRbUv, 1.7); diffuseColor.rgb = mix(vec3(0.05, 0.065, 0.05), diffuseColor.rgb, smoothstep(0.3, 0.65, a + 0.25 * smoothstep(0.0, 2.5, vRbUv.y))); }\n') +
+          'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;' });
     };
     if (app && FOAM) { foamPatch(mFoam, false); foamPatch(mApron, true); }
     else {
-      mFoam.onBeforeCompile = (sh) => {
-        sh.uniforms.uLamp = LAMP;
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp;')
-          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
-      };
-      mFoam.customProgramCacheKey = () => 'ww-foam-2';
+      K.fam(mFoam, { id: 'ww-foam-plain', decl: 'uniform float uLamp', uniforms: { uLamp: LAMP }, color: 'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;' });
     }
 
     const grp = B.done();

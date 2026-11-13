@@ -50,36 +50,28 @@
       function nightPatch(mat, mode, flood) {
         if (!LAMP) return mat;
         const m = mat.clone();
-        m.onBeforeCompile = (sh) => {
-          sh.uniforms.uLampMap = LAMP.uLampMap; sh.uniforms.uLampBox = LAMP.uLampBox; sh.uniforms.uLampOn = LAMP.uLampOn; sh.uniforms.uLampFade = LAMP.uLampFade;
-          sh.vertexShader = sh.vertexShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vEspW; varying vec3 vEspN;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvEspW = (modelMatrix * vec4(transformed, 1.0)).xyz; vEspN = normalize(mat3(modelMatrix) * objectNormal);');
-          const gate = mode === 'ground' ? 'smoothstep(0.35, 0.7, vEspN.y)'
-            : '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vEspN.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - 20.0))';
-          sh.fragmentShader = sh.fragmentShader
-            .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvarying vec3 vEspW; varying vec3 vEspN;\nvoid main() {')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
-              'if (uLampOn > 0.001) {',
-              '  vec3 lwp = vEspW;',
-              '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
-              '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
-              '  float lk = ' + gate + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
-              '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
-              '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
-              flood ? [
-                // ground-mounted floods on the Fairmount front and the two south towers: south faces only, fading upward
-                '  float fFront = step(-2419.0, lwp.x) * step(lwp.x, -2349.0) * smoothstep(-2450.0, -2446.0, lwp.z);',
-                '  float fTw = max(1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2482.45, -2433.85))), 1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2285.6, -2429.0))));',
-                '  float fN = smoothstep(0.25, 0.75, vEspN.z);',
-                '  float fH = mix(1.0, 0.3, smoothstep(0.0, 22.0, lwp.y - 19.5));',
-                '  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.74, 0.46) * (1.6 * uLampOn * max(fFront, fTw) * fN * fH);'
-              ].join('\n') : '',
-              '}'
-            ].join('\n'));
-        };
-        m.customProgramCacheKey = () => 'esp-night-' + mode + (flood ? '-flood' : '');
-        return m;
+        const gate = mode === 'ground' ? 'smoothstep(0.35, 0.7, vRbN.y)'
+          : '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vRbN.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - 20.0))';
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its world position and normal the family's
+        return K.fam(m, { id: 'esp-night-' + mode + (flood ? '-flood' : ''), decl: 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn',
+          uniforms: { uLampMap: LAMP.uLampMap, uLampBox: LAMP.uLampBox, uLampOn: LAMP.uLampOn, uLampFade: LAMP.uLampFade }, emis: [
+            'if (uLampOn > 0.001) {',
+            '  vec3 lwp = vRbW;',
+            '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+            '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+            '  float lk = ' + gate + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+            '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+            '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
+            flood ? [
+              // ground-mounted floods on the Fairmount front and the two south towers: south faces only, fading upward
+              '  float fFront = step(-2419.0, lwp.x) * step(lwp.x, -2349.0) * smoothstep(-2450.0, -2446.0, lwp.z);',
+              '  float fTw = max(1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2482.45, -2433.85))), 1.0 - smoothstep(5.0, 6.5, distance(lwp.xz, vec2(-2285.6, -2429.0))));',
+              '  float fN = smoothstep(0.25, 0.75, vRbN.z);',
+              '  float fH = mix(1.0, 0.3, smoothstep(0.0, 22.0, lwp.y - 19.5));',
+              '  totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.74, 0.46) * (1.6 * uLampOn * max(fFront, fTw) * fN * fH);'
+            ].join('\n') : '',
+            '}'
+          ].join('\n') });
       }
       const M = (hex, o, mode, flood) => nightPatch(K.mat(hex, o), mode || 'wall', flood);
 

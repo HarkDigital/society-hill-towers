@@ -70,11 +70,9 @@
       const SASH = lin('#6f8a7c');                                      // green-grey steel sash (r8, r3 photos)
       const WHITE = lin('#d6d6d0'), PLANT = lin('#8a9096');
       const F_COMMON = [
-        'uniform float uNight;',
-        'varying vec3 vWP; varying vec3 vWN; varying vec2 vDat;',
         'float t30h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
         'vec2 t30loc(vec3 p) { vec2 d = p.xz - vec2(' + fl(OX) + ', ' + fl(OZ) + '); return vec2(d.x * ' + fl(C) + ' + d.y * ' + fl(S) + ', -d.x * ' + fl(S) + ' + d.y * ' + fl(C) + '); }',
-        'float t30kind() { return floor(vDat.x / 4.0 + 0.0001); }',
+        'float t30kind() { return floor(vRbUv.x / 4.0 + 0.0001); }',
         // the floodlight's reach over a surface: every wall and soffit, never a roof (the portico floors a little); the porticos (east of the east
         // concourse wall, west of the west one) and the pavilion above the wings take it whole, the wings a little
         // less, the upper level's base a glimmer
@@ -88,34 +86,23 @@
         '  return ' + v3(FLOOD) + ' * (w * mix(0.85, 1.0, clamp(yy / 35.5, 0.0, 1.0)) * face);',
         '}'
       ].join('\n');
-      const VERT = (sh) => {
-        sh.uniforms.uNight = NIGHT;
-        sh.vertexShader = sh.vertexShader
-          .replace('#include <common>', '#include <common>\nvarying vec3 vWP; varying vec3 vWN; varying vec2 vDat;')
-          .replace('#include <project_vertex>', '#include <project_vertex>\nvWP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWN = normalize(mat3(modelMatrix) * objectNormal); vDat = uv;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + F_COMMON);
-      };
-      const FLOOD_GLSL = '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse += diffuseColor.rgb * t30flood(vWP, normalize(vWN)) * (uNight * ' + fl(FLOOD_K) + ');';
+      const FLOOD_GLSL = 'reflectedLight.indirectDiffuse += diffuseColor.rgb * t30flood(vRbW, normalize(vRbN)) * (uNight * ' + fl(FLOOD_K) + ');';
       const mk = (name, hex, o, colorCode, lightCode, emisCode) => {
         const m = new THREE.MeshStandardMaterial({ color: lin(hex), roughness: o.rough == null ? 0.85 : o.rough, metalness: o.metal || 0 });
-        m.onBeforeCompile = (sh) => {
-          VERT(sh);
-          if (colorCode) sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n' + colorCode);
-          if (lightCode) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', lightCode);
-          if (emisCode) sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + emisCode);
-        };
-        m.customProgramCacheKey = () => 't30-' + name;
-        return m;
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its world position, normal and part data
+        // the family's vRbW, vRbN and vRbUv; the glass's room light reaches the emissive point through t30Glow and t30Hall
+        return K.fam(m, { id: 't30-' + name, decl: 'uniform float uNight', uniforms: { uNight: NIGHT }, common: F_COMMON,
+          main: emisCode ? 'float t30Glow = 0.0, t30Hall = 0.0;' : '', color: colorCode || '', light: lightCode || '', emis: emisCode || '' });
       };
       // Alabama limestone walls in coursed ashlar: 0.62 m courses, 1.55 m blocks broken on alternate courses, a faint
       // tone per block; the joints keep their average when they shrink under a pixel and fade out below 2.5 px a course
       const JOINTS = [
-        'vec3 jn = normalize(vWN);',
+        'vec3 jn = normalize(vRbN);',
         'if (abs(jn.y) < 0.5) {',
-        '  vec2 jl = t30loc(vWP);',
+        '  vec2 jl = t30loc(vRbW);',
         '  vec2 jd = vec2(jn.x * ' + fl(C) + ' + jn.z * ' + fl(S) + ', -jn.x * ' + fl(S) + ' + jn.z * ' + fl(C) + ');',
         '  float jh = abs(jd.x) > abs(jd.y) ? jl.y : jl.x;',
-        '  float jy = vWP.y - ' + fl(B) + ';',
+        '  float jy = vRbW.y - ' + fl(B) + ';',
         '  float jrow = floor(jy / 0.62);',
         '  float jcx = jh / 1.55 + 0.5 * mod(jrow, 2.0);',
         '  float dy = abs(fract(jy / 0.62 + 0.5) - 0.5) * 0.62, dx = abs(fract(jcx + 0.5) - 0.5) * 1.55;',
@@ -132,19 +119,19 @@
       const TRIMFLAG = 'float t30tk = t30kind(); if (abs(t30tk - 1.0) < 0.5) diffuseColor.rgb *= 0.85; else if (abs(t30tk - 2.0) < 0.5) diffuseColor.rgb *= 0.66;';
       // glass: the steel sash as a pattern (cells per kind), a little tone per pane; after dark the rooms light
       const GLASS = [
-        'float gk = t30kind(); float gA = floor((vDat.y + 0.001) / 2.0);',
-        'vec2 g01 = vec2(vDat.x - gk * 4.0, vDat.y - gA * 2.0);',
-        'vec2 gcell = vec2(0.0); float gst = 1.0, gglw = 0.0, grm = 0.0, ghall = 0.0;',
+        'float gk = t30kind(); float gA = floor((vRbUv.y + 0.001) / 2.0);',
+        'vec2 g01 = vec2(vRbUv.x - gk * 4.0, vRbUv.y - gA * 2.0);',
+        'vec2 gcell = vec2(0.0); float gst = 1.0, gglw = 0.0, grm = 0.0;',
         'if (abs(gk - 1.0) < 0.5) { gcell = vec2(6.0, 12.0); gst = 4.0; grm = 1.0; }',          // wing bay, three storeys and the ground-floor mezzanine
         'else if (abs(gk - 2.0) < 0.5) { gcell = vec2(4.0, 3.0); grm = 1.0; }',                          // ground-floor window
         'else if (abs(gk - 3.0) < 0.5) { gcell = vec2(2.0, 3.0); grm = 1.0; }',                          // court and attic lights
-        'else if (abs(gk - 4.0) < 0.5) { gcell = vec2(5.0, 14.0); gglw = 0.42; ghall = 1.0; }',            // portico rear-wall window
-        'else if (abs(gk - 5.0) < 0.5) { gcell = vec2(4.0, 10.0); gglw = 0.55; ghall = 1.0; }',            // concourse clerestory
+        'else if (abs(gk - 4.0) < 0.5) { gcell = vec2(5.0, 14.0); gglw = 0.42; t30Hall = 1.0; }',            // portico rear-wall window
+        'else if (abs(gk - 5.0) < 0.5) { gcell = vec2(4.0, 10.0); gglw = 0.55; t30Hall = 1.0; }',            // concourse clerestory
         'else if (abs(gk - 6.0) < 0.5) { gcell = vec2(max(gA, 1.0), 3.0); gglw = 0.3; }',                  // upper-level side glazing
         'else if (abs(gk - 7.0) < 0.5) { gcell = vec2(4.0, 12.0); gst = 4.0; grm = 1.0; }',          // corner pavilion window
         'else if (abs(gk - 8.0) < 0.5) { gcell = vec2(4.0, 5.0); gglw = 0.5; }',                           // north waiting room
         'else if (abs(gk - 9.0) < 0.5) { gcell = vec2(max(gA, 1.0), 2.0); gglw = 0.35; }',                 // monitors, skylight
-        'else if (abs(gk - 10.0) < 0.5) { gcell = vec2(3.0, 4.0); gglw = 1.0; ghall = 1.0; }',             // bronze-framed doors
+        'else if (abs(gk - 10.0) < 0.5) { gcell = vec2(3.0, 4.0); gglw = 1.0; t30Hall = 1.0; }',             // bronze-framed doors
         'float gbar = 0.0;',
         'if (gcell.x > 0.0) {',
         '  vec2 q = g01 * gcell; vec2 dd = abs(fract(q + 0.5) - 0.5);',
@@ -156,9 +143,9 @@
         '}',
         'float groom = 0.0;',
         'if (grm > 0.5) { float st = floor(clamp(g01.y, 0.0, 0.999) * gst); groom = step(' + fl(1 - LIT) + ', t30h(vec2(gA, st + 3.0))) * (0.65 + 0.7 * t30h(vec2(st + 5.0, gA + 11.0))); }',
-        'float gglow = max(groom, gglw) * (1.0 - gbar);'
+        't30Glow = max(groom, gglw) * (1.0 - gbar);'
       ].join('\n');
-      const GLASS_EMIS = 'totalEmissiveRadiance += (ghall > 0.5 ? ' + v3(HALL) + ' * ' + fl(HALL_K) + ' : ' + v3(ROOM) + ' * ' + fl(ROOM_K) + ') * gglow * uNight;';
+      const GLASS_EMIS = 'totalEmissiveRadiance += (t30Hall > 0.5 ? ' + v3(HALL) + ' * ' + fl(HALL_K) + ' : ' + v3(ROOM) + ' * ' + fl(ROOM_K) + ') * t30Glow * uNight;';
 
       const mLime = mk('lime', '#aba395', {}, JOINTS, FLOOD_GLSL);            // Alabama limestone walls (photo mean, r3/r6)
       const mTrim = mk('trim', '#b8b0a2', {}, TRIMFLAG, FLOOD_GLSL);          // columns, cornices, caps, a shade fresher

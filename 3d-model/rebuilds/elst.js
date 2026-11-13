@@ -52,13 +52,9 @@
       const lit = (hex, k, src, key) => {
         const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(K.stored(hex)), roughness: 0.5, metalness: 0.3, emissive: new THREE.Color(K.stored(hex, 1)), emissiveIntensity: k });
         const U = src === 'night' ? NIGHT : LAMP;
-        m.onBeforeCompile = (sh) => {
-          sh.uniforms.uElN = U;
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uElN;')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= uElN;');
-        };
-        m.customProgramCacheKey = () => 'elst-lit';   // Stage 2's program diet (Round 247): the four lit materials' shaders are one text, each reading its own uElN, so one program serves all four (r149 runs a material's hook even where it finds the program by key)
-        return m;
+        // Stage 2's program diet (Round 247): the four lit materials are one part of the rebuilds' family (K.fam), each reading its
+        // own uElN (r149 runs a material's hook even where it finds the program by key)
+        return K.fam(m, { id: 'elst-lit', decl: 'uniform float uElN', uniforms: { uElN: U }, emis: 'totalEmissiveRadiance *= uElN;' });
       };
       const mStrip = lit('#fff4de', 2.6, 'lamp', 'strip');          // the LED strips
       const mSoffit = lit('#d9dadb', 0.7, 'lamp', 'soffit');        // a roof's underside in their light

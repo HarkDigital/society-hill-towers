@@ -46,15 +46,9 @@
       const nightU = { value: 0 }, baseU = { value: base };
       const lampWash = (m) => {
         const c = m.clone();
-        c.onBeforeCompile = (sh) => {
-          sh.uniforms.uNight = nightU; sh.uniforms.uBaseY = baseU;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vWY;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvWY = (modelMatrix * vec4(transformed, 1.0)).y;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vWY; uniform float uNight, uBaseY;')
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.7, 0.42) * (uNight * 0.45 * (1.0 - smoothstep(3.0, 16.0, vWY - uBaseY)) + uNight * 0.015);');
-        };
-        c.customProgramCacheKey = () => 'dl-lampwash';
-        return c;
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its height the family's world position
+        return K.fam(c, { id: 'dl-lampwash', decl: 'uniform float uNight, uBaseY', uniforms: { uNight: nightU, uBaseY: baseU },
+          emis: 'totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.7, 0.42) * (uNight * 0.45 * (1.0 - smoothstep(3.0, 16.0, vRbW.y - uBaseY)) + uNight * 0.015);' });
       };
       const mBrick = lampWash(K.mat('#a89a7c'));             // buff roman brick, cleaned in 2016
       const mStone = lampWash(K.mat('#d4cab2'));             // stone: the portals, the belt course, the archivolts

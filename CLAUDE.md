@@ -533,6 +533,10 @@ Water Works, Eastern State, the Divine Lorraine, Founder's Hall, the Reading Ter
 `RB.add({ id, skip, views, build(api) })`; the wide loop skips the generic footprints under a `skip` ring, 'Rebuilding
 the landmarks' builds them right after the outer districts, and `REBUILD_OCC` keeps trees, packed poles and storefronts
 off their ground (`__dbg.rebuilds()`; a scratch build: `SHT_BUILD_OUT=<path> SHT_REBUILDS=t30 python3 build.py`).
+Since Stage 2 (Round 247) a rebuild material that needs shader code of its own joins the rebuilds' program family,
+`K.fam(mat, { id, decl, uniforms, common, main, color, metal, light, emis }, own)` in `_kit.js`: its code sits behind a gate on
+`uRbFx` in one program text, it reads the family's varyings (`vRbW`, `vRbN`, `vRbUv`) and never declares its own, and it never
+sets an `onBeforeCompile` or a key of its own (`tests/test_stage2_perf.py` holds one key and one text for every member).
 `template.html` is the chrome, `style.css` the HUD + embedded Montserrat,
 `about_body.html` the hidden About panel. Pipeline scripts and data files are tabulated in
 `handoff.md` ("What's in 3d-model/").

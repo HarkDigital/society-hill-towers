@@ -52,6 +52,86 @@ RB.kit = (function () {
   };
   K.glass = function (hex) { return K.mat(hex || K.PALETTE.glass, { rough: 0.22, metal: 0.35 }); };
 
+  // ---- the rebuilds' program family (Stage 2's program diet, Round 247). Every rebuild material with a shader hook of its
+  // own (a night wash, the lamp pools, a glass pattern, the dam's foam) joins one program text: each PART (an id, its
+  // uniforms as GLSL declarations, and its code for the hook points) is registered once, every part's code sits in the
+  // shared text behind its own gate on uRbFx, and a material says which part it is through that uniform. So the twenty
+  // programs of six rebuilds are one program for each set of three's own switches (vertex colours, a sided or a detailed
+  // material), and a cold device links two or three where it linked twenty.
+  // The rules: every part reads the family's three varyings (vRbW the world position, vRbN the world normal, vRbUv the uv),
+  // never its own; its code at one hook point is a block of its own (a value carried to a later point is declared in
+  // `main`, at the top of main(), and assigned in the block); its uniforms are declared in `decl` (one name, one type
+  // across the family) and every material is handed every uniform the family declares (an undeclared sampler would keep
+  // another material's unit). The key carries the family's version, so a part registered after a program was linked
+  // makes a new program rather than borrowing one without its code. Parts are registered before the first flush that
+  // draws them ('Rebuilding the landmarks' builds every rebuild, then flushes), so one text serves every load.
+  const FAM = { parts: [], byId: new Map(), uni: new Map(), ver: 0, def: null };
+  const famZero = (type, n) => {
+    const one = () => type === 'float' ? 0 : type === 'vec2' ? new THREE.Vector2() : type === 'vec3' ? new THREE.Vector3() : type === 'vec4' ? new THREE.Vector4() : null;
+    if (!n) return one();
+    const a = []; for (let i = 0; i < n; i++) a.push(one()); return a;
+  };
+  const famDecl = (decl) => {   // 'uniform float a, b; uniform vec4 c[16];' -> [[type, name, n]]
+    const out = [];
+    for (const st of String(decl || '').split(';')) {
+      const m = /^\s*uniform\s+(\w+)\s+(.+?)\s*$/.exec(st);
+      if (!m) { if (st.trim()) throw new Error('K.fam: not a uniform declaration: ' + st.trim()); continue; }
+      for (const v of m[2].split(',')) { const a = /^\s*(\w+)\s*(?:\[\s*(\d+)\s*\])?\s*$/.exec(v); if (!a) throw new Error('K.fam: bad uniform ' + v); out.push([m[1], a[1], a[2] ? +a[2] : 0]); }
+    }
+    return out;
+  };
+  const FAM_POINTS = [['color', '#include <color_fragment>'], ['metal', '#include <metalnessmap_fragment>'], ['light', '#include <lights_fragment_end>'], ['emis', '#include <emissivemap_fragment>']];
+  const famPart = (p) => {
+    const keyOf = (q) => JSON.stringify([q.decl || '', q.common || '', q.main || '', q.color || '', q.metal || '', q.light || '', q.emis || '']);
+    const had = FAM.byId.get(p.id);
+    if (had) { if (keyOf(had) !== keyOf(p)) throw new Error('K.fam: part ' + p.id + ' registered twice with different code'); return had; }
+    for (const [type, name, n] of famDecl(p.decl)) {
+      const u = FAM.uni.get(name);
+      if (u && (u.type !== type || u.n !== n)) throw new Error('K.fam: uniform ' + name + ' is ' + u.type + ' and ' + type);
+      if (!u) FAM.uni.set(name, { type, n });
+    }
+    const q = Object.assign({}, p, { ix: FAM.parts.length + 1 });
+    FAM.parts.push(q); FAM.byId.set(p.id, q); FAM.ver++; FAM.def = null;
+    return q;
+  };
+  const famDefaults = () => {
+    if (FAM.def) return FAM.def;
+    FAM.def = {};
+    for (const [name, u] of FAM.uni) FAM.def[name] = { value: famZero(u.type, u.n) };
+    return FAM.def;
+  };
+  const famText = (sh) => {
+    const gate = (q) => 'if (abs(uRbFx - ' + q.ix + '.0) < 0.5) {';
+    const decls = [];
+    for (const [name, u] of FAM.uni) decls.push('uniform ' + u.type + ' ' + name + (u.n ? '[' + u.n + ']' : '') + ';');
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN; varying vec2 vRbUv;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRbW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRbN = normalize(mat3(modelMatrix) * objectNormal); vRbUv = uv;');
+    let f = sh.fragmentShader.replace('#include <common>', ['#include <common>', 'varying vec3 vRbW; varying vec3 vRbN; varying vec2 vRbUv;', 'uniform float uRbFx;', ...decls,
+      ...new Set(FAM.parts.filter((q) => q.common).map((q) => q.common))].join('\n'));   // a text several parts share (a rebuild's functions) once
+    const mains = [...new Set(FAM.parts.filter((q) => q.main).map((q) => q.main))];
+    if (mains.length) f = f.replace('void main() {', 'void main() {\n' + mains.join('\n'));
+    for (const [pt, inc] of FAM_POINTS) {
+      const blocks = FAM.parts.filter((q) => q[pt]).map((q) => gate(q) + '\n' + q[pt] + '\n}');
+      if (blocks.length) f = f.replace(inc, inc + '\n' + blocks.join('\n'));
+    }
+    sh.fragmentShader = f;
+  };
+  // K.fam(material, part, own): the material joins the family as that part; `own` its own uniform objects (those of its
+  // part's declarations that differ between the part's materials). Returns the material.
+  K.fam = function (m, p, own) {
+    const q = famPart(p), fx = { value: q.ix };
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, famDefaults(), p.uniforms || {}, own || {});
+      sh.uniforms.uRbFx = fx;
+      famText(sh);
+    };
+    m.customProgramCacheKey = () => 'rbfam-' + FAM.ver;
+    m.userData.rbFam = q.id;
+    return m;
+  };
+  K.famInfo = () => ({ ver: FAM.ver, parts: FAM.parts.map((q) => q.id), uniforms: FAM.uni.size });
+
   // ---- builder: merge per material
   K.builder = function () {
     const parts = new Map();

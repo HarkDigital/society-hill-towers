@@ -51,36 +51,29 @@
       // 'lamp' the Round 140/146 street-lamp pools on the lower storeys (lampLightPatch's 'wall' gate), 'glow' a
       // fixed colour after dark, 'panes' the lit windows (uv.x = level, uv.y = tint, warm lamp to cool office)
       const hook = (mat, o, key) => {
-        mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uNight = U.night; sh.uniforms.uRtmBase = U.base;
-          sh.uniforms.uLampMap = U.lampMap; sh.uniforms.uLampBox = U.lampBox; sh.uniforms.uLampOn = U.lampOn; sh.uniforms.uLampFade = U.lampFade;
-          if (o.panes) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vPane;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvPane = uv;');
-          const code = ['{', 'vec3 lwp = cameraPosition - vViewPosition * mat3(viewMatrix);', 'vec3 wn = inverseTransformDirection(normal, viewMatrix);'];
-          if (o.roof) code.push('totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.3 * smoothstep(0.35, 0.75, wn.y);');
-          if (o.lamp) code.push(
-            'if (uLampOn > 0.001) {',
-            '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
-            '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
-            '  float lk = 0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(wn.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - uRtmBase)) * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
-            '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
-            '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
-            '}');
-          if (o.glow) code.push('totalEmissiveRadiance += vec3(' + o.glow.map((c) => c.toFixed(3)).join(', ') + ') * uNight;');
-          if (o.panes) code.push(
-            'float pLvl = floor(vPane.x + 0.0005) / 100.0, pTn = fract(vPane.x + 0.0005);',
-            'if (uNight > 0.001 && pLvl > 0.001) {',
-            '  vec3 tint = pTn < 0.5 ? mix(vec3(1.0, 0.60, 0.31), vec3(1.0, 0.83, 0.59), pTn * 2.0) : mix(vec3(1.0, 0.86, 0.66), vec3(0.80, 0.88, 1.0), pTn * 2.0 - 1.0);',
-            // a room's light: brighter toward the ceiling, a soft band under it (the app's office wash, simplified)
-            '  float py = vPane.y, pc = (py - 0.84) * 4.3, wash = 0.50 + 0.30 * smoothstep(0.03, 0.85, py) + 0.30 * exp(-pc * pc);',
-            '  totalEmissiveRadiance += tint * pLvl * wash * uNight * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));',
-            '}');
-          code.push('}');
-          sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uNight, uRtmBase, uLampOn; uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade;' + (o.panes ? '\nvarying vec2 vPane;' : ''))
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + code.join('\n'));
-        };
-        mat.customProgramCacheKey = () => 'rtm-' + key;
-        return mat;
+        const code = ['{', 'vec3 lwp = cameraPosition - vViewPosition * mat3(viewMatrix);', 'vec3 wn = inverseTransformDirection(normal, viewMatrix);'];
+        if (o.roof) code.push('totalEmissiveRadiance += diffuseColor.rgb * uNight * 0.3 * smoothstep(0.35, 0.75, wn.y);');
+        if (o.lamp) code.push(
+          'if (uLampOn > 0.001) {',
+          '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+          '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+          '  float lk = 0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(wn.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - uRtmBase)) * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+          '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+          '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
+          '}');
+        if (o.glow) code.push('totalEmissiveRadiance += vec3(' + o.glow.map((c) => c.toFixed(3)).join(', ') + ') * uNight;');
+        if (o.panes) code.push(
+          'float pLvl = floor(vRbUv.x + 0.0005) / 100.0, pTn = fract(vRbUv.x + 0.0005);',
+          'if (uNight > 0.001 && pLvl > 0.001) {',
+          '  vec3 tint = pTn < 0.5 ? mix(vec3(1.0, 0.60, 0.31), vec3(1.0, 0.83, 0.59), pTn * 2.0) : mix(vec3(1.0, 0.86, 0.66), vec3(0.80, 0.88, 1.0), pTn * 2.0 - 1.0);',
+          // a room's light: brighter toward the ceiling, a soft band under it (the app's office wash, simplified)
+          '  float py = vRbUv.y, pc = (py - 0.84) * 4.3, wash = 0.50 + 0.30 * smoothstep(0.03, 0.85, py) + 0.30 * exp(-pc * pc);',
+          '  totalEmissiveRadiance += tint * pLvl * wash * uNight * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));',
+          '}');
+        code.push('}');
+        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), the panes' uv the family's vRbUv
+        return K.fam(mat, { id: 'rtm-' + key, decl: 'uniform float uNight, uRtmBase, uLampOn; uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade',
+          uniforms: { uNight: U.night, uRtmBase: U.base, uLampMap: U.lampMap, uLampBox: U.lampBox, uLampOn: U.lampOn, uLampFade: U.lampFade }, emis: code.join('\n') });
       };
 
       // ---- materials. The masonry and painted walls are one vertex-coloured material (photo colours, converted by
