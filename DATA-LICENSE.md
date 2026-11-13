@@ -123,8 +123,15 @@ mdb-3035; baked into the page at each build, the trains shown where the schedule
 scheduled, never live; PATCO is a service of the Delaware River Port Authority and the page is unaffiliated), ESPN's public team schedules for the four Philadelphia teams,
 read by the page to know a game day (nothing stored; the page is unaffiliated), SEPTA's
 live v2 trips, stops and elevator feeds and its Arrivals departure boards, read when a stop or
-station card is open (nothing stored), the National Weather Service's active alerts (public domain,
-api.weather.gov), the Office of Emergency Management's cooling and warming sites
+station card is open (nothing stored), the National Weather Service's active alerts and the latest
+observations at Philadelphia International and Northeast Philadelphia airports (KPHL, KPNE; public
+domain, api.weather.gov; read every five minutes, nothing stored: a thunderstorm reported there brings
+the storm in, and the cloud cover feeds the deck), real lightning strikes from the Blitzortung.org
+community network (data © Blitzortung.org and its contributors, offered for personal and
+non-commercial use; `ops/lightning_relay.py` on philly3d.com keeps one subscription to the community
+relay and writes the strikes within 110 km of the last fifteen minutes to `lightning.json` every two
+seconds, and the page draws each new strike within 80 km where it struck; the About panel credits
+Blitzortung.org), the Office of Emergency Management's cooling and warming sites
 (`Warming_Cooling_Sites_PUBLICVIEW` on the City ArcGIS) while a heat or cold alert stands, the City's
 property records on phl.carto.com (the Office of Property Assessment, the Water Department's parcels,
 the Historical Commission's register and local districts, Licenses and Inspections' permits, read only

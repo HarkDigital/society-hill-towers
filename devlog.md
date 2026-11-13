@@ -14707,3 +14707,18 @@ candidates (golden hour, dusk with the windows coming on, a night in Eagles gree
   it to 272 KB but lost the sun and the Liberty Places' blue, so the card stays full colour.
 - `og:image:alt` describes the new picture. The URL is unchanged, so Facebook, iMessage and Slack keep their cached
   preview until they refetch it (Facebook's Sharing Debugger forces one); a renamed file would change it at once.
+
+## Round 250 — the lightning and the weather observations credited (Nov 13)
+
+Mike asked how many data sets the app uses (about 41 from some 25 publishers, OSM counted once), and the count found two
+in use and never credited. At his word ("Yes, add credits"):
+
+- Blitzortung.org: the real lightning (`ops/lightning_relay.py`, `lightning.json`, `ltnPoll`) has drawn strikes since its
+  round with no credit anywhere. The About panel now names it beside Open-Meteo ("data © Blitzortung.org and its
+  contributors") and in the non-affiliation line; `DATA-LICENSE.md`'s live feeds carry what the relay keeps and that the
+  community's data is offered for personal and non-commercial use (the relay's own docstring said so). Whether
+  philly3d.com and the app fit that use is Mike's call, not settled here.
+- The National Weather Service's latest observations at KPHL and KPNE (`fetchNws`, every five minutes: thunder heard there
+  brings the storm in, and the cover feeds the deck) were read beside the alerts but only the alerts were named. Both
+  places now name the observations too.
+- Text only: no shader, script or data change. `tests/test_ui_separators.py` holds the About text to commas and colons.
