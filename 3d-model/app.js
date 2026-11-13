@@ -15023,7 +15023,7 @@ vec2 wRing(vec2 rc, float tt) {
   const LIT_FLOORS = /[?&]litfloors=1\b/.test(location.search);
   // Round 247 (the plan's ART-3, behind ?floods=1): the floodlights on the landmarks that stood dark at night (the Art
   // Museum's wash sheets, Independence Hall's and Founder's Hall's flood in their own materials)
-  const FLOODS = /[?&]floods=1\b/.test(location.search), FLOOD_N = {};
+  const FLOODS = !/[?&]floods=0\b/.test(location.search), FLOOD_N = {};   // on by default since Mike's pick on page two (Nov 13); ?floods=0 dark
   const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) }, uLitFl: { value: LIT_FLOORS ? 1 : 0 } };
   function occBind(shader) {
     shader.uniforms.uOcc = occU.uOcc;
@@ -15035,7 +15035,7 @@ vec2 wRing(vec2 rc, float tt) {
   // The house fronts' rooms follow the clock under ?frontclock=1 (the plan's ART-5 b: three houses in four at 48% of their
   // rooms at every hour, 0.36, where the clock gives 0.41 at 21:30 and 0.06 at 03:00): its value is occU's own vector
   const occFixU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) } };
-  const FRONT_CLOCK = /[?&]frontclock=1\b/.test(location.search);
+  const FRONT_CLOCK = !/[?&]frontclock=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?frontclock=0 the fixed share
   const frOccU = { value: FRONT_CLOCK ? occU.uOcc.value : occFixU.uOcc.value };
   function occFixBind(shader, u) {
     shader.uniforms.uOcc = u || occFixU.uOcc;
@@ -52267,7 +52267,7 @@ float pinOccGate() {
     hail: { cloud_cover: 100, precipitation: 13, weather_code: 96, wind_speed_10m: 46, temperature_2m: 68 },
     snow: { cloud_cover: 94, snowfall: 1.1, weather_code: 73, wind_speed_10m: 14, temperature_2m: 28 },
     blizzard: { cloud_cover: 100, snowfall: 3.4, weather_code: 75, wind_speed_10m: 38, temperature_2m: 21 },
-    // Round 247: the day after a storm, a clear sky over 15 cm lying (it shows the snow only under ?snowlies=1)
+    // Round 247: the day after a storm, a clear sky over 15 cm lying (bare under ?snowlies=0)
     snowday: { cloud_cover: 6, weather_code: 0, wind_speed_10m: 8, temperature_2m: 25, snow_depth: 0.15 },
     sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
   };
@@ -52556,7 +52556,7 @@ float pinOccGate() {
   // wxSetTargets derives from the WMO code; applyLighting reads gloom/flash/fog
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
-  const SNOW_LIES = /[?&]snowlies=1\b/.test(location.search);   // Round 247: the snow lies as long as the feed's depth
+  const SNOW_LIES = !/[?&]snowlies=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?snowlies=0 melts at once   // Round 247: the snow lies as long as the feed's depth
   const smoothstep01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   const WXFX = {
     rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, snowFall: 0, tSnowFall: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,

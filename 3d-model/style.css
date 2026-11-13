@@ -1277,9 +1277,6 @@ button { -webkit-tap-highlight-color: transparent; }
 #veil .veilmark { width: 66px; height: 66px; margin-bottom: 22px; }
 #veil h2 { font-size: clamp(38px, 6.5vw, 76px); font-weight: 550; letter-spacing: -0.055em; text-transform: none; line-height: 1.08; }
 #veil .sub { max-width: 445px; margin: 23px auto 0; font-size: 13px; line-height: 1.8; color: #c1c5c3; }
-.welcomefacts { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 22px; margin-top: 24px; color: var(--paper-faint); font-size: 9px; }
-.welcomefacts span { display: flex; align-items: center; gap: 7px; }
-.welcomefacts span::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--bronze); }
 #veil .enter { border-radius: 10px; padding: 16px 29px; min-width: 206px; font-size: 12px; font-weight: 600; letter-spacing: 0.025em; text-transform: none; margin-top: 30px; box-shadow: 0 3px 18px rgba(0,0,0,0.18); }
 #veil .enter:not(:disabled)::after { content: '\2197\FE0E';   /* U+FE0E: text presentation, or iOS draws the arrow as a blue emoji tile */ margin-left: 20px; font-size: 15px; }
 #veil .enter:disabled { opacity: 0.5; cursor: progress; }
@@ -1363,7 +1360,6 @@ button { -webkit-tap-highlight-color: transparent; }
   #guide .pick-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   #veil .card { padding: 24px; }
   #veil .sub { font-size: 12px; }
-  .welcomefacts { gap: 10px 14px; }
 }
 @media (max-width: 420px) {
   .destinationgrid { grid-template-columns: 1fr; }
@@ -1388,7 +1384,6 @@ button { -webkit-tap-highlight-color: transparent; }
   #veil .veilmark { width: 30px; height: 30px; margin-bottom: 8px; }
   #veil h2 { font-size: 36px; }
   #veil .sub, .welcomehint { display: none; }
-  .welcomefacts { margin-top: 17px; }
   #veil .enter { margin-top: 18px; padding: 13px 24px; }
   #loadProgress { margin-top: 16px; }
   #veil .loading { margin-top: 9px; }

@@ -205,6 +205,7 @@ roof words only, through `pack_city.py --against`). Page one is published for hi
 https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private). Batch 4 (Nov 13): page two's four looks behind flags, off by
 default: `?litfloors=1`, `?frontclock=1`, `?snowlies=1` (with `?wx=snowday`), `?floods=1` (the museum, Independence Hall,
 Founder's Hall). Page two is published for his picks: https://claude.ai/artifact/9ZXdfhaYjJmJGvNS3BfiB1 (private).
+His picks (Nov 13): the fronts' clock, the floods and the lying snow on by default; the lit floors kept off.
 Left of page two: door lamps and light from shops (STREET-6), the skins' weathering (ART-5 c). Then the straighter day toe
 and `?streetfloor=lit`, and the one deploy.
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence

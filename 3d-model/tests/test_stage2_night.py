@@ -1,5 +1,6 @@
 """Stage 2 of the Nov 10 plan, the night and winter (Round 247): four looks for Mike's second side by side of the train,
-each off by default so the page draws what it did, each a uniform or a data switch so it turns on later with no compile.
+each a uniform or a data switch. His picks (Nov 13): the fronts' clock, the floods and the lying snow on by default
+(?frontclock=0, ?floods=0, ?snowlies=0 refuse); the lit floors kept off (?litfloors=1 shows them).
 
 - ?litfloors=1 (AERIAL-7 part 2): an office's rooms light by the floor (a floor on or off, one run of rooms along each zone
   of 8 to 16), at the suites' own lit share. roomLight's uLitFl; the fronts, skins and town strips bind it too.
@@ -36,8 +37,8 @@ class LitFloors(unittest.TestCase):
 
 
 class FrontClock(unittest.TestCase):
-    def test_off_by_default(self):
-        self.assertIn('const FRONT_CLOCK = /[?&]frontclock=1\\b/.test(location.search);', SRC)
+    def test_on_by_default_since_mikes_pick(self):
+        self.assertIn('const FRONT_CLOCK = !/[?&]frontclock=0\\b/.test(location.search);', SRC)
         self.assertIn('const frOccU = { value: FRONT_CLOCK ? occU.uOcc.value : occFixU.uOcc.value };', SRC)
 
 
@@ -48,10 +49,10 @@ class SnowLies(unittest.TestCase):
         self.assertIn('WX.snowDepth = cur.snow_depth == null ? null : cur.snow_depth;', SRC)
         self.assertIn("snowday: { cloud_cover: 6, weather_code: 0, wind_speed_10m: 8, temperature_2m: 25, snow_depth: 0.15 },", SRC)
 
-    def test_off_by_default_and_the_falling_term_is_the_old_one_without_it(self):
-        self.assertIn('const SNOW_LIES = /[?&]snowlies=1\\b/.test(location.search);', SRC)
+    def test_on_by_default_and_the_falling_term_is_the_old_one_without_it(self):
+        self.assertIn('const SNOW_LIES = !/[?&]snowlies=0\\b/.test(location.search);', SRC)
         self.assertIn('if (SNOW_LIES && WX.snowDepth != null) F.tSnowGround = Math.max(F.tSnowGround, 0.85 * smoothstep01((WX.snowDepth - 0.01) / 0.05));', SRC)
-        self.assertIn('    else F.snowFall = F.snowGround;', SRC)
+        self.assertIn('    else F.snowFall = F.snowGround;', SRC)   # under ?snowlies=0
         # what only falling snow whitens
         self.assertIn('const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowFall * 0.3);', SRC)
         self.assertIn('WXFX.snow * 0.4, WXFX.snowFall * 0.3));', SRC)
@@ -63,8 +64,8 @@ class SnowLies(unittest.TestCase):
 
 
 class Floods(unittest.TestCase):
-    def test_off_by_default(self):
-        self.assertIn('const FLOODS = /[?&]floods=1\\b/.test(location.search), FLOOD_N = {};', SRC)
+    def test_on_by_default_since_mikes_pick(self):
+        self.assertIn('const FLOODS = !/[?&]floods=0\\b/.test(location.search), FLOOD_N = {};', SRC)
         self.assertIn('uTvFlood: { value: new THREE.Vector2(FLOODS ? 0.9 : 0, 45) },', SRC)
         self.assertIn('floods: FLOODS,', SRC)
         self.assertIn("uGcFl: { value: api.floods ? 1 : 0 }", GC)

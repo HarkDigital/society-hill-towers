@@ -1308,9 +1308,6 @@ button { -webkit-tap-highlight-color: transparent; }
 #veil .veilmark { width: 66px; height: 66px; margin-bottom: 22px; }
 #veil h2 { font-size: clamp(38px, 6.5vw, 76px); font-weight: 550; letter-spacing: -0.055em; text-transform: none; line-height: 1.08; }
 #veil .sub { max-width: 445px; margin: 23px auto 0; font-size: 13px; line-height: 1.8; color: #c1c5c3; }
-.welcomefacts { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 22px; margin-top: 24px; color: var(--paper-faint); font-size: 9px; }
-.welcomefacts span { display: flex; align-items: center; gap: 7px; }
-.welcomefacts span::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--bronze); }
 #veil .enter { border-radius: 10px; padding: 16px 29px; min-width: 206px; font-size: 12px; font-weight: 600; letter-spacing: 0.025em; text-transform: none; margin-top: 30px; box-shadow: 0 3px 18px rgba(0,0,0,0.18); }
 #veil .enter:not(:disabled)::after { content: '\2197\FE0E';   /* U+FE0E: text presentation, or iOS draws the arrow as a blue emoji tile */ margin-left: 20px; font-size: 15px; }
 #veil .enter:disabled { opacity: 0.5; cursor: progress; }
@@ -1394,7 +1391,6 @@ button { -webkit-tap-highlight-color: transparent; }
   #guide .pick-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   #veil .card { padding: 24px; }
   #veil .sub { font-size: 12px; }
-  .welcomefacts { gap: 10px 14px; }
 }
 @media (max-width: 420px) {
   .destinationgrid { grid-template-columns: 1fr; }
@@ -1419,7 +1415,6 @@ button { -webkit-tap-highlight-color: transparent; }
   #veil .veilmark { width: 30px; height: 30px; margin-bottom: 8px; }
   #veil h2 { font-size: 36px; }
   #veil .sub, .welcomehint { display: none; }
-  .welcomefacts { margin-top: 17px; }
   #veil .enter { margin-top: 18px; padding: 13px 24px; }
   #loadProgress { margin-top: 16px; }
   #veil .loading { margin-top: 9px; }
@@ -1855,8 +1850,7 @@ button { -webkit-tap-highlight-color: transparent; }
         <rect x="172" y="478" width="168" height="18"/>
       </g>
     </svg>
-    <h2 id="welcomeTitle">Philadelphia</h2>
-    <div class="welcomefacts"><span>250,000+ Buildings</span><span>Live City Feeds</span><span>Real Sun &amp; Weather</span></div>
+    <h2 id="welcomeTitle">Philly3D</h2>
     <button class="enter" id="btnEnter" disabled>Preparing&hellip;</button>
     <progress id="loadProgress" max="100" value="0" aria-label="Preparing the City"></progress>
     <div class="loading" id="loadmsg">Assembling Philadelphia</div>
@@ -22284,7 +22278,7 @@ vec2 wRing(vec2 rc, float tt) {
   const LIT_FLOORS = /[?&]litfloors=1\b/.test(location.search);
   // Round 247 (the plan's ART-3, behind ?floods=1): the floodlights on the landmarks that stood dark at night (the Art
   // Museum's wash sheets, Independence Hall's and Founder's Hall's flood in their own materials)
-  const FLOODS = /[?&]floods=1\b/.test(location.search), FLOOD_N = {};
+  const FLOODS = !/[?&]floods=0\b/.test(location.search), FLOOD_N = {};   // on by default since Mike's pick on page two (Nov 13); ?floods=0 dark
   const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) }, uLitFl: { value: LIT_FLOORS ? 1 : 0 } };
   function occBind(shader) {
     shader.uniforms.uOcc = occU.uOcc;
@@ -22296,7 +22290,7 @@ vec2 wRing(vec2 rc, float tt) {
   // The house fronts' rooms follow the clock under ?frontclock=1 (the plan's ART-5 b: three houses in four at 48% of their
   // rooms at every hour, 0.36, where the clock gives 0.41 at 21:30 and 0.06 at 03:00): its value is occU's own vector
   const occFixU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) } };
-  const FRONT_CLOCK = /[?&]frontclock=1\b/.test(location.search);
+  const FRONT_CLOCK = !/[?&]frontclock=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?frontclock=0 the fixed share
   const frOccU = { value: FRONT_CLOCK ? occU.uOcc.value : occFixU.uOcc.value };
   function occFixBind(shader, u) {
     shader.uniforms.uOcc = u || occFixU.uOcc;
@@ -59528,7 +59522,7 @@ float pinOccGate() {
     hail: { cloud_cover: 100, precipitation: 13, weather_code: 96, wind_speed_10m: 46, temperature_2m: 68 },
     snow: { cloud_cover: 94, snowfall: 1.1, weather_code: 73, wind_speed_10m: 14, temperature_2m: 28 },
     blizzard: { cloud_cover: 100, snowfall: 3.4, weather_code: 75, wind_speed_10m: 38, temperature_2m: 21 },
-    // Round 247: the day after a storm, a clear sky over 15 cm lying (it shows the snow only under ?snowlies=1)
+    // Round 247: the day after a storm, a clear sky over 15 cm lying (bare under ?snowlies=0)
     snowday: { cloud_cover: 6, weather_code: 0, wind_speed_10m: 8, temperature_2m: 25, snow_depth: 0.15 },
     sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
   };
@@ -59817,7 +59811,7 @@ float pinOccGate() {
   // wxSetTargets derives from the WMO code; applyLighting reads gloom/flash/fog
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
-  const SNOW_LIES = /[?&]snowlies=1\b/.test(location.search);   // Round 247: the snow lies as long as the feed's depth
+  const SNOW_LIES = !/[?&]snowlies=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?snowlies=0 melts at once   // Round 247: the snow lies as long as the feed's depth
   const smoothstep01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   const WXFX = {
     rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, snowFall: 0, tSnowFall: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,
