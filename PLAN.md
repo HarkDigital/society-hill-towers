@@ -211,8 +211,8 @@ a second), and a phone draws the pins' occlusion image every frame while it move
 building on either path (a phone showed 62 to 98 pin-frames before). The phone's GPU cost of the every-frame image is to be
 read from the beacons after the deploy (`fg`, `gt`).
 The loading screen says Philly3D, with the facts row gone (Mike, Nov 13).
-Page two's last two looks, added for his picks (off by default): door lamps and shop light (`?doorlamps=1`), weathered
-tile-skin towers (`?skinwx=1`). The bus lamps STREET-6 named are not built. Then the one deploy.
+Page two's last two looks, on by default since his picks (Nov 13): door lamps and shop light (`?doorlamps=0`), weathered
+tile-skin towers (`?skinwx=0`). The bus lamps STREET-6 named are not built. Then the one deploy.
 Left of page two: door lamps and light from shops (STREET-6), the skins' weathering (ART-5 c). Then the straighter day toe
 and `?streetfloor=lit`, and the one deploy.
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence

@@ -84,9 +84,9 @@ class Floods(unittest.TestCase):
 
 
 class DoorLamps(unittest.TestCase):
-    """?doorlamps=1 (STREET-6): pools in the near lamp map only, on the splats' own material, no point of light."""
+    """Door lamps (STREET-6, on since Mike's pick, ?doorlamps=0 refuses): pools in the near lamp map only, on the splats' own material, no point of light."""
     def test_off_by_default_and_near_only(self):
-        self.assertIn('const DOOR_LAMPS = REAL && /[?&]doorlamps=1\\b/.test(location.search);', SRC)
+        self.assertIn('const DOOR_LAMPS = REAL && !/[?&]doorlamps=0\\b/.test(location.search);', SRC)
         self.assertIn('r.autoClear = false; if (LAMPDYN.scene && LAMPDYN.n) r.render(LAMPDYN.scene, N.cam);', SRC)
         far = SRC[SRC.index('  function lampMapUpdate() {'):SRC.index('  const _lmDir = new THREE.Vector3()')]
         self.assertNotIn('LAMPDYN', far)   # the far map never draws them
@@ -104,9 +104,9 @@ class DoorLamps(unittest.TestCase):
 
 
 class SkinWeather(unittest.TestCase):
-    """?skinwx=1 (ART-5 c): the tile skins' wall share weathers, every term about zero mean, faded by the footprint."""
+    """The skins' weathering (ART-5 c, on since Mike's pick, ?skinwx=0 refuses): the tile skins' wall share weathers, every term about zero mean, faded by the footprint."""
     def test_off_by_default_and_mean_held(self):
-        self.assertIn("const SKIN_WX_U = { value: /[?&]skinwx=1\\b/.test(location.search) ? 1 : 0 };", SRC)
+        self.assertIn("const SKIN_WX_U = { value: /[?&]skinwx=0\\b/.test(location.search) ? 0 : 1 };", SRC)
         self.assertIn('sh.uniforms.uSkinWx = SKIN_WX_U;', SRC)
         line = [l for l in SRC.splitlines() if 'diffuseColor.rgb *= 1.0 + twK * (' in l][0]
         self.assertIn('(twB - 0.5)', line)       # value noise, mean 0.5

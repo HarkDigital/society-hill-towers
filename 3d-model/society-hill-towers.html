@@ -56187,8 +56187,8 @@ float pinOccGate() {
   // open by its own hours (SF.hrs, the panels' own rule), a 6 m pool on the pavement. One small Points of their own on the
   // splats' material (no program of its own), rewritten when the set changes, which forces the near map's next draw.
   // No point of light is drawn for them: only their light on the ground and the first storey (Mike's floating orbs, Round 205)
-  const DOOR_LAMPS = REAL && /[?&]doorlamps=1\b/.test(location.search);
-  const SKIN_WX_U = { value: /[?&]skinwx=1\b/.test(location.search) ? 1 : 0 };   // Round 247 (ART-5 c): the tile skins' weathering, below
+  const DOOR_LAMPS = REAL && !/[?&]doorlamps=0\b/.test(location.search);   // on by default since Mike's pick (Nov 13); ?doorlamps=0 the street lamps alone
+  const SKIN_WX_U = { value: /[?&]skinwx=0\b/.test(location.search) ? 0 : 1 };   // on by default since Mike's pick (Nov 13); ?skinwx=0 clean tiles   // Round 247 (ART-5 c): the tile skins' weathering, below
   const LAMPDYN = { on: DOOR_LAMPS, cap: 4096, pts: null, scene: null, n: 0, sig: '', doors: 0, shops: 0, min: -1, frGen: -1, at: 0 };
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
