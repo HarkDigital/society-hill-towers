@@ -57,6 +57,11 @@ class Privacy(unittest.TestCase):
         self.assertRegex(block, r"^  const GA_ID = 'G-[A-Z0-9]{10}';")   # the GA4 measurement ID, never the GTM- container's
         self.assertIn('if (GA_ID && ON_SITE) {', block)
         self.assertIn("allow_google_signals: false, allow_ad_personalization_signals: false", block)
+        # every advertising use denied through consent mode, before the config call that sends the load's page_view (npa=1)
+        consent = "window.gtag('consent', 'default', { ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });"
+        self.assertIn(consent, block)
+        self.assertNotIn('analytics_storage', block)
+        self.assertLess(block.index(consent), block.index("window.gtag('config', GA_ID"))
         self.assertIn("const ON_SITE = !IN_APP && /(^|\\.)philly3d\\.com$/.test(location.hostname);", self.app)
         # the app declares no analytics data, which is why the loader must never run there
         pm = MODEL.parent / 'app' / 'ios' / 'App' / 'App' / 'PrivacyInfo.xcprivacy'

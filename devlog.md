@@ -14683,6 +14683,16 @@ Mike: "Can we hook up Google Analytics to the philly3d.com site?", then a screen
   since this round at Mike's word ("Yes, 2 months"), so the privacy policy's "the shortest time Google Analytics allows"
   holds for both.
 
+Round 247 coda (Nov 13), the hits said ads were allowed: the live hits carried `ngs=1` (Google signals off) but `npa=0`.
+gtag.js marks a hit non-personalized only when the event model holds `allow_ad_personalization_signals: false` or the
+`ad_personalization` consent is denied (`tu` in the served script). Measured on philly3d.com/privacy.html with the
+transports stubbed (sendBeacon, fetch, XHR and Image recorded, no hit reached Google): the flags in the config call
+reached no hit; through `gtag('set', ...)` they reached the scroll event but not the load's page_view; consent mode's
+defaults (`ad_storage`, `ad_user_data`, `ad_personalization` denied, `analytics_storage` left alone) gave the page_view
+`npa=1`, `gcs=G10-` and a client id, so visits count as before. The loader now sets the consent defaults first, the two
+flags through `set`, then `config`; `tests/test_privacy.py` holds the consent line before the config call and refuses an
+`analytics_storage` in the block.
+
 ## Round 248 — a new share image: Center City at golden hour (Nov 13)
 
 The link preview (`og.png`, 1200 by 630, the `og:image` and `twitter:image` of every philly3d.com share) was still Round
