@@ -212,7 +212,7 @@ class Shader(unittest.TestCase):
         self.assertIn('|| m.flatShading) return;', f)
         self.assertLess(f.index('tYx = dFdx(tY)'), f.index('if (an.x > 0.01)'))
     def test_the_roof_kinds_hold_at_any_distance(self):
-        self.assertIn("'      vec3 rFar = mix(diffuseColor.rgb, rMean * uFabR * rKk, uRoofOwn);',", SRC)   # Round 251: the roofs' 0.9 of their gain, a uniform
+        self.assertIn("'      vec3 rFar = mix(diffuseColor.rgb, rMean * uFabR * rKk, uRoofOwn);',", SRC)   # Round 252: the roofs' 0.9 of their gain, a uniform
         self.assertIn('uRoofKindK: { value: REAL ? new THREE.Vector4(0.8, 1.35, 1.9, 1.05) : new THREE.Vector4(1, 1, 1, 1) },', SRC)
 
     def test_the_pitched_roofs_and_the_copings(self):
@@ -285,12 +285,12 @@ class RoofKitAndLandmarks(unittest.TestCase):
         lay = fn('roofKitLay')
         self.assertEqual(lay.count('deckOk()'), 4)                 # every deck and array wholly on the roof
         self.assertIn('const cnt = M.map(() => 0), caps = M.map((m) => m.instanceMatrix.count);', lay)
-        self.assertIn("mat.customProgramCacheKey = () => (shared ? 'roofkit' : 'roofkit-' + ki) + (REAL ? '-real' : '');", SRC)   # Round 251: every kind but the deck one program
+        self.assertIn("mat.customProgramCacheKey = () => (shared ? 'roofkit' : 'roofkit-' + ki) + (REAL ? '-real' : '');", SRC)   # Round 252: every kind but the deck one program
         self.assertIn("const KIT_SHARED = (k) => !(REAL && k === 5);", SRC)
 
     def test_the_landmarks(self):
         f = fn('landmarkDetail')
-        self.assertIn("if (own) { m.customProgramCacheKey = () => ownKey.call(m) + '|rbdetail'; return; }", f)   # Round 251: read at each compile (the rebuilds' family keys by its version)
+        self.assertIn("if (own) { m.customProgramCacheKey = () => ownKey.call(m) + '|rbdetail'; return; }", f)   # Round 252: read at each compile (the rebuilds' family keys by its version)
         self.assertIn('m.userData.wxSurf = true;', f)
         self.assertIn('landmarkDetail(mm);', SRC[SRC.index("  step('Rebuilding the landmarks'"):])
 

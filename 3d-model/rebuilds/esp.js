@@ -52,7 +52,7 @@
         const m = mat.clone();
         const gate = mode === 'ground' ? 'smoothstep(0.35, 0.7, vRbN.y)'
           : '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vRbN.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - 20.0))';
-        // Stage 2's program diet (Round 251): one part of the rebuilds' family (K.fam), its world position and normal the family's
+        // Stage 2's program diet (Round 252): one part of the rebuilds' family (K.fam), its world position and normal the family's
         return K.fam(m, { id: 'esp-night-' + mode + (flood ? '-flood' : ''), decl: 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn',
           uniforms: { uLampMap: LAMP.uLampMap, uLampBox: LAMP.uLampBox, uLampOn: LAMP.uLampOn, uLampFade: LAMP.uLampFade }, emis: [
             'if (uLampOn > 0.001) {',

@@ -96,7 +96,7 @@ class Page(unittest.TestCase):
 
     def test_snow_on_the_trees_and_the_ground(self):
         s = self.s
-        self.assertIn("uSnowAcc: wxSurfU.uSnowFall, uTexelS: { value: 1.5 / S.AH }", s)   # Round 251: the cards shed it (the falling term)
+        self.assertIn("uSnowAcc: wxSurfU.uSnowFall, uTexelS: { value: 1.5 / S.AH }", s)   # Round 252: the cards shed it (the falling term)
         # the drifts under REAL; ?real=0 keeps Round 185's 1.1 m hash (the review: every look change behind the flag)
         self.assertIn("REAL ? 'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08)", s)
         self.assertIn(": 'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',", s)

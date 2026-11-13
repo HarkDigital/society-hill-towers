@@ -89,7 +89,7 @@
       const FLOOD_GLSL = 'reflectedLight.indirectDiffuse += diffuseColor.rgb * t30flood(vRbW, normalize(vRbN)) * (uNight * ' + fl(FLOOD_K) + ');';
       const mk = (name, hex, o, colorCode, lightCode, emisCode) => {
         const m = new THREE.MeshStandardMaterial({ color: lin(hex), roughness: o.rough == null ? 0.85 : o.rough, metalness: o.metal || 0 });
-        // Stage 2's program diet (Round 251): one part of the rebuilds' family (K.fam), its world position, normal and part data
+        // Stage 2's program diet (Round 252): one part of the rebuilds' family (K.fam), its world position, normal and part data
         // the family's vRbW, vRbN and vRbUv; the glass's room light reaches the emissive point through t30Glow and t30Hall
         return K.fam(m, { id: 't30-' + name, decl: 'uniform float uNight', uniforms: { uNight: NIGHT }, common: F_COMMON,
           main: emisCode ? 'float t30Glow = 0.0, t30Hall = 0.0;' : '', color: colorCode || '', light: lightCode || '', emis: emisCode || '' });

@@ -14733,12 +14733,12 @@ in use and never credited. At his word ("Yes, add credits"):
   places now name the observations too.
 - Text only: no shader, script or data change. `tests/test_ui_separators.py` holds the About text to commas and colons.
 
-## Round 251 — Stage 2, the shader train: fewer programs, the city's own roofs, the night and the snow, steadier pins (Nov 13)
+## Round 252 — Stage 2, the shader train: fewer programs, the city's own roofs, the night and the snow, steadier pins (Nov 13)
 
 Stage 2 of the Nov 10 plan, built on the branch `stage2` and shipped as one deploy, so visitors' devices compile the changed
 shaders once. Mike's asks along the way: "Start Stage 2", "Yes, continue", "The shader updates look great, wrap that into
 the next deploy", his picks from two side-by-side pages, "We also need to fix the pins somehow. The pins appear to be
-flashing when flying sometimes", and the loading screen. The comments call all of it Round 251 (it was built as 247; 247,
+flashing when flying sometimes", and the loading screen. The comments call all of it Round 252 (it was built as 247; 247,
 248 and 250 shipped on main meanwhile).
 
 **Fewer programs, nothing on screen moved** (each checked by pixel parity against the build before it, noon and night, on
