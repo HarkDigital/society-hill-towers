@@ -65,7 +65,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 | Stage | What | Status |
 |---|---|---|
 | 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batches one and two shipped (Rounds 225, 229, and Camden's heights as 231). Remainder below. |
-| 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Not started. Needs the two side-by-side pages first. |
+| 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Shipped as Round 251 (Nov 13), with Mike's picks from both pages. Left for a later train: the straighter day toe, `?streetfloor=lit`, the buses' lamps. |
 | 3 | Link ahead (the cold load's main fix) | Not started. Built only for an engine where Round 229's probe shows batched linking under half of serial. |
 | 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Not started. |
 | 5 | Repeat launches, and Ready on the near city | Not started. |
@@ -188,9 +188,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 
 ## Stage 2: the shader train (one deploy; each look behind a flag or at zero strength)
 
-**In progress since Nov 13 on the branch `stage2`** (worktree outside Dropbox; pushed to `gh-ssh`). Shader text changes
-for Stage 2 go on that branch, never on `main`, until the train ships as one deploy; a session that needs a shader edit
-before then asks first. Batch 1 is on it (commit 39132c8): one facade program for the city and the core (gains as
+**Shipped as Round 251 (Nov 13)**, built on the branch `stage2` and merged as one deploy (devlog Round 251). The record
+below is how it was built. Batch 1 is on it (commit 39132c8): one facade program for the city and the core (gains as
 uniforms), the El stations, lamp lenses and roof kit merged (195 programs to 184 after the first frames), the sky and
 the apron drawn last with a 'sceneB' A/B in the GPU timer (`?backdrop=first`), the cloud shadow's gate; parity within
 the noise on the computer, `?real=0` and phone paths. Left: the rebuilds' family (the largest cut, about 19 programs),

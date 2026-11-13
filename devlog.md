@@ -14732,3 +14732,59 @@ in use and never credited. At his word ("Yes, add credits"):
   brings the storm in, and the cover feeds the deck) were read beside the alerts but only the alerts were named. Both
   places now name the observations too.
 - Text only: no shader, script or data change. `tests/test_ui_separators.py` holds the About text to commas and colons.
+
+## Round 251 — Stage 2, the shader train: fewer programs, the city's own roofs, the night and the snow, steadier pins (Nov 13)
+
+Stage 2 of the Nov 10 plan, built on the branch `stage2` and shipped as one deploy, so visitors' devices compile the changed
+shaders once. Mike's asks along the way: "Start Stage 2", "Yes, continue", "The shader updates look great, wrap that into
+the next deploy", his picks from two side-by-side pages, "We also need to fix the pins somehow. The pins appear to be
+flashing when flying sometimes", and the loading screen. The comments call all of it Round 251 (it was built as 247; 247,
+248 and 250 shipped on main meanwhile).
+
+**Fewer programs, nothing on screen moved** (each checked by pixel parity against the build before it, noon and night, on
+the computer, the phone and `?real=0` paths, within the run-to-run noise):
+- One facade program for the city and the core (their gains are uniforms), the El stations' four lit materials one key,
+  the lamps' lens and lantern glass one, the roof kit's kinds one program but the deck's (`KIT_SHARED`); the sky dome and
+  the apron drawn last (an A/B in the GPU timer's sampled windows, `sceneB`); the cloud shadow returns at once at zero
+  strength (`tests/test_stage2_perf.py`).
+- The landmark rebuilds in one program family (`K.fam` in `rebuilds/_kit.js`): every rebuild material with a hook of its
+  own is a part of one program text, its code behind a gate on `uRbFx`; 20 keys became 2 and those landmarks' 40 programs
+  8 at their poses (268 to 236 in all there). A new hook on a rebuild goes through `K.fam` (CLAUDE.md).
+
+**Page one, by day** (https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR; no pick saved, so its recommendations stood):
+- Flat roofs take their kind (tar, gravel, silver, white) from the 2024 orthophoto sample each cap carries (a mark in the
+  cap's floor byte, `ROOF_SAMPLED`, 2 after the far ring's lift), read before the mottle; unsampled roofs at the
+  photographs' shares; each tier's kinds held to its old mean (`uRoofHold`: 0.739 the outer districts and the core, 0.925
+  the far ring, from a replay of both blobs by area; one scale would have opened a seam at York Street). Tar fell from 36
+  to 58% of roof pixels to 13 to 28% at the test poses; nothing clips. `?roofpick=photo` the paler pick, `?roofpick=0` the
+  lottery.
+- The far ring's merged strips keep their measured roof forms (`pack_city.py`'s `strip_form`, codes 5 to 7, `FAR_FORM_OF`;
+  `?farforms=0`): 9,682 strips (8,805 flat, 798 gable, 79 hip). The inputs had drifted since the Sep 17 pack (a plain
+  rerun gave 180,107 records against 180,097), so `city.b64` was written through the new `--against`: the old file with
+  only matched strips' roof words changed, matched by centroid, area and height (87% match). Never repack it plainly.
+- The far map's switch at 360 m, so the entry orbit's shadows are the near map's (`?orbitsh=0` the old 250).
+
+**Page two, night and winter** (https://claude.ai/artifact/9ZXdfhaYjJmJGvNS3BfiB1; his picks by question):
+- On: the house fronts' rooms on the clock (`frOccU`; 0.36 at every hour before, now 0.41 at 21:30 and about 0.06 at 03:00;
+  `?frontclock=0`); the floodlights on the Art Museum (wash sheets on each mass's own footprint in their own colour, slot
+  -1, which takes no theme slot), Independence Hall (`uTvFlood` in tvMat) and Founder's Hall (the family part `gc-flood`)
+  (`?floods=0`); the snow lies while Open-Meteo's `snow_depth` says it does, the crowns, cards, sky and fog on the falling
+  term (`wxSurfU.uSnowFall`; `?wx=snowday`, `?snowlies=0`); door lamps and shop light (a pool at about three doors in five
+  of the fronts whose picture has a door, and before every storefront open by its own hours, `sfOpenAt`; drawn into the
+  near lamp map only, on the splats' material, no point of light; `?doorlamps=0`, `__dbg.doorLamps()`); the tile skins'
+  weathering (the wall share only, every term about zero mean, faded by the footprint; `?skinwx=0`).
+- Kept off at his pick: the offices lit by the floor (`?litfloors=1`, `uLitFl`; the fronts, skins and town strips bind it
+  through `occFixBind`).
+
+**The pins** (measured with the capture skill's `pin_through.js` over three scripted flights, computer and phone): half of
+a flight's covers last three frames or fewer, and each hid the pin about half a second (two clear images, 0.3 s, a 0.2 s
+fade); now one clear image, 0.1 s and a 0.12 s fade (back in a median 133 ms on a computer, 367 before). Every pin a phone
+showed through a building (62 to 98 pin-frames an Old City pass) came from an occlusion image a frame old: a phone now
+draws it every frame while it moves, as a computer does; none shows through on either path. Hiding is still at once.
+`?pinshow=old`, `?pinmove=2`. The phone's GPU cost of the every-frame image is to be read from the beacons (`fg`, `gt`).
+
+**The loading screen** (Mike: get rid of the three facts and change Philadelphia to Philly3D): the title reads Philly3D
+and the facts row and its styles are gone.
+
+1,547 tests pass; the merged page smoke-rendered on the computer and phone paths with no failed step and no console
+error. Not built: the straighter day toe, `?streetfloor=lit`, the buses' lamps (left for a later train).
