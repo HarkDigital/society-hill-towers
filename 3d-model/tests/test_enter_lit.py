@@ -11,9 +11,10 @@ The timer is armed first in the block after build(), so a throw later in that bl
 
 What must hold:
 - build() no longer touches the button, its text, the Ready line or the bar's 100; the ready beacon stays in build();
-- the first frame's end lights it, after the render, once;
-- with no animation frame the timer draws one frame through the once path and lights it, within about a second and a
-  half; with a frame already drawn the timer does nothing; a frame that throws, or a lost context, still lights it;
+- the end of the first frame that linked no program lights it (Round 245; the first drawn frame in Round 229), at the
+  latest the fifth's, after the render, once;
+- with no animation frame the timer draws those frames through the once path and lights it, within about a second and
+  a half; with a frame already drawn the timer does nothing; a frame that throws, or a lost context, still lights it;
 - the words are the old words (the veil's wording is the owner's);
 - the recovery gate's own use of the button is untouched.
 
@@ -33,7 +34,7 @@ def cut(a, b, text=SRC):
     return text[i:text.index(b, i + len(a))]
 
 
-ENTER = cut('  const ENTER = { lit: false, fail: 0 };', '\n  // Round 220 (the measurement round): the first frames')
+ENTER = cut('  const ENTER = { lit: false, fail: 0, n: 0, prg: -1 };', '\n  // Round 220 (the measurement round): the first frames')
 SET_MSG = cut('  function setLoadingMessage(message) {', '\n  }\n') + '\n  }\n'
 
 
@@ -54,8 +55,9 @@ const btnEnter = { disabled: true, textContent: 'Preparing' };
 const bar = { value: 99.2 };
 const document = { getElementById: (id) => (id === 'loadProgress' ? bar : null) };
 SET_MSG
-let frames = [], frameThrows = false, glDead = false;
-function frame(now, once) { frames.push([typeof now === 'number', once === true]); if (glDead) return; if (frameThrows) throw new Error('boom'); if (!ENTER.lit) enterLight(); }
+let frames = [], frameThrows = false, glDead = false, links = [];   // links[k]: the programs the k-th frame links
+const renderer = { info: { programs: [1, 2, 3] } };
+function frame(now, once) { frames.push([typeof now === 'number', once === true]); if (glDead) return; if (frameThrows) throw new Error('boom'); for (let i = 0; i < (links[frames.length - 1] || 0); i++) renderer.info.programs.push(0); if (!ENTER.lit) enterTick(); }
 ENTER
 const state = () => ({ lit: ENTER.lit, disabled: btnEnter.disabled, text: btnEnter.textContent, line: loadmsg.textContent, done: loadmsg.classes.join(','), bar: bar.value, frames: frames.length, by: PERF.enterBy || '' });
 const out = {};
@@ -107,7 +109,32 @@ frameThrows = true; enterArm(); timers[0].fn(); out.thrown = state(); out.errs =
         r = harness(r'''
 glDead = true; enterArm(); timers[0].fn(); out.dead = state();
 ''')
-        self.assertEqual((r['dead']['lit'], r['dead']['disabled'], r['dead']['frames']), (True, False, 1))
+        self.assertEqual((r['dead']['lit'], r['dead']['disabled'], r['dead']['frames']), (True, False, 5), 'a lost context draws nothing: the cap, then the button')
+
+    def test_a_frame_that_links_holds_the_button(self):
+        # Round 245: on a computer the second and third frames linked 18 and 3 programs under a lit button
+        r = harness(r'''
+links = [9, 18, 3, 0, 0]; enterArm(); out.arm = ENTER.prg;
+frame(1); out.f1 = state(); frame(2); out.f2 = state(); frame(3); out.f3 = state(); frame(4); out.f4 = state();
+''')
+        self.assertEqual(r['arm'], 3, 'the programs at Ready')
+        self.assertEqual([r[k]['lit'] for k in ('f1', 'f2', 'f3')], [False, False, False])
+        self.assertTrue(r['f1']['disabled'])
+        self.assertEqual((r['f4']['lit'], r['f4']['text'], r['f4']['frames']), (True, 'Explore the City', 4), 'the first frame that linked nothing')
+        r = harness(r'''
+links = [1, 1, 1, 1, 1, 1, 1]; enterArm(); for (let k = 0; k < 7; k++) { frame(k); if (ENTER.lit && out.at === undefined) out.at = frames.length; }
+''')
+        self.assertEqual(r['at'], 5, 'at the latest the fifth frame lights it')
+
+    def test_the_timer_draws_the_frames_that_link(self):
+        r = harness(r'''
+links = [9, 18, 0]; enterArm(); timers[0].fn(); out.after = state();
+''')
+        self.assertEqual((r['after']['lit'], r['after']['frames'], r['after']['by']), (True, 3, 'timer'))
+        r = harness(r'''
+links = [9, 18, 0]; enterArm(); frame(16.7); timers[0].fn(); out.after = state();
+''')
+        self.assertEqual((r['after']['lit'], r['after']['frames'], r['after']['by']), (False, 1, ''), 'an animation frame has drawn: its followers light it, not the timer')
 
     def test_the_failed_steps_line_and_only_once(self):
         r = harness(r'''
@@ -118,7 +145,7 @@ btnEnter.textContent = 'x'; loadmsg.textContent = 'y'; enterLight(); out.b = [bt
         self.assertEqual(r['b'], ['x', 'y'])
 
     def test_the_wait_is_about_a_second_and_a_half(self):
-        self.assertIn('  const ENTER_WAIT = 1500;\n', ENTER)
+        self.assertIn('  const ENTER_WAIT = 1500, ENTER_FRAMES = 5;\n', ENTER)
         self.assertIn('    }, ENTER_WAIT);\n', ENTER)
 
 
@@ -142,11 +169,12 @@ class Wiring(unittest.TestCase):
 
     def test_the_first_frames_end_lights_it(self):
         f = cut('  function frame(now, once) {', '\n  setHint();')
-        self.assertEqual(f.count('enterLight()'), 1)
-        self.assertLess(f.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);'), f.index('if (!ENTER.lit) enterLight();'))
-        self.assertLess(f.index('PERF.frame1Ms = Math.round(performance.now() - tFrame);'), f.index('if (!ENTER.lit) enterLight();'))
+        self.assertEqual(f.count('enterTick()'), 1)
+        self.assertNotIn('enterLight()', f)
+        self.assertLess(f.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);'), f.index('if (!ENTER.lit) enterTick();'))
+        self.assertLess(f.index('PERF.frame1Ms = Math.round(performance.now() - tFrame);'), f.index('if (!ENTER.lit) enterTick();'))
         self.assertTrue(f.rstrip().endswith('}'))
-        self.assertEqual(f.rstrip().splitlines()[-2].split('   //')[0], '    if (!ENTER.lit) enterLight();', 'the last thing the frame does')
+        self.assertEqual(f.rstrip().splitlines()[-2].split('   //')[0], '    if (!ENTER.lit) enterTick();', 'the last thing the frame does')
 
     def test_the_fallback_is_armed_before_anything_in_the_block_can_throw(self):
         # the review: armed last, a throw earlier in the block (applyHashView on a copied link is the one unguarded call
@@ -161,7 +189,7 @@ class Wiring(unittest.TestCase):
             self.assertLess(tail.index('    enterArm();'), tail.index(later), later)
         self.assertEqual(tail.count('requestAnimationFrame(frame);'), 1)   # the loop still starts here, once
         arm = cut('  function enterArm() {', '\n  }\n')
-        self.assertIn('      if (ENTER.lit) return;', arm)
+        self.assertIn('      if (ENTER.lit || ENTER.n) return;', arm)
         self.assertIn('      try { frame(performance.now(), true); } catch (e) {', arm)
         self.assertLess(arm.index('frame(performance.now(), true)'), arm.index('      enterLight();'))
         # nothing here renders by itself: the frame does (tests/test_cull.py: nothing renders between build's end and the first frame)

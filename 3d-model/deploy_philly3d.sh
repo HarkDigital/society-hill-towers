@@ -221,6 +221,18 @@ for kind in fronts tiles trees ground; do
   curl -fsS --max-time 60 -o "$TMP/live-art" "${URL}art/$kind/$f" || fatal "could not fetch ${URL}art/$kind/$f"
   [ "$(sha "$TMP/live-art")" = "$(sha "$TMP/art/$kind/$f")" ] || fatal "the live art/$kind/$f does not match this one"
 done
+# Round 244 (the plan's Stage 1): the two server settings Round 225's coda installed (ops/philly3d.vhost.live), checked on
+# the live site. Warnings, never a failed deploy: the build is live and right, and these are the visitors' caches. (1) The
+# art is answered as immutable for a year, so a returning visitor never asks for it again. (2) A request that came through
+# a proxy (a Via header) is still handed the gzip page: without gzip_proxied nginx sent it the 34 MB identity copy
+f=$(cd "$TMP/art" && ls fronts 2>/dev/null | head -1)
+if [ -n "$f" ]; then
+  curl -sI --max-time 30 "${URL}art/fronts/$f" 2>/dev/null | tr -d '\r' | grep -iq '^cache-control:.*max-age=31536000.*immutable' \
+    || echo "WARNING: ${URL}art/fronts/$f is not served 'max-age=31536000, immutable': the art's year of caching is gone from the vhost (ops/philly3d.vhost.live)" >&2
+fi
+curl -s --max-time 300 -o /dev/null -D "$TMP/live-via.hdr" -H 'Accept-Encoding: gzip' -H 'Via: 1.1 proxy' -H 'Cache-Control: no-cache' "$URL?deploy=$(date +%s)" \
+  && tr -d '\r' < "$TMP/live-via.hdr" | grep -iq '^content-encoding: *gzip' \
+  || echo "WARNING: a request through a proxy (Via) was not handed the gzip page: gzip_proxied is gone from the vhost (ops/philly3d.vhost.live)" >&2
 echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT) and its $ART_N art files ($ART_NEW sent, the rest left as they were)"
 echo "previous pair kept in $HOST:$PREV — '$0 --rollback' restores it"
 

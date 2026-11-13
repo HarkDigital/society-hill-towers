@@ -55125,8 +55125,17 @@ float pinOccGate() {
   // it sees PERF.ready and lights the button itself with __dbg.frameOnce(). PERF.lit is when the button lit, PERF.enterBy
   // says 'timer' when the fallback drew the frame (for a probe; neither rides a beacon: the cold flag and the wait's
   // fields are the measurement round's)
-  const ENTER = { lit: false, fail: 0 };
-  const ENTER_WAIT = 1500;
+  // Round 245 (Round 229's Known, open, the second reviewer's finding): the first drawn frame is not the last that links.
+  // On a computer 18 more programs linked 70 to 276 ms after the button lit (the mirror's sprite twins mirzWarm draws in
+  // the second frame, five shadow depth programs, three ShaderMaterials) and 3 more by 629 ms: 4.3 to 7.4 s cold in which
+  // a tap went unanswered under a lit button. So the button lights at the end of the first drawn frame that linked no
+  // program (renderer.info.programs did not grow across it), or at the end of the ENTER_FRAMES-th, whichever comes first
+  // (enterTick). ENTER.prg is the count the last frame ended on, first read as the block after build() begins
+  // (enterArm). The timer draws those frames itself, through the once path, where no animation frame has drawn any; a
+  // frame that throws ends its run and the button lights. measLit still closes at the FIRST frame's end, so the enter
+  // beacon's f1 fields keep their meaning; lit (Ready to the lit button) now includes the frames that linked
+  const ENTER = { lit: false, fail: 0, n: 0, prg: -1 };
+  const ENTER_WAIT = 1500, ENTER_FRAMES = 5;
   function enterLight() {
     if (ENTER.lit) return;
     ENTER.lit = true;
@@ -55137,11 +55146,21 @@ float pinOccGate() {
     btnEnter.textContent = 'Explore the City';
     document.getElementById('loadProgress').value = 100;
   }
+  const progCount = () => { try { return renderer.info.programs ? renderer.info.programs.length : -1; } catch (e) { return -1; } };
+  function enterTick() {   // at every frame's end until the button lights
+    const p = progCount();
+    ENTER.n++;
+    if (p < 0 || p === ENTER.prg || ENTER.n >= ENTER_FRAMES) { enterLight(); return; }
+    ENTER.prg = p;   // this frame linked: the next one decides
+  }
   function enterArm() {
+    ENTER.prg = progCount();   // the programs at Ready
     PERF.enterTimer = setTimeout(() => {
-      if (ENTER.lit) return;
-      PERF.enterBy = 'timer';   // for a probe: the fallback drew the first frame (no animation frame came)
-      try { frame(performance.now(), true); } catch (e) { console.error('the first frame failed:', e); }
+      if (ENTER.lit || ENTER.n) return;   // an animation frame has drawn: the frames that follow it light the button
+      PERF.enterBy = 'timer';   // for a probe: the fallback drew the frames (no animation frame came)
+      for (let k = 0; k < ENTER_FRAMES && !ENTER.lit; k++) {
+        try { frame(performance.now(), true); } catch (e) { console.error('the first frame failed:', e); break; }
+      }
       enterLight();
     }, ENTER_WAIT);
   }
@@ -56210,7 +56229,7 @@ float pinOccGate() {
     if (PERF.frame1Ms === undefined) PERF.frame1Ms = Math.round(performance.now() - tFrame);   // Round 220: the first frame frame() draws, its whole body, for the enter beacon (Round 229: no wx program compiles in it a second time, wxHookAll; tier 2's ten first compiles still do, see there)
     if (PERF.prog.f1 < 0) progLost();   // Round 229: the programs after the first frame, and under ?dev any that a flush linked and this frame no longer has
     if (LINK.on || !MEAS.lit) measLit();   // Round 229: a cold load's link timers come off here, before a tap can be answered (a warm load's went at Ready), and what this frame linked is kept for the enter beacon
-    if (!ENTER.lit) enterLight();   // Round 229: the first drawn frame has ended, so a tap can be answered: the Ready line and the button
+    if (!ENTER.lit) enterTick();   // Round 229: a drawn frame has ended; since Round 245 the button lights at the end of the first that linked no program (enterTick), so a tap can be answered
   }
 
   setHint();

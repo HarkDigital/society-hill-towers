@@ -135,6 +135,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   a lit lobby, a shader variant only under the flag). Side by side sent to Mike.
 - **Round 244** (Mike: "turn it on by default"): `clean` street floors are the default (data only). `lit` waits behind
   `?streetfloor=lit` for the Stage 2 shader train (listed there).
+- **Round 245** (Stage 1's close): Enter lights after the first frame that compiles nothing (at most the fifth), so a
+  computer's later compiles are no longer under a lit button; the deploy checks the server's art caching and proxy gzip;
+  the beacon reducer's engine line counts the probes it leaves out; the entry orbit and day reference set retaken; the
+  service worker's reload not confirmed, so left alone; the real beacons read.
 
 ## In flight (finish these first)
 
@@ -148,28 +152,39 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
    asked for smoother still, many more people and clothes for the season (Nov 12): Round 242 made thirty figures, eight
    pictures a step, in three wardrobes chosen by the temperature. He is to fly `philly3d.com/?people=1` on the Mac and the
    iPhone and say what is next (see "The people" below).
-3. **Read the next real beacons** against Round 229's predictions (its devlog entry lists the fields): the first frame
-   after Ready on cold loads, programs linked per flush, the link probe's ratio by engine, the memory crumbs after
-   Enter on the phone.
+3. ~~Read the next real beacons~~ Read in Round 245 (Nov 10 to 13; nearly all of them this Mac's and Mike's iPhone,
+   almost no public loads): warm Ready on the Mac 20.2 s median (26.9 in October), the iPhone app 10.0 to 10.9 s (12.5);
+   the first frame on a cold Apple device 1.5 s (8.5 to 9.1 before Round 229), 0.2 to 0.4 s warm on the Mac; two link
+   probes (Chromium Mac 0.44, WebKit iOS 0.99): nothing is decided for Stage 3 until public cold loads come in.
 
 ## Stage 1: what is left
 
-- The entry orbit captures (eight azimuths, day and 21:30) and a retake of the day set, which predates Rounds 222 to 228.
+- ~~The entry orbit captures and a retake of the day set~~ Done in Round 245: the eight azimuths by day and at 21:30 and
+  the six day poses, clear weather, Nov 12, on Round 245's build. The poses are the capture skill's
+  `references/reference-set.json`; the pictures are in `.audit/2026-11-10-performance-and-realism/captures/round-245/`.
 - **Mike's first side-by-side page** (published Nov 11, picked; Round 234 shipped his picks), on a staged copy, never the live site: the light at fill 1.0, 1.2 and 1.8
   (`__dbg.keyLight`), roofs at roughness 0.65 toward the sun, the entry orbit's shadows with the far-map switch at
   360 m; and the `?veilcity=1` veil. This page decides what Stage 2 turns on.
-- The service worker and the reload: Round 229's navigation fields must first confirm that a reload under the worker
-  downloads the whole page again; only then let Chromium navigations bypass the relay in `sw.js`.
+- ~~The service worker and the reload~~ Not confirmed, so `sw.js` stays as it is (Round 245). The only loads under the
+  worker since Round 229 are this Mac's (Chrome): every full download in nginx's log follows a new build or a new query
+  string (`?people=1`, `?dpr=1`: the browser keys its cache by the whole URL), while plain reloads of an unchanged build
+  answered 304 five times (Nov 10 to 12). One full download of an unchanged build (Nov 12, 3.5 h after the last) is
+  unexplained (an evicted cache entry would do it). Read again when public loads under the worker exist.
 - ~~The glass calibration had drifted on main~~ Re-measured as Round 235 (Nov 11): nothing in the glass broke. The Oct 14
   merge brought in the Liberty remodel (both towers about 5 levels brighter, within bounds) and Round 198's One Parkway,
   which stood in front of pose `twopenn-50` (moved 70 m west); Round 234's fill lifted every glass 1 to 3 L*. The file
   is current on Round 234's page, DiBona (1901 Market) joins the open towers and Two Penn left the swatches (not glass
   since Round 198). The calibration's fingerprint sees only the glass's shaders and systems, so re-run
   `glass_calibrate.py` after any change to the towers round the swatched ones too, or to the light.
-- The deploy's two verify lines for the server config (the art's cache header; gzip through a `Via` header).
-- Round 229's open findings (its devlog entry lists them under "Known, open"): a computer's second and third frames still link programs
-  under a lit button; tier 2 still links about ten weather programs in its first frame; `beacons.py`'s engine line
-  leaves out probes that produced no ratio.
+- ~~The deploy's two verify lines~~ Done in Round 245 (warnings: the art's year of caching, gzip through a `Via` header).
+- ~~Round 229's open findings~~ Done in Round 245: Enter lights at the end of the first frame that links no program (at
+  most the fifth), so the computer's second and third frames and tier 2's weather programs are behind the unlit button;
+  three programs still link 0.1 to 0.5 s after it lights (spawned objects' first draws: COMPILE-4); `beacons.py`'s engine
+  line now counts the probes it leaves out, by state. Still open from that list, none of them Stage 1's: the probe's
+  `LP_ONE_MS` line and its end date (after a week of public cold loads), the fence trip, the iOS crumb's focus gate,
+  Camden's three port structures, the storefront bake.
+
+**Stage 1 is done** with Round 245, but for Mike's two flights on the Mac (above) and the side-by-side items Stage 2 carries.
 
 ## Stage 2: the shader train (one deploy; each look behind a flag or at zero strength)
 

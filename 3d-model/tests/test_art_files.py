@@ -158,6 +158,20 @@ class OnlyNewArt(unittest.TestCase):
     def setUpClass(cls):
         cls.d = (ROOT / 'deploy_philly3d.sh').read_text()
 
+    def test_the_live_server_settings_are_checked(self):
+        # Round 244: the year of caching on the art and the gzip page through a proxy, read off the live site after every
+        # deploy, both after the page has verified and both warnings (the build is live and right either way)
+        d = self.d
+        i, j = d.index('verify_live "$WANT"'), d.index('echo "deployed: $URL serves the new build')
+        block = d[i:j]
+        self.assertIn("grep -iq '^cache-control:.*max-age=31536000.*immutable'", block)
+        self.assertIn("-H 'Via: 1.1 proxy'", block)
+        self.assertIn("grep -iq '^content-encoding: *gzip'", block)
+        self.assertEqual(block.count('|| echo "WARNING:'), 2)
+        v = (ROOT / 'ops' / 'philly3d.vhost.live').read_text()
+        for w in ('immutable', 'gzip_proxied any', 'gzip_vary on'):
+            self.assertIn(w, v)
+
     def test_the_names_come_from_the_content(self):
         a = (ROOT / 'art_files.py').read_text()
         self.assertIn("rel = 'art/%s/%s.%s.%s' % (kind, name, hashlib.sha256(data).hexdigest()[:10], ext)", a)

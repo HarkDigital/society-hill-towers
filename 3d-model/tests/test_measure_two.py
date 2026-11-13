@@ -841,7 +841,7 @@ class Wiring(unittest.TestCase):
         self.assertLess(f.index('    pinOccPoll();'), i)
         self.assertIn('    const tj1 = performance.now();   // Round 229: the marks that split the JavaScript before the draw (measJs)\n    measFrame(rawMs, once);', f)
         order = ['const tj1 = ', 'applyLighting();', 'const tj2 = performance.now();\n    updateTransit(now, dt);', 'updateTraffic(now, dt);', 'const tj3 = performance.now();',
-                 'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on || !MEAS.lit) measLit();', 'if (!ENTER.lit) enterLight();']
+                 'updateHash(now);\n    const tj4 = performance.now();\n    pinOccUpdate(dt);\n    const tPre = performance.now();', 'measJs(tFrame, tj1, tj2, tj3, tj4, tPre);', 'if (LINK.on || !MEAS.lit) measLit();', 'if (!ENTER.lit) enterTick();']
         at = [f.index(x) for x in order]
         self.assertEqual(at, sorted(at))
         # the third part ends with the traffic and, on the line after it, the walkers (Round 227, behind ?people=1): they
@@ -853,7 +853,7 @@ class Wiring(unittest.TestCase):
         # a cold load's wraps come off before the button can light, on the line before it (a warm load's went at Ready, and
         # the frame's snapshot is taken either way)
         lines = [ln.split('   //')[0] for ln in f.rstrip().splitlines()]
-        self.assertEqual(lines[-2:], ['    if (LINK.on || !MEAS.lit) measLit();', '    if (!ENTER.lit) enterLight();'])
+        self.assertEqual(lines[-2:], ['    if (LINK.on || !MEAS.lit) measLit();', '    if (!ENTER.lit) enterTick();'])
         m = cut(BLOCK, '  function measLit() {', '\n  }\n')
         self.assertLess(m.index('LINK.off();'), m.index('if (MEAS.lit) return;'))
 

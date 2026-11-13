@@ -736,6 +736,9 @@ class BeaconsPy(unittest.TestCase):
             # a probe stopped after its first single (a first draw as dear as the link): no ratio, and still out of gaps
             line('7.7.7.7', **step),
             line('7.7.7.7', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='2.1.450.420.0.0.0.0.0.0.2.390.80.900', ppk='Std-tower-own-real-glass'),
+            # a probe that hit a GL error on the way (state 5): it carries a ratio, which no median counts
+            line('8.8.8.8', **step),
+            line('8.8.8.8', st='ready', t=60000, tch=0, tier=0, ms=59000, cold=1, lk='144.0.1.48000.52.496.330', pp='5.1.300.100.4.0.200.150.310.90.9.395.63.1200', ppk='Std-tower-own-real-glass'),
             # a dev's cold run on demand in Safari: salted
             line('2.2.2.2', MAC, **dict(step, cs=31)),
             line('2.2.2.2', MAC, st='ready', t=70000, tch=0, tier=0, ms=69000, cold=1, cs=31, lk='183.0.1.25280.518.9377.71', pp='1.1.246.165.0.765.0.523.255.160.1.301.82.2126', ppk='Std-wx-h1qfwvhc'),
@@ -754,7 +757,7 @@ class BeaconsPy(unittest.TestCase):
             sys.argv = argv
             Path(f.name).unlink()
         out = buf.getvalue()
-        self.assertIn("('desk', 'Win', '0', 'cold') n= 5", out)
+        self.assertIn("('desk', 'Win', '0', 'cold') n= 6", out)
         self.assertIn("('desk', 'Mac', '0', 'salted cold') n= 1", out, "a salted load is never one of the visitors' cold loads")
         self.assertIn("('desk', 'Win', '0', 'warm') n= 1", out)
         self.assertIn("'cs': '31'", out)
@@ -766,7 +769,7 @@ class BeaconsPy(unittest.TestCase):
         self.assertIn('gaps=39100 ready=58100 enter_gap=None probe=900\n', out)
         self.assertIn('salted cold: t0=1000 boot=4000 build=15000 gaps=47874 ready=66874 enter_gap=None probe=2126\n', out)
         self.assertIn('warm: t0=500 boot=2500 build=6000 gaps=17000 ready=25500 enter_gap=None\n', out)
-        self.assertIn("('desk', 'Win', '0', 'cold') n= 5 [1000, 4000, 15000, 38584, 57584, None]", out, 'the medians too: of 57,283 twice, 57,584, 57,640 and 58,100, never of 59,000')
+        self.assertIn("('desk', 'Win', '0', 'cold') n= 6 [1000.0, 4000.0, 15000.0, 38612.0, 57612.0, None]", out, 'the medians too: of 57,283 twice, 57,584, 57,640, 57,800 and 58,100, never of 59,000')
         self.assertEqual(self.m.probe_ms({'pp': '6'}), 0)
         self.assertEqual(self.m.probe_ms({}), 0)
         # a load a line, with no verdict; then the engine's median, its count and its range
@@ -774,11 +777,14 @@ class BeaconsPy(unittest.TestCase):
         self.assertIn('desk Win cold [Chromium Win]: Std-tower-own-real-glass batched/serial=0.48 serial=292,319 batch=4+0+437 waits_in=wait first_draw_share=0.31 khr=1 probe_ms=1717 state=whole', out)
         self.assertIn('desk Mac salted cold [WebKit Mac]: Std-wx-h1qfwvhc batched/serial=1.02 serial=246,255 batch=0+765+0 waits_in=call first_draw_share=0.39 khr=1 probe_ms=2126 state=whole', out)
         self.assertIn('desk Win cold [Chromium Win]: Std-tower-own-real-glass state=stopped-early serial=450 first_draw=420 probe_ms=900', out)
-        self.assertEqual(out.count('batched/serial='), 4)
+        self.assertEqual(out.count('batched/serial='), 5)
         for word in ('UNDER HALF', 'under half', 'under_half'):
             self.assertNotIn(word, out)
         self.assertIn('ENGINE MEDIANS of batched/serial (one, three, one: a three-program batch cannot read under 0.33;', out)
-        self.assertIn('Chromium Win: median 0.48 of n=3 (0 salted), 0.39 to 0.73, first draw share 0.21, waits in wait 3', out)
+        # Round 244: the median is of whole probes, and the line says what it left out (a stopped probe has no ratio; a GL
+        # error's ratio is not trusted), with the stopped ones' first single and its draw
+        self.assertIn('Chromium Win: median 0.48 of n=3 (0 salted), 0.39 to 0.73, first draw share 0.21, waits in wait 3; '
+                      'not counted 2: gl-error 1, stopped-early 1, their first single median 375 ms and its first draw 260 ms', out)
         self.assertIn('WebKit Mac: median 1.02 of n=1 (1 salted), 1.02 to 1.02, first draw share 0.39, waits in call 1', out)
 
 

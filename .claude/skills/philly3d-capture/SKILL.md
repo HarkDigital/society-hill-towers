@@ -244,8 +244,11 @@ take their "at ready" reading when the button lights with animation frames held:
 reading is taken AFTER the first frame (the page's fallback has drawn it), on an older build before it, so the two are
 not the same instant. The first frame uploads what the last steps staged, so compare "after the frames" across that
 line, or take a true at-Ready reading by polling `__dbg.PERF.ready` and calling `clearTimeout(__dbg.PERF.enterTimer)`
-in the same evaluation, then `__dbg.frameOnce()` to draw the frame and light the button. The page's own GPU bytes at
-Ready (the ready beacon's `gb` fields) are taken in build() and did not move.
+in the same evaluation, then `__dbg.frameOnce()` to draw the frame and light the button (since Round 245 the button
+lights at the end of the first frame that links no program, at most the fifth: call `__dbg.frameOnce()` until it is
+lit, never once and click). The page's own GPU bytes at Ready (the ready beacon's `gb` fields) are taken in build() and
+did not move. Since Round 245 the fallback draws up to five frames before the button lights where no animation frame
+comes (render.mjs), so a capture's first pose follows up to five frames, not one.
 
 ### 7c2. The real devices' timings, and the beacons a build would send (Round 220)
 

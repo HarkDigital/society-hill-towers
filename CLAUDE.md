@@ -420,13 +420,17 @@ What Round 229 added (Stage 1's second batch):
   chain a hook onto a material already in the scene, never dispose a material to re-key it, and read another material's
   hook through `wxOwnHook(m)`. Under `?dev`, `PERF.prog.lost` must be empty and `PERF.wxHook.over` must read 0
   (`tests/test_wx_hook.py`). Text inside a hook function is a cache key (`toString()`): do not tidy its comments.
-- That ends the second compiles, not the first frame's first ones: tier 2 still links about ten weather programs in its
-  first frame, and a computer about 21 more programs in its second and third frames, under a lit button (devlog Round
-  229, Known, open). Do not write "no dead button" for a computer until the plan's warm frame (COMPILE-4) ships.
-- The Enter button is lit only by `enterLight`, as the first drawn frame ends; `build()` never touches it. `enterArm` is
-  the first statement of the block after `build()`, and its timer (`ENTER_WAIT`, 1,500 ms) draws that frame for a page
-  that gets no animation frame. A click before the button lights is lost: every tool waits for the lit button, not only
-  for `__dbg` (`tests/test_enter_lit.py`; the capture skill's step 4).
+- That ends the second compiles, not the first frames' first ones: tier 2 links about ten weather programs in its first
+  frame and a computer about 21 more in its second and third, all behind the unlit button since Round 245; three more
+  still link 0.1 to 0.5 s after it lights (first draws of things the running city spawns: a ShaderMaterial, a
+  MeshBasicMaterial and a vehicle's ShadowMaterial), which only the plan's warm frame (COMPILE-4) can take out.
+- The Enter button is lit only by `enterLight`, through `enterTick` at the end of the first drawn frame that linked no
+  program (`renderer.info.programs` did not grow across it), at the latest the `ENTER_FRAMES`-th (5) (Round 245;
+  Round 229 lit it as the first frame ended); `build()` never touches it. `enterArm` is the first statement of the block
+  after `build()`, reads the programs at Ready, and its timer (`ENTER_WAIT`, 1,500 ms) draws those frames through the
+  once path for a page that gets no animation frame (and does nothing once one has drawn). A click before the button
+  lights is lost: every tool waits for the lit button, not only for `__dbg`, and a tool that lights it with
+  `__dbg.frameOnce()` calls it until it is lit (`tests/test_enter_lit.py`; the capture skill's step 4).
 - The memory tools' "at ready" reading is now taken AFTER the first frame, so it does not compare with a round before
   229; a true one clears `__dbg.PERF.enterTimer` when `PERF.ready` appears, then calls `__dbg.frameOnce()`. A parity set
   across Round 229 drives the new page on the old sequence (clear the timer, enable the button, click, then frames), and

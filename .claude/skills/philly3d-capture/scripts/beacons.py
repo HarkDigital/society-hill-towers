@@ -43,7 +43,8 @@ joined by dots and its entries by underscores, which a query never escapes):
       decode adds batched_over_serial, the three's issue + call + wait over three times the singles' mean, where_it_waits
       (issue: the link call itself blocks; call: the command stream stalls behind a link; wait: neither, the status query
       waits) and first_draw_share, the first draw's part of a program linked alone and drawn. Every probe is listed again
-      after the medians, and then THE MEDIAN OF batched_over_serial BY ENGINE, with its count: Stage 3 (linking ahead) is
+      after the medians, and then THE MEDIAN OF batched_over_serial BY ENGINE, with its count (of whole probes only; since
+      Round 244 the line also counts the probes it left out, by state, with the stopped ones' first single and draw): Stage 3 (linking ahead) is
       built for an engine only where that median, over many loads, is under 0.5. ONE pp DECIDES NOTHING (the review): a
       three-program batch cannot read under 0.33, an engine that links about 2.8 programs at once (Chrome on this Mac) has
       little room under the line, and seven cold loads here read 0.39 to 0.73 with a median of 0.51 while the scratch
@@ -266,9 +267,15 @@ def main():
     if probes:
         print('\nLINK PROBES (part two), a load a line. No load is a verdict: read the engine medians under them')
         by = collections.defaultdict(list)
+        left = collections.defaultdict(list)   # the probes no median counts: no ratio (stopped early, states 3, 4, 6) or a GL error on the way (state 5)
         for start, kind, name, cold, tag, d, eng, salted in probes:
-            if isinstance(d, dict) and 'batched_over_serial' in d:
+            if isinstance(d, dict) and 'batched_over_serial' in d and d.get('state') != 'whole':
+                left[eng].append(d)
+            elif isinstance(d, dict) and 'batched_over_serial' in d:
                 by[eng].append((d, salted))
+            else:
+                left[eng].append(d if isinstance(d, dict) else {'state': d})
+            if isinstance(d, dict) and 'batched_over_serial' in d:
                 print(f"{start} {kind} {name} {cold} [{eng}]: {tag} batched/serial={d['batched_over_serial']} serial={d['serial_ms']},{d.get('serial2_ms', '')} "
                       f"batch={d['batch_issue_ms']}+{d['batch_call_ms']}+{d['batch_wait_ms']} waits_in={d['where_it_waits']} first_draw_share={d.get('first_draw_share', '')} khr={d.get('khr_offered', '')} probe_ms={d.get('probe_ms', '')} state={d['state']}")
             else:
@@ -277,12 +284,27 @@ def main():
         # this Mac: seven cold loads 0.39 to 0.73, median 0.51; eight programs through tests/prelink_gpu.html 0.35 to
         # 0.38), so a load's own ratio is close to a coin flip there. What decides is an engine's median over many loads
         print('\nENGINE MEDIANS of batched/serial (one, three, one: a three-program batch cannot read under 0.33; Stage 3, linking ahead, is built for an engine only where the median of many loads is under 0.5)')
-        for eng in sorted(by):
-            v = by[eng]; r = [d['batched_over_serial'] for d, salted in v]
-            fd = [d['first_draw_share'] for d, salted in v if isinstance(d.get('first_draw_share'), float)]
-            where = collections.Counter(d['where_it_waits'] for d, salted in v)
-            print(f"{eng}: median {statistics.median(r):.2f} of n={len(r)} ({sum(1 for d, salted in v if salted)} salted), {min(r):.2f} to {max(r):.2f}, first draw share {f'{statistics.median(fd):.2f}' if fd else 'unknown'}, "
-                  f"waits in {', '.join(f'{k} {n}' for k, n in where.most_common())}")
+        # Round 244 (Round 229's Known, open): the line counts whole probes only, and says what it left out. Slow machines
+        # are the ones that stop after their first single, so a median of the survivors alone flatters an engine: every
+        # uncounted probe is named by its state, and the stopped ones' first single and its draw are given as medians
+        for eng in sorted(set(by) | set(left)):
+            v = by.get(eng, [])
+            if v:
+                r = [d['batched_over_serial'] for d, salted in v]
+                fd = [d['first_draw_share'] for d, salted in v if isinstance(d.get('first_draw_share'), float)]
+                where = collections.Counter(d['where_it_waits'] for d, salted in v)
+                line = (f"{eng}: median {statistics.median(r):.2f} of n={len(r)} ({sum(1 for d, salted in v if salted)} salted), {min(r):.2f} to {max(r):.2f}, first draw share {f'{statistics.median(fd):.2f}' if fd else 'unknown'}, "
+                        f"waits in {', '.join(f'{k} {n}' for k, n in where.most_common())}")
+            else:
+                line = f"{eng}: no whole probe"
+            lo = left.get(eng, [])
+            if lo:
+                states = collections.Counter(str(d.get('state')) for d in lo)
+                one = [d['serial_ms'] for d in lo if isinstance(d.get('serial_ms'), int) and d['serial_ms'] > 0]
+                drw = [d['serial_draw_ms'] for d in lo if isinstance(d.get('serial_draw_ms'), int) and isinstance(d.get('serial_ms'), int) and d['serial_ms'] > 0]
+                line += (f"; not counted {len(lo)}: {', '.join(f'{k} {n}' for k, n in sorted(states.items()))}"
+                         + (f", their first single median {statistics.median(one):.0f} ms and its first draw {statistics.median(drw):.0f} ms" if one and drw else ''))
+            print(line)
 
 
 if __name__ == '__main__':

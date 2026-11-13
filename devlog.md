@@ -14572,3 +14572,58 @@ text exactly as before, so no device compiles anything new. `lit` changes that p
 train rule it stays behind `?streetfloor=lit` for the Stage 2 train; `?streetfloor=old` keeps the speckled masks.
 Checked: his link with no flag on the new build, by day and at 21:30, `__dbg.fronts().streetFloor` 'clean', no failed
 step. `test_app_art` pins the default.
+
+## Round 245 — Stage 1's close: Enter after the last compile, the deploy's server checks, the reference set (Nov 13)
+
+Mike: "Finish Stage 1". What was left of it (PLAN.md): the entry orbit captures and the day set's retake, the service
+worker's reload (only once the beacons confirm it), the deploy's two checks on the server's config, and Round 229's open
+findings. With them, the in-flight reading of the real beacons.
+
+**Enter lights after the last compiling frame.** Round 229 lit the button at the end of the first drawn frame; its second
+reviewer measured 18 more programs linking 70 to 276 ms after that on a computer (the mirror's sprite twins, shadow depth
+programs, three ShaderMaterials) and 3 more by 629 ms, so a tap went unanswered for 4.3 to 7.4 s on a cold computer
+(inferred) right after the button lit. Now `enterTick`, at every frame's end until the button lights, lights it when
+`renderer.info.programs` did not grow across the frame, or at the fifth frame (`ENTER_FRAMES`). `enterArm` reads the
+count at Ready; its timer draws those frames itself through the once path only where no animation frame has drawn
+(render.mjs, a hidden tab), and stops on a frame that throws. `measLit` still closes at the first frame, so the enter
+beacon's f1 fields keep their meaning; `lit` (Ready to the lit button) now includes the frames that linked. MEASURED
+headless with real animation frames and no tap (a probe page that samples the program count every 5 ms): Round 244's
+build lit at 188 programs and linked 3 more 375 and 609 ms later; this build lights after the second frame's 12, at 188,
+and links 3 more 131 and 521 ms later (a ShaderMaterial, a MeshBasicMaterial and a ShadowMaterial: things the running
+city spawns, first drawn when they appear; only COMPILE-4's warm frame can take them out). Tier 2's ten weather
+programs were already behind the unlit button since Round 229. `tests/test_enter_lit.py` (two new tests: a linking frame
+holds the button and five is the cap; the timer draws the frames that link and leaves a page whose animation frame has
+drawn alone), `tests/test_measure_two.py`'s frame order. The capture skill says to call `__dbg.frameOnce()` until the
+button is lit, and that render.mjs's first pose now follows up to five frames.
+
+**The deploy checks the server's settings.** After the page verifies: an art file must answer `max-age=31536000,
+immutable`, and a request carrying a `Via` header must still get the gzip page (Round 225's coda, `gzip_proxied any`).
+Both are warnings, not failures (the build is live and right either way). Both pass on the live site today.
+`tests/test_art_files.py`.
+
+**The beacon reducer's engine line.** It counted only probes with a ratio and counted a state 5 (GL error) probe as whole,
+so a slow engine's line was a median of its survivors. Now the median is of whole probes only, and the line goes on with
+"not counted n:" each state's count and the stopped probes' first single and first draw medians.
+`tests/test_cold_probe.py` (a GL-error probe added to the log).
+
+**The service worker's reload: not confirmed, left alone.** The only loads under the worker since Round 229 are this
+Mac's. Matched against nginx's own lines for `GET /`: every full 14.4 MB answer follows a new build or a new query
+string (`?people=1`, `?dpr=1`, `?people=sharp`: the browser's cache keys the whole URL, so each is its own download),
+and plain reloads of an unchanged build answered 304 five times (Nov 10 to 12). One full download of an unchanged build
+(Nov 12 18:30, 3.5 h after the last) is not explained by the log (an evicted cache entry would do it). The plan said to
+change `sw.js` only on confirmation, so it stays.
+
+**The real beacons, Nov 10 to 13.** Almost no public loads came in; nearly all are this Mac (24 cores) and Mike's iPhone.
+Warm Ready on the Mac: median 20.2 s of 18 (26.9 s in October); the iPhone app at tier 1: 10.0 to 10.9 s (12.5 s before
+Round 225). The first frame: 1.5 s on a cold Apple device (the Mac app, the phone path) against 8.5 to 9.1 s before
+Round 229; 0.2 to 0.4 s warm on the Mac, 22 to 41 programs. Two link probes: Chromium Mac 0.44, WebKit iOS 0.99.
+Nothing decides Stage 3 until public cold loads arrive.
+
+**The reference set.** The entry orbit's eight azimuths by day (13:00) and at 21:30, and the six day poses, Nov 12, clear
+weather (`?wx=clear`), on this build through render.mjs: no failure, no console error. The poses are
+`.claude/skills/philly3d-capture/references/reference-set.json`, the pictures (and three contact sheets) in the ignored
+`.audit/2026-11-10-performance-and-realism/captures/round-245/`. Every later side by side compares against these.
+
+Stage 1 is done but for Mike's two flights on the Mac. Still open from Round 229's list, none of them Stage 1's: the
+probe's `LP_ONE_MS` line and end date, the fence trip, the iOS crumb's focus gate, Camden's three port structures, the
+storefront bake.
