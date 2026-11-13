@@ -52,7 +52,7 @@ RB.kit = (function () {
   };
   K.glass = function (hex) { return K.mat(hex || K.PALETTE.glass, { rough: 0.22, metal: 0.35 }); };
 
-  // ---- the rebuilds' program family (Stage 2's program diet, Round 247). Every rebuild material with a shader hook of its
+  // ---- the rebuilds' program family (Stage 2's program diet, Round 251). Every rebuild material with a shader hook of its
   // own (a night wash, the lamp pools, a glass pattern, the dam's foam) joins one program text: each PART (an id, its
   // uniforms as GLSL declarations, and its code for the hook points) is registered once, every part's code sits in the
   // shared text behind its own gate on uRbFx, and a material says which part it is through that uniform. So the twenty

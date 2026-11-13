@@ -52,7 +52,7 @@
       const lit = (hex, k, src, key) => {
         const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(K.stored(hex)), roughness: 0.5, metalness: 0.3, emissive: new THREE.Color(K.stored(hex, 1)), emissiveIntensity: k });
         const U = src === 'night' ? NIGHT : LAMP;
-        // Stage 2's program diet (Round 247): the four lit materials are one part of the rebuilds' family (K.fam), each reading its
+        // Stage 2's program diet (Round 251): the four lit materials are one part of the rebuilds' family (K.fam), each reading its
         // own uElN (r149 runs a material's hook even where it finds the program by key)
         return K.fam(m, { id: 'elst-lit', decl: 'uniform float uElN', uniforms: { uElN: U }, emis: 'totalEmissiveRadiance *= uElN;' });
       };

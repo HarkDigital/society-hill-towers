@@ -2477,7 +2477,7 @@
     renderer.setRenderTarget(postRT);
     AO.copied = false;
     const farDraw = farShadowPre(cam);   // the far shadow map, when its box or the sun has moved (see FARSH)
-    // Round 247: the backdrops' order, and its A/B in every other sampled window of the timer (BACKDROP)
+    // Round 251: the backdrops' order, and its A/B in every other sampled window of the timer (BACKDROP)
     const oldOrder = GPUT.live && BACKDROP.ab && Math.floor(GPUT.fid / GPUT_EVERY) % 2 === 1;
     BACKDROP.sky.renderOrder = oldOrder ? 0 : BACKDROP.sky0;
     if (BACKDROP.apron) BACKDROP.apron.renderOrder = oldOrder ? -1 : BACKDROP.apron0;
@@ -3338,7 +3338,7 @@
   // is a coping (stone, terra cotta or aluminium on its top, never the roof's gravel: gap#6); a gable end with the second
   // is the house's wall carried to the ridge, so it takes the wall's material (buildings#12). Nothing else writes either
   const ST_COPING = REAL ? 3 + 96 : 3, ST_GABLE = REAL ? 3 + 64 : 3;
-  // Stage 2 (Round 247, the plan's REALDATA-4 step A): pack_city.py used to give every merged far-ring strip of several
+  // Stage 2 (Round 251, the plan's REALDATA-4 step A): pack_city.py used to give every merged far-ring strip of several
   // houses form 0, so the roofs the LiDAR pass measured went to the lottery, which dealt the smaller strips gables over
   // flat rows. It now packs a strip's measured form in the codes no single building uses, 5 flat, 6 gable, 7 hip (the
   // strip's members by area, see strip_form there); the page reads them as 4, 1 and 2 under ?farforms=1 and as 0, the
@@ -5460,7 +5460,7 @@
   // computer, an RGBA8 target and r149's 16-bit depth buffer): 2048 under Auto, 24 MB, and 4096 under Sharper; the headless
   // A/B at 90, 300 and 600 m showed no difference past the near box, where a texel of 1.8 to 3.9 m is a pixel or two
   const FARSH = { on: false, can: false, light: null, ext: 0, cx: NaN, cz: NaN, sun: new V3(), drawn: 0, pending: false, last: -1e9, hid: [], fail: '', res: 0, wide: false, wideH: 250, waited: 0, owe: false, lastT: -1e9 };
-  // Stage 2 (Round 247, the plan's AERIAL-2 step 1, behind ?orbitsh=1): the entry orbit flies at 318 m, just over the
+  // Stage 2 (Round 251, the plan's AERIAL-2 step 1, behind ?orbitsh=1): the entry orbit flies at 318 m, just over the
   // switch at 250, so the first view's towers and streets were shaded by the far map (2.34 m a texel) instead of the near
   // one (0.29 m). At 360 the outer districts' buildings stay in the near map up to the orbit and a little over; the near
   // map then redraws about once a second there with their roofs (Round 188: about 1 ms on an M2 Max). A computer's only:
@@ -6130,7 +6130,7 @@
   });
   const sky = new THREE.Mesh(new THREE.SphereGeometry(5200, 32, 18), skyMat);
   sky.frustumCulled = false;
-  // Stage 2 (Round 247, the plan's FRAME-2): the two full-screen backdrops draw LAST among the opaques, so the depth test
+  // Stage 2 (Round 251, the plan's FRAME-2): the two full-screen backdrops draw LAST among the opaques, so the depth test
   // rejects them wherever the city already stands. The dome writes no depth and sits on the far plane; the apron lies 8 m
   // under the river beds; neither is coplanar with anything, so the picture is the same sample for sample. Today the sky
   // drew first (the lowest material id) and the apron at -1 'drawn first': on a GPU with an early depth test and no hidden
@@ -12609,7 +12609,7 @@ vec2 wRing(vec2 rc, float tt) {
   // lift + ACES compress darks far more than lights); invert per channel so the
   // rendered roof matches the ortho-sampled sRGB. Calibrated by canvas-pixel probe.
   const roofInv = (t) => Math.min(1, Math.pow(Math.max(t, 4) / 31.5, 2.364) / 255);
-  // Stage 2 (Round 247, the plan's AERIAL-1): a flat cap whose colour is the City's 2024 orthophoto sample carries a mark
+  // Stage 2 (Round 251, the plan's AERIAL-1): a flat cap whose colour is the City's 2024 orthophoto sample carries a mark
   // in its floor byte, which no cap reads otherwise (a floor height is 22 decimetres or more): 1 for the sample as it is,
   // 2 for the far ring's and the towns' caps after farCapLight's lift. Under ?roofpick the shader deals such a roof its
   // kind (tar, gravel, silver, white) by the sample's own brightness instead of the seed's lottery
@@ -15015,13 +15015,13 @@ vec2 wRing(vec2 rc, float tt) {
   // floor and a ceiling (interior mapping, van Dongen 2008), lit by the lamp at night and by the window by day (roomDay).
   // A host that sets neither draws exactly what it did. A host that binds the clock (occBind) defines ROOM_OCC; one that
   // does not keeps the old shares (0.48 of the homes, 0.54 of the suites)
-  // Stage 2 (Round 247, the plan's AERIAL-7 part 2, behind ?litfloors=1, uLitFl): an office's rooms light by the floor, as
+  // Stage 2 (Round 251, the plan's AERIAL-7 part 2, behind ?litfloors=1, uLitFl): an office's rooms light by the floor, as
   // the glass towers' have since Round 192: a floor is on or off (at 1.29 times the clock's office share), and an on floor
   // lights one run of rooms along a zone of 8 to 16 (0.55 to 1 of it, every eighth room dark), so a tower shows bands and
   // part floors instead of suites of two or three at random. The same lit share (1.29 x 0.775 x 0.88 = 0.88 of the clock's,
   // as the suites' 0.88 floors on), the same cleaners. Shader text either way, so it turns on later with no compile
   const LIT_FLOORS = /[?&]litfloors=1\b/.test(location.search);
-  // Round 247 (the plan's ART-3, behind ?floods=1): the floodlights on the landmarks that stood dark at night (the Art
+  // Round 251 (the plan's ART-3, behind ?floods=1): the floodlights on the landmarks that stood dark at night (the Art
   // Museum's wash sheets, Independence Hall's and Founder's Hall's flood in their own materials)
   const FLOODS = !/[?&]floods=0\b/.test(location.search), FLOOD_N = {};   // on by default since Mike's pick on page two (Nov 13); ?floods=0 dark
   const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) }, uLitFl: { value: LIT_FLOORS ? 1 : 0 } };
@@ -15030,7 +15030,7 @@ vec2 wRing(vec2 rc, float tt) {
     shader.uniforms.uLitFl = occU.uLitFl;
     shader.fragmentShader = '#define ROOM_OCC\n' + shader.fragmentShader;
   }
-  // Round 247: the hosts that never bound the clock (the house fronts, the tower skins, the town strips) bind ROOM_OCC
+  // Round 251: the hosts that never bound the clock (the house fronts, the tower skins, the town strips) bind ROOM_OCC
   // through their own uniform, at the old fixed shares (the const below) so they draw what they did, and take uLitFl.
   // The house fronts' rooms follow the clock under ?frontclock=1 (the plan's ART-5 b: three houses in four at 48% of their
   // rooms at every hour, 0.36, where the clock gives 0.41 at 21:30 and 0.06 at 03:00): its value is occU's own vector
@@ -15093,7 +15093,7 @@ vec2 wRing(vec2 rc, float tt) {
       float floorOn=step(.12,floorHash);
       float on=mix(step(1.0-uOcc.x,r),max(step(1.0-uOcc.y,zone)*floorOn,uOcc.z*step(floorHash,.08)),office);
       if(uLitFl>.5&&office>.5){
-        // Round 247 (?litfloors=1): the floor's switch, then one run of rooms along each zone of the floor
+        // Round 251 (?litfloors=1): the floor's switch, then one run of rooms along each zone of the floor
         float zl=8.0+floor(roomHash(vec2(id.y,seed*3.3))*9.0);
         float r0=floor(roomHash(vec2(id.y+3.7,seed))*zl);
         float rl=max(1.0,floor(mix(.55,1.0,roomHash(vec2(id.y+7.1,seed*1.9)))*zl+.5));
@@ -15504,7 +15504,7 @@ vec2 wRing(vec2 rc, float tt) {
   {
     const facadeHook = (gW, gR, sat, satR) => (shader) => {
       Object.assign(shader.uniforms, roofArtU);   // Round 185: the flat roofs' generated textures
-      // Stage 2's program diet (Round 247): the gains are this material's uniforms, never literals in the text, so the outer city
+      // Stage 2's program diet (Round 251): the gains are this material's uniforms, never literals in the text, so the outer city
       // and the core share one program (they were 'fabric' and 'fabric-core', the largest shader in the page compiled twice):
       // uFabG = (walls, roofs, saturation, the roofs' saturation, 1 leaving them as they are), uFabR the roofs' own 0.9 of theirs
       shader.uniforms.uFabG = { value: new THREE.Vector4(gW, gR, sat, satR || 1.0) }; shader.uniforms.uFabR = { value: +(gR * 0.9).toFixed(3) };
@@ -15631,7 +15631,7 @@ vec2 wRing(vec2 rc, float tt) {
           '    float cps = fract(sin(vBase * 13.1 + vTint * 7.7) * 43758.5453);',
           '    diffuseColor.rgb = (cps < 0.5 ? vec3(0.62, 0.58, 0.51) : (cps < 0.8 ? vec3(0.50, 0.25, 0.16) : vec3(0.60, 0.61, 0.63))) * uFabG.x;',
           '  } else if (n.y > 0.7) {',
-          // Round 247: the cap's own brightness, read before the mottle below multiplies into it (three thresholds read after
+          // Round 251: the cap's own brightness, read before the mottle below multiplies into it (three thresholds read after
           // it would deal two kinds inside one roof close in), the far ring's lift taken back off
           '    float rL0 = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uFabG.y * (vFloorH > 1.5 && vFloorH < 2.5 ? 0.813 : 1.0);',
           '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
@@ -15656,7 +15656,7 @@ vec2 wRing(vec2 rc, float tt) {
           '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uFabG.y;',
           '      float rk = rsd < 0.36 ? 1.0 : (rsd < 0.66 ? 0.0 : (rsd < 0.86 ? 2.0 : 3.0));',   // silver, tar, white, gravel
           '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
-          // Round 247 (the plan's AERIAL-1, behind ?roofpick, uRoofPick.x): a photographed cap takes its kind from its own
+          // Round 251 (the plan's AERIAL-1, behind ?roofpick, uRoofPick.x): a photographed cap takes its kind from its own
           // sample, the thresholds (yzw) the palette's sRGB 110, 170 and 215 through roofInv, each moved up to 12% by the
           // house's seed so a block still varies; a cap with no photograph (the towns, the unsampled far cells, a unit's top)
           // is dealt at the shares the photographs measured (tar 15, gravel 26, silver 38, white 21), so no district keeps
@@ -15692,7 +15692,7 @@ vec2 wRing(vec2 rc, float tt) {
           // roof's own mean, its kind's colour at the same share, so a house keeps its kind at any distance; each kind's
           // albedo spread by uRoofKindK (the means had come out 0.013 to 0.109, a narrow grey band), and a tone a house
           '      float rKk = rk < 0.5 ? uRoofKindK.x : (rk < 1.5 ? uRoofKindK.y : (rk < 2.5 ? uRoofKindK.z : uRoofKindK.w));',
-          '      if (uRoofPick.x > 0.5) rKk *= vFloorH > 0.5 && vFloorH < 1.5 ? uRoofHold.x : uRoofHold.y;',   // Round 247: ?roofpick=held
+          '      if (uRoofPick.x > 0.5) rKk *= vFloorH > 0.5 && vFloorH < 1.5 ? uRoofHold.x : uRoofHold.y;',   // Round 251: ?roofpick=held
           '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * uFabR * rKk, uRoofOwn);',
           '      vec3 rFar = mix(diffuseColor.rgb, rMean * uFabR * rKk, uRoofOwn);',
           '      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',
@@ -16373,7 +16373,7 @@ vec2 wRing(vec2 rc, float tt) {
     coreMat = cityMat.clone();   // r149's clone drops the hook; assigned fresh
     if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
     coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);
-    coreMat.customProgramCacheKey = () => 'fabric';   // Round 247: one program with the outer city's, its gains its own uniforms
+    coreMat.customProgramCacheKey = () => 'fabric';   // Round 251: one program with the outer city's, its gains its own uniforms
   }
   // the realism pass: the walls' and the pitched roofs' atlases as they decode (wallArtU), the snow the first time it lies
   function wallArtTex(im, aniso) {
@@ -16412,7 +16412,7 @@ vec2 wRing(vec2 rc, float tt) {
   // kind by the material's own colour (K.mat stores the photo's colour): brick, limestone and brownstone, marble, granite,
   // render, concrete, or none (glass, metal, slate, copper, paint). The kind is a uniform, so every rebuild material
   // shares one program; it keeps the weather (userData.wxSurf)
-  // (a member of the rebuilds' family, K.fam, Round 247, has vRbW and vRbN already: the family declares and writes them, and
+  // (a member of the rebuilds' family, K.fam, Round 251, has vRbW and vRbN already: the family declares and writes them, and
   // this pass reads them as they are)
   const RB_ART_VARY = 'varying vec3 vRbW; varying vec3 vRbN;';
   const RB_ART_GLSL = ['uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9]; uniform float uRbKind;',
@@ -21023,7 +21023,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     mat.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, U);
       sh.uniforms.uNight = nightUniform; sh.uniforms.uTvSun = sunWUniform;
-      if (!sh.uniforms.uTvFlood) sh.uniforms.uTvFlood = { value: new THREE.Vector2(0, 45) };   // Round 247: the tavern has no flood
+      if (!sh.uniforms.uTvFlood) sh.uniforms.uTvFlood = { value: new THREE.Vector2(0, 45) };   // Round 251: the tavern has no flood
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aTv; varying vec4 vTv;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTv = aTv * 255.0;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec2 uTvFlood;\n' + tvGlsl(nS, nE) + '\n' + WINDOW_INTERIOR_GLSL)
@@ -21098,7 +21098,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           '    vec3 tvRd = mix(vec3(0.30), roomDay(tvRuv, tvRid, 0.37, 0.0), tvRes);',
           '    float tvCv = clamp(dot(normalize(cameraPosition - tvWP), normalize(tvWN)), 0.0, 1.0), tvFr = 0.04 + 0.96 * pow(1.0 - tvCv, 5.0);',
           '    totalEmissiveRadiance += tvRd * (0.06 + 0.13 * max(uTvSun.y, 0.0)) * tvGlass * (1.0 - tvFr) * (1.0 - uNight); } }',
-          // Round 247 (?floods=1): the floodlights from the ground, the walls' own colour lit warm and fading up the tower; never
+          // Round 251 (?floods=1): the floodlights from the ground, the walls' own colour lit warm and fading up the tower; never
           // the glass or the roofs
           'if (uTvFlood.x > 0.0 && uNight > 0.001) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.8, 0.58) * uTvFlood.x * uNight * (1.0 - tvGlass) * (1.0 - smoothstep(0.45, 0.75, abs(tvWN.y))) * mix(1.0, 0.35, smoothstep(0.0, uTvFlood.y, tvWP.y - uTvY0));',
         ].join('\n'));
@@ -21652,7 +21652,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   const IH_SW = ['brick', 'shingle', 'paint', 'stone'];
   const IH_EL = ['sashG', 'sashU', 'sashW', 'door', 'tdoor', 'palladian', 'arch', 'clock', 'oculus', 'wdoor', 'cellar'];   // the first three glazed
   const ihU = {
-    uTvFlood: { value: new THREE.Vector2(FLOODS ? 0.9 : 0, 45) },   // Round 247 (?floods=1): the floodlights, their strength and the height they fade by
+    uTvFlood: { value: new THREE.Vector2(FLOODS ? 0.9 : 0, 45) },   // Round 251 (?floods=1): the floodlights, their strength and the height they fade by
     uTvArt: { value: 0 }, uTvY0: { value: 0 }, uTvE: { value: new THREE.Vector2(1, 0) }, uTvAtW: { value: 2048 },
     uTvEv: { value: new THREE.Vector2(-100, 12.55) },   // no pent; the cornice's bed moulding over the walls
     uTvSoot: { value: new THREE.Vector2(17.5, 20.2) },  // the end chimneys' heads
@@ -30604,7 +30604,7 @@ if (uOlLamp > 0.001) {
           c.copy(cGold);
           mass(56, 61, sv * 71.5 - 18, sv * 71.5 + 18, T + 17.5, T + 19, 3);
         }
-        // Stage 2 (Round 247, the plan's ART-3, behind ?floods=1): the museum is floodlit every night in the real city and
+        // Stage 2 (Round 251, the plan's ART-3, behind ?floods=1): the museum is floodlit every night in the real city and
         // stood dark here. A warm uplight on each mass's own footprint grown 0.6 m (never a box across the court), in its
         // own colour every night (slot -1: no theme, and no slot taken, so no later building's colour moves)
         if (FLOODS) {
@@ -32043,7 +32043,7 @@ if (uOlLamp > 0.001) {
       THREE, K, where: 'app',
       ground: (x, z) => { const y = groundMeshY(x, z); return y == null || !Number.isFinite(y) ? siteY(x, z, 'ground') : y; },
       night: nightUniform, lamp: lampUniform, lampU: lampMapU, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
-      floods: FLOODS,   // Round 247: ?floods=1, Founder's Hall's floodlights (gc.js)
+      floods: FLOODS,   // Round 251: ?floods=1, Founder's Hall's floodlights (gc.js)
       time: waterU.uTime, foam: REAL ? (waterArtLoad(), { tex: waterArtU.tFoam, on: waterArtU.uFoamOn, m: waterArtU.uFoamM }) : null,   // realism, water: the dam's white water (ww.js)
       occupy: (ring, top, pad) => {
         REBUILD_OCC.push({ id: 'def', ring, bb: rbBox(ring), pad: pad || 0, top: top || null });
@@ -32418,7 +32418,7 @@ if (uOlLamp > 0.001) {
           '  vFrSun = vec3(dot(uSunW, frX) * rk * (1.0 - 2.0 * pu) / cols / max(length(instanceMatrix[0].xyz), 0.1), uSunW.y * rk * (1.0 - 2.0 * pv) / rows / (aFr.w > 0.0 ? Hi : max(Hw, 0.1)), step(0.03, sTz) * step(0.0, uSunW.y)); }\n' +
           'vSeed = aFr.y; vBase = aFr.z;')
         .replace('#include <project_vertex>', '#include <project_vertex>\nvWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 0.0, 1.0));');
-      if (REAL) occFixBind(sh, frOccU);   // Round 247: the fronts' rooms, by the clock under ?frontclock=1, by the floor under ?litfloors=1
+      if (REAL) occFixBind(sh, frOccU);   // Round 251: the fronts' rooms, by the clock under ?frontclock=1, by the floor under ?litfloors=1
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uFrMV; uniform vec4 uFrA; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrT; varying vec3 vFrSun; vec4 frMask; float frBar; vec2 frUvS; vec3 frDay, frBlur;\n' + (REAL ? WINDOW_INTERIOR_GLSL : ''))
         // the storey remap: the ground floor and the band under the cornice at the image's own scale, the upper storeys
         // between them repeated (the middle ones) or dropped (from the middle) to fill the wall, each at its own height
@@ -33084,7 +33084,7 @@ if (uOlLamp > 0.001) {
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       if (style === 19 && fa) { const masonry = opaWallPool(fa); if (masonry) c.set(masonry[Math.floor(hsh * masonry.length) % masonry.length]); }
       const rb = roofBits(roofW, roofPacked);
-      if (rb[1] >= 5) rb[1] = FAR_FORMS ? FAR_FORM_OF[rb[1]] : 0;   // Round 247: a merged strip's measured form, behind ?farforms=1
+      if (rb[1] >= 5) rb[1] = FAR_FORMS ? FAR_FORM_OF[rb[1]] : 0;   // Round 251: a merged strip's measured form, behind ?farforms=1
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (capC && h <= 45 && t <= 6) farCapLight(capC);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
@@ -33499,9 +33499,9 @@ if (uOlLamp > 0.001) {
       const apron = new THREE.Mesh(ag, farGroundMat);
       apron.position.set(ax, TERRAIN.bed - 8, az);
       apron.frustumCulled = false;
-      apron.renderOrder = BACKDROP.apron0;   // Round 247: drawn last among the opaques (BACKDROP): it is behind everything and never coplanar with anything
+      apron.renderOrder = BACKDROP.apron0;   // Round 251: drawn last among the opaques (BACKDROP): it is behind everything and never coplanar with anything
       BACKDROP.apron = apron;
-      apron.userData.reflK = 0;   // Round 247: at 40 it is inside the mirror's sweep line; its material (wxSurf) kept it out before, and this names it
+      apron.userData.reflK = 0;   // Round 251: at 40 it is inside the mirror's sweep line; its material (wxSurf) kept it out before, and this names it
       groupCity.add(apron);
     }
     // the Schuylkill's pool between the outer districts' box and the NW hills patch: the
@@ -34778,7 +34778,7 @@ if (uOlLamp > 0.001) {
       // (the hours' fourth float the weekdays it keeps shut, a bit each, Monday the first: the sidecar's seventh value)
       const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, b) => (a < 0 || b < 0 ? -1 : a * 2048 + Math.min(2047, b));
       aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);
-      if (sfHrs) sfHrs.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);   // Round 247: the shops' light (?doorlamps=1)
+      if (sfHrs) sfHrs.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);   // Round 251: the shops' light (?doorlamps=1)
       const nm = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
       list.set([r.cx + r.nx * face, yS + H * 0.7, r.cz + r.nz * face, r.nx, r.nz, r.w, r.near, nm, k], k * 9);
       byFam[A.fams[r.fam]] = (byFam[A.fams[r.fam]] || 0) + 1; byCls[r.cls] = (byCls[r.cls] || 0) + 1;
@@ -36575,7 +36575,7 @@ if (uOlLamp > 0.001) {
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
-    if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowFall, uTexelS: { value: 1.5 / S.AH } });   // Round 247: the falling term
+    if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowFall, uTexelS: { value: 1.5 / S.AH } });   // Round 251: the falling term
     if (lit) cardShadowReach(sh);   // the realism pass: its shadow lookup out of its own crown
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; ' + TREE_VARY + (lit ? ' uniform float uSnowAcc; uniform float uTexelS;' : '') + '\n' + TREE_PICK)
@@ -37167,7 +37167,7 @@ if (uOlLamp > 0.001) {
     // 0.79 + 0.42 * vh about its centre, vh in [0, 1), and the sway adds under 0.07 of the unit shape
     const CROWN_GROW = 1.21, CROWN_SLACK = 0.1;
     const canopySway = (sh) => {   // the leaves move: a slow sway from the wind, per tree, plus a flutter; the crown is lit on top and dark underneath
-      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uSnowAcc = wxSurfU.uSnowFall;   // Round 247: a crown sheds its snow (the falling term)
+      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uSnowAcc = wxSurfU.uSnowFall;   // Round 251: a crown sheds its snow (the falling term)
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vCY; uniform float uSnowAcc;')
         .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp);' +
@@ -48926,14 +48926,14 @@ float pinOccGate() {
   // Round 218: the lite tiers had drawn no near map, so their pools were the far map's 7.8 m wash under every pole
   const LAMPNEAR = { on: REAL, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
   const LAMP_NEAR_EVERY = isTouch ? 250 : 0;
-  // Stage 2 (Round 247, the plan's STREET-6, behind ?doorlamps=1): the night street's small lights, as pools in the near map
+  // Stage 2 (Round 251, the plan's STREET-6, behind ?doorlamps=1): the night street's small lights, as pools in the near map
   // only (the far map never sees them): a lamp at about three doors in five of the generated house fronts whose picture has a
   // door (FRONTS.doors, laid by frontsLay), 2700 K, a 5 m pool on the step and the walk; and the light out of every storefront
   // open by its own hours (SF.hrs, the panels' own rule), a 6 m pool on the pavement. One small Points of their own on the
   // splats' material (no program of its own), rewritten when the set changes, which forces the near map's next draw.
   // No point of light is drawn for them: only their light on the ground and the first storey (Mike's floating orbs, Round 205)
   const DOOR_LAMPS = REAL && !/[?&]doorlamps=0\b/.test(location.search);   // on by default since Mike's pick (Nov 13); ?doorlamps=0 the street lamps alone
-  const SKIN_WX_U = { value: /[?&]skinwx=0\b/.test(location.search) ? 0 : 1 };   // on by default since Mike's pick (Nov 13); ?skinwx=0 clean tiles   // Round 247 (ART-5 c): the tile skins' weathering, below
+  const SKIN_WX_U = { value: /[?&]skinwx=0\b/.test(location.search) ? 0 : 1 };   // on by default since Mike's pick (Nov 13); ?skinwx=0 clean tiles   // Round 251 (ART-5 c): the tile skins' weathering, below
   const LAMPDYN = { on: DOOR_LAMPS, cap: 4096, pts: null, scene: null, n: 0, sig: '', doors: 0, shops: 0, min: -1, frGen: -1, at: 0 };
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
@@ -49485,7 +49485,7 @@ float pinOccGate() {
       k === 6 ? '  if (kn.y > 0.5) { vec2 g = vec2(kp.x / 1.1, kp.z / 1.0); float fr = max(1.0 - smoothstep(0.02, 0.05, abs(fract(g.x) - 0.5) * 2.0 - 0.94), 1.0 - smoothstep(0.02, 0.05, abs(fract(g.y) - 0.5) * 2.0 - 0.94)); float cell = 1.0 - smoothstep(0.0, 0.04, abs(fract(kp.x / 0.157) - 0.5) * 2.0 - 0.94); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 + 0.25 * cell * kd), vec3(0.22, 0.22, 0.23), fr * kd); }' : '',
       '}',
     ].join('\n') : '';
-    // Stage 2's program diet (Round 247): one program for every kind but the deck (eight became two). Each kind's detail is
+    // Stage 2's program diet (Round 251): one program for every kind but the deck (eight became two). Each kind's detail is
     // a branch on its material's uKitKind, uniform across a draw; the deck's (kind 5) stays its own program, since it ends
     // in a discard that would cost every kind's draws their early depth test. Kinds 3, 4 and 7 draw no detail of their own
     const KIT_SHARED = (k) => !(REAL && k === 5);
@@ -49730,7 +49730,7 @@ float pinOccGate() {
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
           if (REAL) {
             sh.uniforms.uSkinG = skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF; sh.uniforms.uSkinLate = skinU.uSkinLate;
-            occFixBind(sh);   // Round 247: the old shares, and the floors under ?litfloors=1
+            occFixBind(sh);   // Round 251: the old shares, and the floors under ?litfloors=1
             sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uSkinG, uSkinF; uniform vec2 uSkinLate; varying float vSeed; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
               .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>\n' + [
                 // the realism pass (buildings 7, night 2): each pane its own (a hash of its bay and floor), its glass a
@@ -49764,7 +49764,7 @@ float pinOccGate() {
               .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= mix(1.0 - 0.3 * tsMask.r * (1.0 - tsBar), 0.6, uSkinF.z);');
             wxSurfacePatch(sh);   // critic gap 8: rain, snow and the clouds' shadows, as on the walls round it
             if (SKIN_GLASS) skinGlassPatch(sh);
-            // Stage 2 (Round 247, the plan's ART-5 c, behind ?skinwx=1, uSkinWx): a tile of about 12 m repeated clean up a whole
+            // Stage 2 (Round 251, the plan's ART-5 c, behind ?skinwx=1, uSkinWx): a tile of about 12 m repeated clean up a whole
             // tower read as wallpaper. The wall share of the tile (never its glass) takes a broad blotch of its own building,
             // runs down from each spandrel and a tone a building, every term about zero mean (the tower's colour from afar is
             // as approved) and faded by the pixel's footprint
@@ -50175,7 +50175,7 @@ float pinOccGate() {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed, aTnOff; attribute vec4 aTnCell, aTnGrid; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid;')
           .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed; vTnOff = aTnOff; vTnCell = aTnCell; vTnGrid = aTnGrid;');
         if (SKIN_GLASS) skinGlassPatch(sh);   // first: it marks map_fragment, which the cells' read below replaces
-        occFixBind(sh);   // Round 247: the old shares, and the floors under ?litfloors=1
+        occFixBind(sh);   // Round 251: the old shares, and the floors under ?litfloors=1
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uTnLod; uniform vec2 uSkinLate; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
           .replace('#include <map_fragment>', [
             // the cell wrapped by hand: its own rect in the atlas, the gradients the unwrapped coordinate's (no seam where
@@ -50318,7 +50318,7 @@ float pinOccGate() {
               porch = true;
             }
           }
-          // Round 247 (?doorlamps=1): a lamp at about three doors in five, its pool 0.6 m out from the door
+          // Round 251 (?doorlamps=1): a lamp at about three doors in five, its pool 0.6 m out from the door
           if (LAMPDYN.on && cm.door && hash01(seed * 6.13 + j * 1.31) < 0.6 && dl.n < 2048) {
             const du = (cm.door[0] + cm.door[2]) / 2 * cw;
             dl.a[dl.n * 2] = px + rx * du + nx * 0.6; dl.a[dl.n * 2 + 1] = pz + rz * du + nz * 0.6; dl.n++;
@@ -50645,7 +50645,7 @@ float pinOccGate() {
     // over the light's colour into the HDR target or ACES), frosted grey by day
     const lensMat = (k, day) => {
       const m = new THREE.MeshBasicMaterial({ color: 0xffffff });
-      // Stage 2's program diet (Round 247): the day grey and the night gain are this material's uniform (uLensK), so the
+      // Stage 2's program diet (Round 251): the day grey and the night gain are this material's uniform (uLensK), so the
       // cobras' lens and the lanterns' glass share one program (keyed by their numbers before)
       m.onBeforeCompile = (sh) => {
         sh.uniforms.uLensOn = R.lensOn;
@@ -51114,7 +51114,7 @@ float pinOccGate() {
     if (themeSheet) {
       const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w, hs = themeSheet.userData.house;
       for (let i = 0; i < sl.length; i++) {
-        if (sl[i] < 0) { const o = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]); a.array[i * 3] = o.r * w[i]; a.array[i * 3 + 1] = o.g * w[i]; a.array[i * 3 + 2] = o.b * w[i]; continue; }   // Round 247: a flood in its own colour every night (slot -1)
+        if (sl[i] < 0) { const o = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]); a.array[i * 3] = o.r * w[i]; a.array[i * 3 + 1] = o.g * w[i]; a.array[i * 3 + 2] = o.b * w[i]; continue; }   // Round 251: a flood in its own colour every night (slot -1)
         let c = slotCol(sl[i]);
         if (hs && hs[i * 3] >= 0 && sl[i] < 4) c = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]).lerp(THEME.cur[sl[i]], THEME.on);   // its own colour on a plain night
         a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i];
@@ -52245,7 +52245,7 @@ float pinOccGate() {
     WX.temp = cur.temperature_2m == null ? null : cur.temperature_2m;
     WX.precip = Math.max(cur.precipitation || 0, (cur.rain || 0) + (cur.showers || 0));
     WX.snowfall = cur.snowfall || 0;
-    WX.snowDepth = cur.snow_depth == null ? null : cur.snow_depth;   // Round 247: metres lying (the model's analysis), ?snowlies
+    WX.snowDepth = cur.snow_depth == null ? null : cur.snow_depth;   // Round 251: metres lying (the model's analysis), ?snowlies
     WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
     // the deck is the low and mid cloud: a high veil alone (Mike's photo, a thin cirrostratus
     // over a half-covered cumulus sky reported as 80+ total) must not close the sky. Round 88
@@ -52298,7 +52298,7 @@ float pinOccGate() {
     hail: { cloud_cover: 100, precipitation: 13, weather_code: 96, wind_speed_10m: 46, temperature_2m: 68 },
     snow: { cloud_cover: 94, snowfall: 1.1, weather_code: 73, wind_speed_10m: 14, temperature_2m: 28 },
     blizzard: { cloud_cover: 100, snowfall: 3.4, weather_code: 75, wind_speed_10m: 38, temperature_2m: 21 },
-    // Round 247: the day after a storm, a clear sky over 15 cm lying (bare under ?snowlies=0)
+    // Round 251: the day after a storm, a clear sky over 15 cm lying (bare under ?snowlies=0)
     snowday: { cloud_cover: 6, weather_code: 0, wind_speed_10m: 8, temperature_2m: 25, snow_depth: 0.15 },
     sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
   };
@@ -52587,7 +52587,7 @@ float pinOccGate() {
   // wxSetTargets derives from the WMO code; applyLighting reads gloom/flash/fog
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
-  const SNOW_LIES = !/[?&]snowlies=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?snowlies=0 melts at once   // Round 247: the snow lies as long as the feed's depth
+  const SNOW_LIES = !/[?&]snowlies=0\b/.test(location.search);   // on by default since Mike's pick on page two (Nov 13); ?snowlies=0 melts at once   // Round 251: the snow lies as long as the feed's depth
   const smoothstep01 = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
   const WXFX = {
     rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, snowFall: 0, tSnowFall: 0, wet: 0, haze: 1, hazeTint: 0, cirrus: 0,
@@ -52624,7 +52624,7 @@ float pinOccGate() {
     F.tGloom = F.storm ? clamp(0.55 + 0.45 * F.tRain, 0, 1) : 0.5 * F.tRain;
     F.tSnowGround = F.tSnow > 0.02 ? clamp(0.35 + 0.5 * F.tSnow, 0, 0.85) : 0;
     if (WX.temp != null && WX.temp > 38) F.tSnowGround *= 0.25;   // too warm to stick: slush at best
-    // Round 247 (the plan's REALDATA-3, behind ?snowlies=1): the snow lies as long as the feed's depth says it does (today
+    // Round 251 (the plan's REALDATA-3, behind ?snowlies=1): the snow lies as long as the feed's depth says it does (today
     // it left the ground 17 minutes after the last flake). The falling term goes on as it was (tSnowFall) for what only
     // falling snow whitens: the tree crowns and cards, the sky's milk and the fog's grey, so the day after a storm is a white
     // city under a clear sky; the roofs, ground, kerbs, ruts, roof kit, cars and the snow's picture take the lying term
@@ -52649,7 +52649,7 @@ float pinOccGate() {
   // literal includes), plain-assigned everywhere hookless; water (liquify),
   // vehicles, glass, street text and poles keep their own programs, which
   // also keeps moving things from wearing the weather.
-  const wxSurfU = { uSnowAcc: { value: 0 }, uSnowFall: { value: 0 }, uWet: { value: 0 } };   // uSnowFall: Round 247, the falling term
+  const wxSurfU = { uSnowAcc: { value: 0 }, uSnowFall: { value: 0 }, uWet: { value: 0 } };   // uSnowFall: Round 251, the falling term
   // ground cover for the bare-earth planes: the single pale tone blanketing
   // every block interior and riverside flat read as permanent snow from the
   // air. A two-octave world-space mottle now breaks them into grass and dry
@@ -52675,12 +52675,12 @@ float pinOccGate() {
   // each kind in its quadrant, uRoofPad the pads (the quadrant's outside, between its variants); ?roofs16=0 deals only the
   // first variant, Round 185's picture
   const ROOFS16 = REAL && !/[?&]roofs16=0\b/.test(location.search);
-  // Round 247 (the plan's AERIAL-1): ?roofpick=photo deals each photographed flat roof its kind by its own sample (a paler
+  // Round 251 (the plan's AERIAL-1): ?roofpick=photo deals each photographed flat roof its kind by its own sample (a paler
   // city: the kinds' drawn albedos sit above the photographs' bins), ?roofpick=held the same pick with every kind's gain
   // scaled to hold today's mean roof brightness; off by default until Mike picks from the side by side. Shader text either
   // way, so the pick turns on later with no compile. The hold is per tier (uRoofHold: x for a cap as sampled, the outer
   // districts and the core; y for the far ring's lifted caps and every unsampled roof), from the replay of today's lottery
-  // and the pick over wide.b64's and city.b64's flat sampled roofs by area (devlog Round 247): the kind term's mean goes
+  // and the pick over wide.b64's and city.b64's flat sampled roofs by area (devlog Round 251): the kind term's mean goes
   // 0.470 to 0.637 in the outer districts and 0.526 to 0.569 in the far ring, so one scale would open a seam at York Street
   // Mike, Nov 13, on the side by side: "The shader updates look great, wrap that into the next deploy": held by default,
   // ?roofpick=photo the paler pick, ?roofpick=0 the old lottery
@@ -53059,7 +53059,7 @@ float pinOccGate() {
     return false;
   }
   function lampNearUpdate() {
-    lampDynUpdate();   // Round 247: the door lamps and the shops' light (?doorlamps=1)
+    lampDynUpdate();   // Round 251: the door lamps and the shops' light (?doorlamps=1)
     const N = LAMPNEAR, S = N.span, step = S / 16, U = lampMapU;
     const gy = groundMeshY(camera.position.x, camera.position.z), up = camera.position.y - (gy == null || !Number.isFinite(gy) ? 0 : gy);
     const hk = 1 - smooth(160, 420, up);
@@ -53113,7 +53113,7 @@ float pinOccGate() {
     r.getClearColor(_lmCol);
     r.setRenderTarget(N.rt); r.setClearColor(0x000000, 0); r.clear(true, false, false);
     const gprev = gpuNow(); gpuT('lampnear');   // Round 220: the timer's 'lampnear' label, the frames the near map is drawn
-    r.autoClear = false; if (LAMPDYN.scene && LAMPDYN.n) r.render(LAMPDYN.scene, N.cam);   // Round 247: the door lamps and the shops' light (additive: the order is the sum's)
+    r.autoClear = false; if (LAMPDYN.scene && LAMPDYN.n) r.render(LAMPDYN.scene, N.cam);   // Round 251: the door lamps and the shops' light (additive: the order is the sum's)
     r.render(LAMPMAP.scene, N.cam); r.autoClear = prevAuto;
     gpuT(gprev);
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
@@ -53699,7 +53699,7 @@ float pinOccGate() {
   // wind offset as the sky's clouds; the surfaces and the trees darken under it by day
   const cloudShU = { uCloudOff: skyMat.uniforms.uCloudOff, uCloudCov: skyMat.uniforms.uCloud, uCloudSh: { value: 0 }, uCloudSlant: { value: new THREE.Vector2() } };
   function cloudShadowPatch(shader, worldExpr) {
-    // Stage 2 (Round 247, RENDER-4 part 2): cloudShade returns 0 at once where the strength is 0 (every night, uCloudSh being
+    // Stage 2 (Round 251, RENDER-4 part 2): cloudShade returns 0 at once where the strength is 0 (every night, uCloudSh being
     // dayF times the rest): the result was already multiplied by it, so no pixel changes; sixteen hashes leave every lit fragment after dark
     if (shader.fragmentShader.indexOf('float cloudShade(') !== -1) return;   // chained patches each ask for it; once is enough
     shader.uniforms.uCloudOff = cloudShU.uCloudOff; shader.uniforms.uCloudCov = cloudShU.uCloudCov; shader.uniforms.uCloudSh = cloudShU.uCloudSh; shader.uniforms.uCloudSlant = cloudShU.uCloudSlant;
@@ -53935,7 +53935,7 @@ float pinOccGate() {
   // flush's render (flushUploads) and once more as build() ends, for what the steps after the last flush made, so a
   // material is wrapped after its creation-time hook and before its first compile, and each program compiles once, in
   // the variant the frames use. What it does, as the block did:
-  //   the facade (cityMat, coreMat): the facade shader first, then the weather, both keyed 'fabric|wx' since Round 247 (the gains are uniforms);
+  //   the facade (cityMat, coreMat): the facade shader first, then the weather, both keyed 'fabric|wx' since Round 251 (the gains are uniforms);
   //   a flat that carries userData.wxSurf (surfMat, groundSurfMat and any hook built on them): WRAPPED, so the shader
   //     runs the material's own patch first and the snow lands over it (the later replace lands earlier in the shader),
   //     keyed on the wrapped hook (gotcha 15), with the gutters after every hook (wxSurfaceLate);
@@ -53989,7 +53989,7 @@ float pinOccGate() {
       WX_OWN.set(m, { own: prev, laid: m.onBeforeCompile }); H.mats++;
     };
     facade(cityMat, 'fabric|wx');
-    facade(coreMat, 'fabric|wx');   // Round 247: the core shares the outer city's program (its gains are uniforms)
+    facade(coreMat, 'fabric|wx');   // Round 251: the core shares the outer city's program (its gains are uniforms)
     const over = last ? new Set() : null;
     scene.traverse((o) => {
       const ms = o.material;
@@ -54975,7 +54975,7 @@ float pinOccGate() {
       cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
       ch.lerp(_c2.set(0x525b66).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.62);
     }
-    const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowFall * 0.3);   // Round 247: the falling term (lying snow leaves the sky clear)
+    const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowFall * 0.3);   // Round 251: the falling term (lying snow leaves the sky clear)
     if (snowSky > 0.003) {      // snow days read milk, not blue — during the fall and while cover lies
       cz.lerp(_c2.set(0xb6bec8).multiplyScalar(0.15 + 0.85 * dayF), snowSky);
       ch.lerp(_c2.set(0xd6dade).multiplyScalar(0.15 + 0.85 * dayF), snowSky * 0.9);
@@ -55796,7 +55796,7 @@ float pinOccGate() {
   //   tip past A's reach (a flight, a ship, a placard) reads A for what stands within it and B for the rest (occImgBoth):
   //   what stands a kilometre off shifts about a pixel in the frames B is older. A computer draws the complete image every
   //   frame
-  // drawn frames between images while the eye moves or turns. Round 247: every frame on a phone too (it was every 2nd): in
+  // drawn frames between images while the eye moves or turns. Round 251: every frame on a phone too (it was every 2nd): in
   // a scripted flight over Old City at 30 fps every pin a phone showed through a building (62 to 98 pin-frames a 20 s pass) was
   // shown from an image a frame old, and each one popped over the edge for a frame and then hid; at every frame, none.
   // ?pinmove=2 keeps the phone's old cadence
@@ -56251,7 +56251,7 @@ float pinOccGate() {
   // hiding is at once. A pin's state (pinOccArrays): tgt shown or not; lin its fade; why it is hidden (0 unknown, 2 covered);
   // okC and okT the images and seconds its tip has read clear while hidden; age the seconds since its last covered answer;
   // arr the frame it came into view (an image drawn before then says nothing of it); on whether it is in view
-  // Round 247 (Mike, Nov 13: "The pins appear to be flashing when flying sometimes"): a flight's occlusions are brief (half
+  // Round 251 (Mike, Nov 13: "The pins appear to be flashing when flying sometimes"): a flight's occlusions are brief (half
   // of them three frames or fewer at 30 fps: a pin sliding past a building's edge or roofline), and a pin covered for a tenth
   // of a second stayed hidden for about half of one (two clear images, then 0.3 s since the covered answer, then the 0.2 s
   // fade), again and again along a flight. Hiding stays at once, and the gate still hides a covered tip the frame its image
@@ -56714,7 +56714,7 @@ float pinOccGate() {
       cloud: { old: CLOUDZ.old, mode: CLOUDZ.mode, rects: CLOUDZ.n, merged: CLOUDZ.merged, warm: CLOUDZ.warm, box: CLOUDZ.box.toArray(), zVisible: !!(cloudDeckZ && cloudDeckZ.visible), list: CLOUDZ.rects.slice(0, CLOUDZ.n).map((v) => v.toArray()) },
       mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, warmN: MIRZ.warmN || 0, warmP: MIRZ.warmP || 0, warmMs: MIRZ.warmMs || 0 } });   // Round 192: the depth mode, its probe and the deck's programs
     if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
-    if (window.__dbg) window.__dbg.doorLamps = () => ({ on: LAMPDYN.on, n: LAMPDYN.n, doors: LAMPDYN.doors, shops: LAMPDYN.shops, laidDoors: FRONTS.doors ? FRONTS.doors.n : 0, laid: FRONTS.laid, sfHrs: !!SF.hrs, sf: SF.n, nearRenders: LAMPNEAR.renders, nearOn: lampMapU.uLampReal.value.x, lampOn: lampMapU.uLampOn.value, skinWx: SKIN_WX_U.value });   // Round 247
+    if (window.__dbg) window.__dbg.doorLamps = () => ({ on: LAMPDYN.on, n: LAMPDYN.n, doors: LAMPDYN.doors, shops: LAMPDYN.shops, laidDoors: FRONTS.doors ? FRONTS.doors.n : 0, laid: FRONTS.laid, sfHrs: !!SF.hrs, sf: SF.n, nearRenders: LAMPNEAR.renders, nearOn: lampMapU.uLampReal.value.x, lampOn: lampMapU.uLampOn.value, skinWx: SKIN_WX_U.value });   // Round 251
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) Object.assign(window.__dbg, { bankCheck });   // the realism round two (R1): the Schuylkill's banks
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state

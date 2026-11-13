@@ -1,5 +1,5 @@
-"""Stage 2 of the Nov 10 plan, its performance half (Round 247): fewer programs and less wasted shading, nothing on screen
-changed (each checked by a pixel parity of noon and night poses, devlog Round 247).
+"""Stage 2 of the Nov 10 plan, its performance half (Round 251): fewer programs and less wasted shading, nothing on screen
+changed (each checked by a pixel parity of noon and night poses, devlog Round 251).
 
 - The program diet: the outer city's and the core's facades share one program (their gains are each material's uniform,
   uFabG and uFabR, never literals); the El stations' four lit materials one key; the lamps' lens and lantern glass one

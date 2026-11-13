@@ -46,7 +46,7 @@
       const nightU = { value: 0 }, baseU = { value: base };
       const lampWash = (m) => {
         const c = m.clone();
-        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), its height the family's world position
+        // Stage 2's program diet (Round 251): one part of the rebuilds' family (K.fam), its height the family's world position
         return K.fam(c, { id: 'dl-lampwash', decl: 'uniform float uNight, uBaseY', uniforms: { uNight: nightU, uBaseY: baseU },
           emis: 'totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.7, 0.42) * (uNight * 0.45 * (1.0 - smoothstep(3.0, 16.0, vRbW.y - uBaseY)) + uNight * 0.015);' });
       };

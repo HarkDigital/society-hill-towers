@@ -1,4 +1,4 @@
-"""Stage 2 of the Nov 10 plan, the night and winter (Round 247): four looks for Mike's second side by side of the train,
+"""Stage 2 of the Nov 10 plan, the night and winter (Round 251): four looks for Mike's second side by side of the train,
 each a uniform or a data switch. His picks (Nov 13): the fronts' clock, the floods and the lying snow on by default
 (?frontclock=0, ?floods=0, ?snowlies=0 refuse); the lit floors kept off (?litfloors=1 shows them).
 

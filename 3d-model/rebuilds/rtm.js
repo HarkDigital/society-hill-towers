@@ -71,7 +71,7 @@
           '  totalEmissiveRadiance += tint * pLvl * wash * uNight * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));',
           '}');
         code.push('}');
-        // Stage 2's program diet (Round 247): one part of the rebuilds' family (K.fam), the panes' uv the family's vRbUv
+        // Stage 2's program diet (Round 251): one part of the rebuilds' family (K.fam), the panes' uv the family's vRbUv
         return K.fam(mat, { id: 'rtm-' + key, decl: 'uniform float uNight, uRtmBase, uLampOn; uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade',
           uniforms: { uNight: U.night, uRtmBase: U.base, uLampMap: U.lampMap, uLampBox: U.lampBox, uLampOn: U.lampOn, uLampFade: U.lampFade }, emis: code.join('\n') });
       };

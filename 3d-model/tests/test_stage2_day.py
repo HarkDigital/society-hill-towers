@@ -1,4 +1,4 @@
-"""Stage 2 of the Nov 10 plan, the first view by day (Round 247): three looks for Mike's first side by side of the train,
+"""Stage 2 of the Nov 10 plan, the first view by day (Round 251): three looks for Mike's first side by side of the train,
 on by default since his pick (Nov 13: "The shader updates look great, wrap that into the next deploy").
 
 - ?roofpick=held by default, photo or 0 (AERIAL-1): a flat cap whose colour is the orthophoto's sample carries a mark in its floor byte

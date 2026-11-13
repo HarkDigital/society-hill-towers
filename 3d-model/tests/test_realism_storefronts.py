@@ -208,7 +208,7 @@ const fs = require('fs');
 const location = { search: '' };
 const atob = (b) => Buffer.from(b, 'base64').toString('binary');
 const STOREFRONT_ART = JSON.parse(fs.readFileSync(__ART__, 'utf8')), STOREFRONT_INFO = JSON.parse(fs.readFileSync(__INFO__, 'utf8'));
-const REAL = true, TIER2 = false, FRONTS_ON = true, isTouch = false, DOOR_LAMPS = false;   // Round 247: the shops' light, off
+const REAL = true, TIER2 = false, FRONTS_ON = true, isTouch = false, DOOR_LAMPS = false;   // Round 251: the shops' light, off
 const renderer = { capabilities: { isWebGL2: true, getMaxAnisotropy: () => 8 } };
 const camera = new THREE.PerspectiveCamera();
 const nightUniform = { value: 0 }, sunWUniform = { value: new THREE.Vector3() }, frR = { value: 380 }, frShopOn = { value: 1 };

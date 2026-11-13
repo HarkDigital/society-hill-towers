@@ -69,7 +69,7 @@ const out = {};
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 // applyWx and the weather's targets, cut from app.js, over stubs
 const WX = { cover: 0.22, high: undefined, nwsCover: 0, nwsT: 0, windX: 0, windZ: 0 };
-const SNOW_LIES = false, smoothstep01 = (t) => t;   // Round 247: the lying snow, off
+const SNOW_LIES = false, smoothstep01 = (t) => t;   // Round 251: the lying snow, off
 const waterU = { uWAmp: { value: 0 }, uWDir: { value: { set() {} } } };
 const wxWind = { set() {} };
 const mkWx = new Function('WX', 'clamp', 'waterU', 'wxWind', 'refreshTimeUI', 'LTN', 'AQI',

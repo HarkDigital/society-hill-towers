@@ -99,7 +99,7 @@ console.log(JSON.stringify({ s, renders, landed }));''')
         self.assertEqual(first + 21, drawn + 1)                      # shown the frame that image lands (LAT 1)
         rise = s[first:first + 14]
         self.assertEqual(rise, sorted(rise))
-        self.assertGreaterEqual(sum(1 for v in rise if 0 < v < 1), 6)    # an ease over 0.12 s (Round 247; 0.2 before), not a snap
+        self.assertGreaterEqual(sum(1 for v in rise if 0 < v < 1), 6)    # an ease over 0.12 s (Round 251; 0.2 before), not a snap
         self.assertEqual(s[-1], 1)
 
     def test_a_covered_answer_hides_at_once(self):
@@ -118,7 +118,7 @@ console.log(JSON.stringify({ s, landed }));''')
 
     def test_showing_after_covered_needs_the_dwell(self):
         # covered by the image of frame 30, clear again from the image of frame 32: it waits for one clear image and PIN_DWELL
-        # (Round 247, Mike: the pins flash when flying; Round 169 waited for two images and 0.3 s, ?pinshow=old)
+        # (Round 251, Mike: the pins flash when flying; Round 169 waited for two images and 0.3 s, ?pinshow=old)
         out = self.run_js('''
 run(30);
 truth = (x, f) => (f >= 30 && f < 32 ? 0 : 1);
@@ -269,7 +269,7 @@ console.log(JSON.stringify({ kinds: f.map((q) => q[1][0]).join(''), reach: PIN_O
     def test_constants_and_wiring(self):
         self.assertIn("const PIN_FADE = typeof location !== 'undefined' && /[?&]pinshow=old\\b/.test(location.search) ? 0.2 : 0.12, PIN_SHOW_OLD = PIN_FADE === 0.2;", SRC)
         self.assertIn('const PIN_HOLD = 0.45, PIN_DWELL = PIN_SHOW_OLD ? 0.3 : 0.1, PIN_COV_IMGS = PIN_SHOW_OLD ? 2 : 1;', SRC)
-        # Round 247: a phone draws an image every frame while it moves too (?pinmove=2 its old every 2nd); the harness above
+        # Round 251: a phone draws an image every frame while it moves too (?pinmove=2 its old every 2nd); the harness above
         # keeps 2 for a phone, the cadence rule's own test
         self.assertIn("const PIN_OCC_MOVE_EVERY = isTouch && typeof location !== 'undefined' && /[?&]pinmove=2\\b/.test(location.search) ? 2 : 1;", SRC)
         self.assertIn('const PIN_OCC_FULL_EVERY = isTouch ? 10 : 1;', SRC)

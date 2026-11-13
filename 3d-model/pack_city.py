@@ -26,9 +26,9 @@ ap = argparse.ArgumentParser(description='osm_city_raw.json -> city.b64 (far rin
 ap.add_argument('--against', metavar='CITY_B64',
                 help='write that city.b64 again with only its merged strips\' roof forms filled in from this pack '
                      '(a record matched by its exact outline, at form 0 there and 5 to 7 here, its colour index the '
-                     'same): every other int16 is the old file\'s (Round 247; the inputs have drifted since Sep 17)')
+                     'same): every other int16 is the old file\'s (Round 251; the inputs have drifted since Sep 17)')
 ap.add_argument('--no-strip-forms', action='store_true',
-                help='pack every merged strip at form 0 as before Round 247 (reproduces the old city.b64)')
+                help='pack every merged strip at form 0 as before Round 251 (reproduces the old city.b64)')
 ap.add_argument('--allow-missing', action='store_true',
                 help='pack even when a join LUT (LiDAR heights / OPA attrs / roof colours) is missing; '
                      'the affected attributes are dropped from the far ring')
@@ -221,7 +221,7 @@ def roof_pick(idxs):
     if not ROOF_LUM: return Counter(idxs).most_common(1)[0][0]
     mean = sum(ROOF_LUM[i] for i in idxs) / len(idxs)
     return min(idxs, key=lambda i: (abs(ROOF_LUM[i] - mean), i))
-# Stage 2 (Round 247, the plan's REALDATA-4 step A): a strip of several houses kept form 0 whatever its members were
+# Stage 2 (Round 251, the plan's REALDATA-4 step A): a strip of several houses kept form 0 whatever its members were
 # measured as, so about 29,800 measured forms went to the page's lottery, which dealt the smaller strips gables over
 # flat rows. A strip now takes a form from its members by area: flat when 60% of its area was measured or tagged flat;
 # a gable (or a hip) when 60% was measured pitched with every pitched member's ridge within 20 degrees of the others'

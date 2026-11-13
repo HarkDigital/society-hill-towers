@@ -581,7 +581,7 @@ RB.add({
       uWash: { value: new THREE.Color(K.stored('#ffe2b8', 1)) }, uPoolCol: { value: new THREE.Color(K.stored('#ffcf8a', 1)) },
       uX0: { value: G[0] - 9 }, uX1: { value: -3272 }   // the floodlit stretch: the gazebo to the Engine House (not the dam, not the hill)
     };
-    // Stage 2's program diet (Round 247): the wash, the glass and the foam are parts of the rebuilds' family (K.fam), their
+    // Stage 2's program diet (Round 251): the wash, the glass and the foam are parts of the rebuilds' family (K.fam), their
     // world position, normal and uv the family's vRbW, vRbN and vRbUv
     const WASH_GLSL = '{\n' +
       '  float yb = vRbW.y < uT - 0.3 ? uW : uT;\n' +                         // the river front is lit from the water, the rest from the terrace

@@ -41,7 +41,7 @@
         glass: K.glass(),
         door: K.mat('#2f3d33', { rough: 0.6 })                 // hunter-green doors
       };
-      // Stage 2 (Round 247, the plan's ART-3, behind the app's ?floods=1): the hall is floodlit every night; the marble and the
+      // Stage 2 (Round 251, the plan's ART-3, behind the app's ?floods=1): the hall is floodlit every night; the marble and the
       // cella's walls take a warm uplight in their own colour, fading up the columns, never the roof or the glass. A part of
       // the rebuilds' family (K.fam), so no program of its own; own copies of the two kit materials, which other rebuilds share
       const GCY = { value: 0 };
@@ -77,7 +77,7 @@
       const gBase = gTop + 0.03;                                  // the foot of the bottom riser
       const RISE = 6.833 * FT / (NSTEP + 1);                      // 6'-10" in eleven risers
       const yS = gBase + (NSTEP + 1) * RISE;                      // stylobate top
-      GCY.value = yS;   // Round 247: the floodlights fade up from the stylobate
+      GCY.value = yS;   // Round 251: the floodlights fade up from the stylobate
       const yF = gMin - 1.5;                                      // foundation
       if (api.where === 'app') {
         stepLine.sort((a, b) => a - b);
