@@ -12,6 +12,8 @@
 //     "js": "<expression>" to run in the page before the frames (a weather preset, a toggle).
 //   --eval <file.js> runs that file's expression in the page after the last pose and prints its value (a probe).
 //   --png saves lossless PNGs (for flicker_diff.py) in place of the JPEGs.
+//   --dom captures the composited page (Page.captureScreenshot) so the DOM labels, placards and cards show over the canvas;
+//     the canvas alone (the default) never carries them. A phone's shot is in device pixels (1.25 times --w and --h).
 //   --touch emulates a phone (touch points, mobile metrics, pixel ratio 1.25): the page's isTouch path; use --w 740 --h 360.
 //   The first pose's clock rides the link (#t=YYYYMMDD,minutes) so the page's FIRST frame is drawn under it. Since Round 229
 //     the page draws that frame itself, from a timer, before this tool can set a clock (Enter lights only after it), and
@@ -31,7 +33,8 @@ import net from 'node:net';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const pos0 = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
-const PNG = args.includes('--png');   // lossless captures (flicker_diff.py: a jpeg's own noise swamps the count)
+const PNG = args.includes('--png');
+const DOM = args.includes('--dom');   // Page.captureScreenshot: the HUD, the labels and the cards with the canvas (Round 246)   // lossless captures (flicker_diff.py: a jpeg's own noise swamps the count)
 const W = +opt('w', 1280), H = +opt('h', 800), gpu = opt('gpu', 'metal'), FR = +opt('frames', 24);
 const freePort = () => new Promise((res) => { const sv = net.createServer(); sv.listen(0, '127.0.0.1', () => { const p = sv.address().port; sv.close(() => res(p)); }); });
 let url = pos0[0], posesPath = pos0[1], outdir = pos0[2], server = null;
@@ -121,7 +124,12 @@ for (const p of poses) {
   if (p.js) await ev(p.js);
   // frames with a task between them, so asynchronous loads (art, readbacks) land
   for (let i = 0; i < FR; i++) { await ev('__dbg.frameOnce(); 1'); await sleep(i < 4 ? 250 : 60); }
-  const data = await ev(PNG ? "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/png'); })()" : "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/jpeg', 0.9); })()");
+  let data;
+  if (DOM) {   // --dom: the composited page, the DOM labels and cards over the canvas (the canvas alone never carries them)
+    await ev('__dbg.frameOnce(); 1');
+    const shot = await S('Page.captureScreenshot', PNG ? { format: 'png' } : { format: 'jpeg', quality: 90 });
+    data = shot && shot.data ? 'data:,' + shot.data : { __err: 'no screenshot' };
+  } else data = await ev(PNG ? "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/png'); })()" : "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/jpeg', 0.9); })()");
   if (typeof data !== 'string') { out.push({ name: p.name, error: data && data.__err }); continue; }
   const f = path.join(outdir, p.name + (PNG ? '.png' : '.jpg'));
   writeFileSync(f, Buffer.from(data.split(',')[1], 'base64'));

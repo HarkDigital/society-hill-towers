@@ -14627,3 +14627,36 @@ weather (`?wx=clear`), on this build through render.mjs: no failure, no console 
 Stage 1 is done but for Mike's two flights on the Mac. Still open from Round 229's list, none of them Stage 1's: the
 probe's `LP_ONE_MS` line and end date, the fence trip, the iOS crumb's focus gate, Camden's three port structures, the
 storefront bake.
+
+## Round 246 — the new concert and game placards, behind `?placards=new` (Nov 12)
+
+Mike: "Make the concert and sport boxes look cooler." The score bubbles and concert placards get a new card, built behind
+`?placards=new` and off by default until he picks from the private side by side
+(https://claude.ai/artifact/RuF1ST4A384EubhM2wxvnG: the sports complex and Fishtown, by day and at 19:30, Citizens Bank
+Park up close, computer and phone in landscape, before and after).
+
+- The card (`.lbl.score.pn`, every rule scoped to `.pn`): a slate gradient in the HUD's language with the team's colour on
+  its left edge (`--team`) and in its kicker (`--tint`, `teamTint`: the colour's HSL lightness raised to 0.58, so the
+  Eagles' midnight green and the 76ers' blue read on slate); the team named in words (`TEAM_NAME`), Home or Away, and a
+  status pill: Live (a pulsing dot and a slow glow round the card, `.pg`, an opacity animation only), Today (bronze),
+  Final (grey, the loser dimmed). A game is a scoreboard of two rows (`scoreCardHTML`), the leader bright, the inning or
+  clock under a hairline with Home or Away taken off it and ESPN's spaced hyphen read as a comma; before the game the
+  matchup and the time alone. No logos: no brand marks on the new card (the old one keeps ESPN's). A concert is the same
+  card in bronze (`concertCardHTML`): Live Music, Tonight from 5 pm or Today, each venue's name over its shows, the artist
+  large, the time and a Tickets pill, Ticketmaster's picture at the left. A caret over the tether replaces the stub.
+- A phone (`.tch`, isTouch) gets a compact card: both scores on one line, about 55 px tall against about 90, and a 26 px X.
+- On the roof: a smaller ball, a flat ring round it held to a readable size from afar, and a ripple outward while a game
+  is live (`placardMarks`, `placardMarksTick`). All three are the ball's own MeshBasicMaterial through pinSceneDepth and
+  the tether the same LineBasicMaterial, so the flag makes no new program (the one-shader-train rule); the ripple's
+  opacity ends at 0.52, over the pins' alphaTest. Shown or hidden whole with the tether by the same one-mile and blocked
+  answer (`EVENT_PIN_R`, `pinBlocked`).
+- Stacking: the cards on one spot stack on the screen as well as by the 22 m (`placardLift`, `PLAC_STACK`, the games
+  first and the concerts over them), and where two venues' cards cross the nearer is drawn on top (a z-index by
+  distance); the old look's overlaps at the sports complex are gone.
+- The X and `eventTapRestore` are unchanged (the same `EVENT_X` and data attributes). With the flag off the old markup,
+  ball and CSS are exactly as before. `tests/test_placards_new.py` runs both card builders under Node and pins the flag's
+  wiring; `test_app_art` and `test_pins` count the new card's `<img>` and the third `pinSceneDepth(ball)`.
+- The capture skill's `render.mjs` takes `--dom`: Page.captureScreenshot, so the DOM labels and cards are in the shot
+  (the canvas alone never carries them). The poses drive `__dbg.scoreTest()` and `__dbg.concertTest()` (the test shows
+  carry no picture, so the concert card's image is not in the set). Checked: no failed step and no console error in any
+  of the six runs; zsh does not split an unquoted `$extra`, so pass `--touch --w 740 --h 360` literally.

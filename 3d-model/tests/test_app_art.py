@@ -419,10 +419,12 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # every .src that is set: the analytics script, artImage's own image, the two JSONP scripts, the street names'
         # atlas from inlined bytes, and the skyline theme's source word (not an element)
         self.assertEqual(Counter(re.findall(r'([\w$.\]]+)\.src\s*=(?!=)', s)), Counter({'script': 2, 'ga': 1, 'im': 1, 'img': 1, 'THEME': 1}))
-        # the two <img> the cards write are ESPN's and Ticketmaster's own pictures, never an art file
-        self.assertEqual(s.count('<img'), 2)
+        # the three <img> the cards write are ESPN's and Ticketmaster's own pictures, never an art file (Round 246's new
+        # concert card writes Ticketmaster's picture a second way, under ?placards=new)
+        self.assertEqual(s.count('<img'), 3)
         for field in ('g.logo', 'first.image'):
             self.assertEqual(s.count('\'<img class="logo" alt="" src="\' + septaEsc(' + field + ') + \'" onerror="this.remove()">\''), 1, field)
+        self.assertEqual(s.count('\'<img class="ci" alt="" src="\' + septaEsc(first.image) + \'" onerror="this.remove()">\''), 1)
         # two images are made in the page: artImage's, and the street names' atlas from the bytes the page inlines
         self.assertEqual(s.count('new Image()'), 2, 'a new image loader: an art file must come through artImage(artSrc(...))')
         self.assertEqual(s.count('im.src = src;'), 1)

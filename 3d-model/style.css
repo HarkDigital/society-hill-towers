@@ -853,6 +853,69 @@ body.touchfly .pad { display: flex; }
 .lbl.concert a { color: var(--limestone); text-decoration: none; border-bottom: 1px solid var(--limestone-dim); pointer-events: auto; font-size: 10.5px; letter-spacing: 0.06em; margin-left: 9px; }
 .lbl.concert a:hover { color: var(--paper); border-bottom-color: var(--paper); }
 .lbl.concert .src { display: block; color: var(--paper-faint); font-size: 9.5px; letter-spacing: 0.08em; margin-top: 2px; }
+/* Round 246 (Mike: "Make the concert and sport boxes look cooler"): the new placards, only under ?placards=new (the .pn
+   class). A slate card in the HUD's language, the team's colour on its left edge and in its kicker (--team, --tint, set by
+   the page), a scoreboard of two rows, a status pill, a caret over the tether; the concerts the same card in bronze */
+.lbl.score.pn { display: block; min-width: 148px; padding: 8px 13px 9px 15px; border: 1px solid rgba(222, 214, 196, 0.2); border-radius: 10px;
+  background: linear-gradient(180deg, rgba(40, 48, 56, 0.95) 0%, rgba(24, 29, 34, 0.95) 100%); color: var(--paper);
+  font-size: 12px; font-weight: 500; letter-spacing: 0.02em; line-height: 1.25; text-align: left; white-space: nowrap;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.36), inset 0 1px 0 rgba(255, 255, 255, 0.07); --team: var(--bronze); --tint: var(--bronze); }
+.lbl.score.pn.concert { --team: var(--bronze); --tint: var(--bronze); min-width: 176px; }
+.lbl.score.pn::before { content: ''; position: absolute; left: -1px; top: -1px; bottom: -1px; width: 4px; border-radius: 10px 0 0 10px; background: var(--team);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.08); }
+.lbl.score.pn::after { left: 50%; bottom: -6px; width: 10px; height: 10px; margin-left: -5px; transform: rotate(45deg); background: rgb(24, 29, 34);
+  border: solid rgba(222, 214, 196, 0.2); border-width: 0 1px 1px 0; }
+.lbl.score.pn .pg { position: absolute; inset: -1px; border-radius: 10px; pointer-events: none; opacity: 0; box-shadow: 0 0 0 1px var(--team), 0 0 18px 1px var(--team); }
+.lbl.score.pn.live .pg { animation: placardglow 2.6s ease-in-out infinite; }
+@keyframes placardglow { 0%, 100% { opacity: 0.15; } 50% { opacity: 0.7; } }
+.lbl.score.pn .pk { display: flex; align-items: center; gap: 7px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--tint); }
+.lbl.score.pn .pa { color: var(--paper-faint); font-weight: 600; }
+.lbl.score.pn .ps { margin-left: auto; padding: 2px 7px 2px; border-radius: 999px; background: rgba(239, 233, 220, 0.09); color: var(--paper-dim); font-size: 8.5px; letter-spacing: 0.14em; display: inline-flex; align-items: center; gap: 5px; }
+.lbl.score.pn.live .ps { background: rgba(232, 72, 62, 0.2); color: #ff9a8f; }
+.lbl.score.pn.live .ps i { display: block; width: 6px; height: 6px; border-radius: 50%; background: #ff5a4e; box-shadow: 0 0 6px #ff5a4e; animation: scorelive 1.6s ease-in-out infinite; }
+.lbl.score.pn.pre .ps, .lbl.score.pn.concert .ps { background: rgba(200, 155, 94, 0.18); color: var(--bronze); }
+.lbl.score.pn .pr { display: flex; justify-content: space-between; align-items: baseline; gap: 22px; font-size: 15px; font-weight: 600; letter-spacing: 0.05em; color: var(--paper-dim); }
+.lbl.score.pn .pb { margin-top: 6px; }
+.lbl.score.pn .pr + .pr { margin-top: 1px; }
+.lbl.score.pn .pr .sc { font-weight: 700; font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: 0; min-width: 2ch; text-align: right; }
+.lbl.score.pn .pr.up { color: var(--paper); }
+.lbl.score.pn.final .pr:not(.up) { color: var(--paper-faint); }
+.lbl.score.pn .pm { margin-top: 6px; font-size: 16px; font-weight: 700; letter-spacing: 0.06em; }
+.lbl.score.pn .pm em { font-style: normal; font-weight: 500; font-size: 11px; letter-spacing: 0.08em; color: var(--paper-faint); margin: 0 7px; }
+.lbl.score.pn .pd { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--line); font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em; color: var(--paper-dim); }
+.lbl.score.pn .cb { display: flex; align-items: flex-start; gap: 10px; margin-top: 7px; }
+.lbl.score.pn .ci { width: 46px; height: 46px; flex: none; object-fit: cover; border-radius: 6px; box-shadow: 0 0 0 1px var(--line-strong); }
+.lbl.score.pn .cv { min-width: 0; }
+.lbl.score.pn .cn { font-size: 9px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: var(--paper-faint); }
+.lbl.score.pn .cr + .cn { margin-top: 8px; }
+.lbl.score.pn .cr { margin-top: 2px; }
+.lbl.score.pn .cr + .cr { margin-top: 6px; }
+.lbl.score.pn .ca { display: block; max-width: 230px; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 700; letter-spacing: 0.01em; color: var(--paper); }
+.lbl.score.pn .cm { display: flex; align-items: center; gap: 9px; margin-top: 3px; font-size: 10.5px; font-weight: 600; color: var(--paper-dim); letter-spacing: 0.04em; }
+.lbl.score.pn .cm a { margin: 0; padding: 1px 8px 1px; border: 1px solid var(--bronze-dim); border-radius: 999px; color: var(--bronze); font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; text-decoration: none; pointer-events: auto; }
+.lbl.score.pn .cm a:hover { color: var(--ink); background: var(--bronze); border-color: var(--bronze); }
+.lbl.score.pn .src { display: block; margin-top: 8px; padding-top: 5px; border-top: 1px solid var(--line); color: var(--paper-faint); font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+.lbl.score.pn .lx { top: -10px; right: -10px; width: 22px; height: 22px; font: 600 15px/19px var(--body); background: rgb(28, 34, 40); border-color: var(--line-strong); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35); }
+/* a phone in landscape (360 to 430 px tall): a compact card, both scores on one line, the X a size up */
+.lbl.score.pn.tch { min-width: 0; padding: 5px 10px 6px 12px; border-radius: 8px; }
+.lbl.score.pn.tch::before { border-radius: 8px 0 0 8px; }
+.lbl.score.pn.tch .pg { border-radius: 8px; }
+.lbl.score.pn.tch .pk { font-size: 8px; gap: 6px; }
+.lbl.score.pn.tch .ps { font-size: 7.5px; padding: 1px 6px; }
+.lbl.score.pn.tch .pb { display: flex; gap: 12px; margin-top: 3px; }
+.lbl.score.pn.tch .pr { gap: 6px; font-size: 13px; }
+.lbl.score.pn.tch .pr + .pr { margin-top: 0; }
+.lbl.score.pn.tch .pr .sc { font-size: 14px; min-width: 0; }
+.lbl.score.pn.tch .pm { margin-top: 3px; font-size: 13px; }
+.lbl.score.pn.tch .pd { margin-top: 2px; padding-top: 0; border-top: 0; font-size: 9.5px; }
+.lbl.score.pn.tch .cb { margin-top: 4px; gap: 8px; }
+.lbl.score.pn.tch .ci { width: 32px; height: 32px; border-radius: 5px; }
+.lbl.score.pn.tch .ca { font-size: 12.5px; max-width: 170px; }
+.lbl.score.pn.tch .cm { margin-top: 1px; font-size: 9.5px; }
+.lbl.score.pn.tch .cr + .cr { margin-top: 3px; }
+.lbl.score.pn.tch .src { margin-top: 4px; padding-top: 0; border-top: 0; font-size: 7.5px; }
+.lbl.score.pn.tch .lx { width: 26px; height: 26px; font: 600 16px/23px var(--body); top: -12px; right: -12px; }
+@media (prefers-reduced-motion: reduce) { .lbl.score.pn.live .pg, .lbl.score.pn.live .ps i { animation: none; } .lbl.score.pn.live .pg { opacity: 0.4; } }
 @media (max-width: 640px) {
   #searchpanel { top: 66px; }
 }

@@ -40748,6 +40748,76 @@ float pinOccGate() {
   const evHidden = (ids) => ids.length > 0 && ids.every((id) => hiddenEv[id] > Date.now());
   const EVENT_TAP_R = 60;   // m from a placard's spot: its hall (the placards stand on the building's own centroid)
   const EVENT_X = '<button type="button" class="lx" aria-label="Hide this until you tap its building">×</button>';
+  // ---- Round 246 (Mike: "Make the concert and sport boxes look cooler"): the new placards, behind ?placards=new until he
+  // picks. A slate card in the HUD's own language with a team-coloured edge (no logos: no brand marks, the team named in
+  // words), a kicker over a scoreboard of two rows or the matchup and its time, a status pill (Live, pulsing; Today; Final),
+  // a caret over the tether; the concerts the same card with the artist first. On the roof a flat ring round a smaller
+  // ball, and a ripple from it while a game is live. Nothing here makes a new program: the ring and the ripple are the
+  // ball's own MeshBasicMaterial through pinSceneDepth, the tether the same LineBasicMaterial. With the flag off nothing
+  // changes (the old markup, pins and CSS exactly as they were).
+  const PLACARDS_NEW = /[?&]placards=new\b/.test(location.search);
+  const TEAM_NAME = { mlb: 'Phillies', nfl: 'Eagles', nhl: 'Flyers', nba: '76ers' };
+  const TEAM_HEX = { mlb: 'e81828', nfl: '004c54', nhl: 'f74902', nba: '006bb6' };   // when ESPN sends no colour
+  const PLACARD_BRONZE = 0xc89b5e;
+  // a team colour readable as text on the slate card: its hue and saturation, its HSL lightness raised to 0.58 at least
+  // (the Eagles' midnight green and the 76ers' blue are too dark to read on the panel as they are)
+  function teamTint(hex) {
+    const n = parseInt(hex, 16), r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
+    const c = new THREE.Color(r, g, b), hsl = {};
+    c.getHSL(hsl);
+    c.setHSL(hsl.h, Math.min(1, hsl.s * 1.05), Math.max(0.58, hsl.l));
+    return 'rgb(' + Math.round(c.r * 255) + ',' + Math.round(c.g * 255) + ',' + Math.round(c.b * 255) + ')';
+  }
+  const plainDetail = (s) => String(s == null ? '' : s).replace(/\s+[-–—·•]\s+/g, ', ').replace(/\s+/g, ' ').trim();
+  function scoreCardHTML(g) {
+    const d0 = plainDetail(String(g.detail || '').replace(/,?\s*(Home|Away)$/, ''));
+    const pill = g.live ? '<span class="ps"><i></i>Live</span>' : g.pre ? '<span class="ps">Today</span>' : '<span class="ps">Final</span>';
+    let body;
+    if (g.pre) {
+      const tm = /(\d{1,2}:\d{2}\s*[AP]M(?:\s+[A-Z]{2,4})?)/i.exec(d0);   // ESPN's "11/12, 7:05 PM EST": the time alone
+      body = '<div class="pm">' + septaEsc(g.us) + '<em>' + (g.at === 'Home' ? 'vs' : 'at') + '</em>' + septaEsc(g.them) + '</div>' + (d0 ? '<div class="pd">' + septaEsc(tm ? tm[1] : d0) + '</div>' : '');
+    } else {
+      const a = parseFloat(g.uscore), b = parseFloat(g.tscore), lead = a > b ? 0 : b > a ? 1 : -1;
+      const row = (ab, sc, up) => '<div class="pr' + (up ? ' up' : '') + '"><span class="ab">' + septaEsc(ab) + '</span><span class="sc">' + septaEsc(sc) + '</span></div>';
+      body = '<div class="pb">' + row(g.us, g.uscore, lead === 0) + row(g.them, g.tscore, lead === 1) + '</div>' + (d0 && !/^final$/i.test(d0) ? '<div class="pd">' + septaEsc(d0) + '</div>' : '');
+    }
+    return '<span class="pg"></span><div class="pk"><span class="pt">' + septaEsc(TEAM_NAME[g.k] || g.us) + '</span><span class="pa">' + septaEsc(g.at) + '</span>' + pill + '</div>' + body;
+  }
+  // the roof's mark under the new placards: a smaller ball, a flat ring round it, and for a live game a ripple; every part a
+  // pin (pinSceneDepth), so it is shown or hidden whole with the tether and sorts among the pins on its anchor
+  function placardMarks(x, y, z, col, live, out) {
+    const mat = () => new THREE.MeshBasicMaterial({ color: col, depthWrite: false });
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(1.7, 12, 8), mat());
+    ball.position.set(x, y + 1.2, z); pinSceneDepth(ball);
+    const rg = new THREE.RingGeometry(3.3, 4.5, 40); rg.rotateX(-Math.PI / 2);
+    const ring = new THREE.Mesh(rg, mat());
+    ring.position.set(x, y + 0.35, z); pinSceneDepth(ring); ring.material.opacity = 0.92;
+    out.push(ball, ring);
+    let ripple = null;
+    if (live) {
+      const pg = new THREE.RingGeometry(4.2, 4.9, 48); pg.rotateX(-Math.PI / 2);
+      ripple = new THREE.Mesh(pg, mat());
+      ripple.position.set(x, y + 0.3, z); pinSceneDepth(ripple);
+      out.push(ripple);
+    }
+    return { ball, ring, ripple };
+  }
+  // the ring holds a readable size from afar (the ball keeps its metres, as the old one did); the ripple runs 2.2 s outward,
+  // fading to the pins' alpha test and gone (pinSceneDepth's alphaTest 0.5 is why it ends at 0.52, never below)
+  const _pmv = new V3();
+  function placardMarksTick(m, show, now) {
+    if (!m) return;
+    m.ball.visible = m.ring.visible = show;
+    if (m.ripple) m.ripple.visible = show;
+    if (!show) return;
+    const k = clamp(camera.position.distanceTo(_pmv.copy(m.ring.position)) / 320, 1, 5);
+    m.ring.scale.setScalar(k);
+    if (m.ripple) {
+      const ph = (now % 2200) / 2200;
+      m.ripple.scale.setScalar(k * (1 + 1.7 * ph));
+      m.ripple.material.opacity = 0.95 - 0.43 * ph;
+    }
+  }
   const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], pins: [], ended: {}, seenLive: {} };
   const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
   // h: where the bubble hangs; top: the roof the pin drops to
@@ -40838,8 +40908,13 @@ float pinOccGate() {
       // a game that has not started has no score to show: the matchup reads vs at home, at away
       const head = g.pre ? (g.us + (g.at === 'Home' ? ' vs ' : ' at ') + g.them)
         : (g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore);
-      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(head) + '<br>' + septaEsc(g.detail) + '</span>' + (g.id ? EVENT_X.replace('<button ', '<button data-kind="s" data-i="' + i + '" ') : '');
-      if (ok) el.style.borderColor = '#' + g.color;
+      const hex = ok ? g.color : TEAM_HEX[g.k] || 'c89b5e';
+      if (PLACARDS_NEW) {   // Round 246: the new card (no logo, the team in words, its colour on the edge)
+        el.className = 'lbl score pn' + (g.live ? ' live' : (g.pre ? ' pre' : ' final')) + (isTouch ? ' tch' : '');
+        el.style.setProperty('--team', '#' + hex); el.style.setProperty('--tint', teamTint(hex));
+        el.innerHTML = scoreCardHTML(g) + (g.id ? EVENT_X.replace('<button ', '<button data-kind="s" data-i="' + i + '" ') : '');
+      } else el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(head) + '<br>' + septaEsc(g.detail) + '</span>' + (g.id ? EVENT_X.replace('<button ', '<button data-kind="s" data-i="' + i + '" ') : '');
+      if (ok && !PLACARDS_NEW) el.style.borderColor = '#' + g.color;
       if (g.hidden) el.style.display = 'none';
       labelsRoot.appendChild(el);
       SCORES.els.push(el);
@@ -40849,9 +40924,19 @@ float pinOccGate() {
       // the pin: a line from the bubble down to the roof, a small ball where it lands
       const col = ok ? '#' + g.color : 0xc89b5e;
       const lg = new THREE.BufferGeometry();
-      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, g.y, v.z, v.x, gy + v.top, v.z]), 3));
-      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthWrite: false }));
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, g.y, v.z, v.x, gy + v.top + (PLACARDS_NEW ? 1.2 : 0), v.z]), 3));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: PLACARDS_NEW ? '#' + hex : col, transparent: true, opacity: PLACARDS_NEW ? 0.8 : 0.9, depthWrite: false }));
       pinSceneDepth(line); line.frustumCulled = false;
+      g.marks = null;
+      if (PLACARDS_NEW) {
+        const parts = [];
+        g.marks = placardMarks(v.x, gy + v.top, v.z, '#' + hex, !!g.live, parts);
+        if (g.hidden) { line.visible = false; for (const o of parts) o.visible = false; }
+        groupCity.add(line); for (const o of parts) groupCity.add(o);
+        SCORES.pins.push(line, ...parts);
+        g.top = gy + v.top; g.line = line; g.ball = g.marks.ball;
+        return;
+      }
       const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthWrite: false }));
       ball.position.set(v.x, gy + v.top, v.z); pinSceneDepth(ball);
       if (g.hidden) line.visible = ball.visible = false;
@@ -40867,6 +40952,7 @@ float pinOccGate() {
   // their tethers and balls, show within EVENT_PIN_R of the eye, the straight-line distance as the ships' pins
   const EVENT_PIN_R = 1609.34;   // 1 mile
   function scoresRender() {
+    if (PLACARDS_NEW) PLAC_STACK.clear();
     for (let i = 0; i < SCORES.games.length; i++) {
       const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
       if (g.hidden) continue;   // dismissed (Round 167): down until its building is tapped
@@ -40874,12 +40960,26 @@ float pinOccGate() {
       const out = camera.position.distanceTo(_scv) > EVENT_PIN_R;   // within a mile of the eye, as the concerts (Round 217)
       const blocked = !out && pinBlocked(v.x, (g.top != null ? g.top : g.y) + 3, v.z);   // shown or hidden whole (Round 127), as the concerts
       if (g.line) g.line.visible = g.ball.visible = !out && !blocked;
+      if (g.marks) placardMarksTick(g.marks, !out && !blocked, performance.now());   // Round 246's ring and ripple, whole with the rest
       const far = out || blocked;
       _scv.project(camera);
       if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; el.style.visibility = 'hidden'; continue; }   // hidden, not only clear: its X must not catch a tap
       el.style.opacity = '1'; el.style.visibility = '';
-      el.style.transform = 'translate(-50%,-100%) translate(' + ((_scv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_scv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      const lift = PLACARDS_NEW ? placardLift(v.x, v.z, el) : 0;
+      el.style.transform = 'translate(-50%,-100%) translate(' + ((_scv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_scv.y * 0.5 + 0.5) * window.innerHeight - lift).toFixed(1) + 'px)';
     }
+  }
+  // Round 246: the new cards are taller than the 22 m a stacked bubble stands over the one below, so the cards on one spot
+  // stack on the screen too, each over the ones drawn before it this frame (the games in order, the concerts over them)
+  const PLAC_STACK = new Map();
+  function placardLift(x, z, el) {
+    const key = Math.round(x) + ',' + Math.round(z), lift = PLAC_STACK.get(key) || 0;
+    PLAC_STACK.set(key, lift + (el._h || (el._h = el.offsetHeight)) + 8);
+    // and the nearer card is drawn over the farther where two venues' cards cross (the DOM's order put the Linc's over the
+    // ballpark's from the ballpark's own side); a card in a stack keeps its order over the one below
+    const zi = String(Math.max(1, 4000 - Math.round(Math.hypot(camera.position.x - x, camera.position.z - z) / 2)));
+    if (el._zi !== zi) { el._zi = zi; el.style.zIndex = zi; }
+    return lift;
   }
   // ---------------------------------------------------------------- live concerts
   // A placard over each venue with a show today (Mike): the Ticketmaster Discovery API's
@@ -40956,6 +41056,19 @@ float pinOccGate() {
     CONCERTS.shownKey = key;
     concertsSet(open);
   }
+  // Round 246: the new concert card. The kicker says Tonight for a show from 5 pm, Today before; each venue's name over its
+  // shows, the artist large, the time and a Tickets pill under it; Ticketmaster's own image of the first show at the left
+  function concertCardHTML(sp, all, first) {
+    const tonight = all.some((e) => e.time && +e.time.slice(0, 2) >= 17);
+    const img = first ? '<img class="ci" alt="" src="' + septaEsc(first.image) + '" onerror="this.remove()">' : '';
+    const rows = sp.venues.map((v) => '<div class="cn">' + septaEsc(plainText(v.name)) + '</div>' + v.rows.map((e) => {
+      const when = e.tba || !e.time ? 'Time to be announced' : concertClock(e.time);
+      const link = /^https:\/\/[a-z0-9.-]*ticketmaster\.com\//i.test(e.url || '') ? '<a href="' + septaEsc(e.url) + '" target="_blank" rel="noopener">Tickets</a>' : '';
+      return '<div class="cr"><span class="ca">' + septaEsc(plainText(e.artist || e.name)) + '</span><span class="cm"><span class="ct">' + septaEsc(when) + '</span>' + link + '</span></div>';
+    }).join('')).join('');
+    return '<div class="pk"><span class="pt">Live Music</span><span class="ps">' + (tonight ? 'Tonight' : 'Today') + '</span></div>' +
+      '<div class="cb">' + img + '<div class="cv">' + rows + '</div></div><div class="src">Listed by Ticketmaster</div>';
+  }
   function concertsSet(events) {
     for (const el of CONCERTS.els) el.remove();
     for (const o of CONCERTS.pins) { groupCity.remove(o); o.geometry.dispose(); o.material.dispose(); }
@@ -41007,15 +41120,26 @@ float pinOccGate() {
         return '<span class="row">' + septaEsc(plainText(e.artist || e.name) + ', ' + when) + link + '</span>';
       }).join('')).join('');
       const ids = all.map((e) => 'c:' + e.id), hidden = evHidden(ids);
-      el.innerHTML = img + '<span class="txt">' + body + '<span class="src">Listed by Ticketmaster</span></span>' + EVENT_X.replace('<button ', '<button data-kind="c" data-i="' + CONCERTS.shown.length + '" ');
+      if (PLACARDS_NEW) {   // Round 246: the new card, the artist first, the venue over each venue's shows
+        el.className = 'lbl score concert pn' + (isTouch ? ' tch' : '');
+        el.innerHTML = concertCardHTML(sp, all, first) + EVENT_X.replace('<button ', '<button data-kind="c" data-i="' + CONCERTS.shown.length + '" ');
+      } else el.innerHTML = img + '<span class="txt">' + body + '<span class="src">Listed by Ticketmaster</span></span>' + EVENT_X.replace('<button ', '<button data-kind="c" data-i="' + CONCERTS.shown.length + '" ');
       if (hidden) el.style.display = 'none';
       labelsRoot.appendChild(el);
       CONCERTS.els.push(el);
       // the pin: a line from the placard down to the roof, a small ball where it lands
       const lg = new THREE.BufferGeometry();
-      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([sp.x, y, sp.z, sp.x, top, sp.z]), 3));
-      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd9d1bd, transparent: true, opacity: 0.9, depthWrite: false }));
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([sp.x, y, sp.z, sp.x, top + (PLACARDS_NEW ? 1.2 : 0), sp.z]), 3));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: PLACARDS_NEW ? PLACARD_BRONZE : 0xd9d1bd, transparent: true, opacity: PLACARDS_NEW ? 0.8 : 0.9, depthWrite: false }));
       pinSceneDepth(line); line.frustumCulled = false;
+      if (PLACARDS_NEW) {
+        const parts = [], marks = placardMarks(sp.x, top, sp.z, PLACARD_BRONZE, false, parts);
+        if (hidden) { line.visible = false; for (const o of parts) o.visible = false; }
+        groupCity.add(line); for (const o of parts) groupCity.add(o);
+        CONCERTS.pins.push(line, ...parts);
+        CONCERTS.shown.push({ e: all[0], rows: all, ids, hidden, r: sv ? sv.r : EVENT_TAP_R, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el, top, line, ball: marks.ball, marks });
+        continue;
+      }
       const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthWrite: false }));
       ball.position.set(sp.x, top, sp.z); pinSceneDepth(ball);
       if (hidden) line.visible = ball.visible = false;
@@ -41035,11 +41159,13 @@ float pinOccGate() {
       const out = camera.position.distanceTo(_ccv) > EVENT_PIN_R;   // within a mile of the eye (Round 214)
       const blocked = !out && pinBlocked(s.x, s.top + 3, s.z);
       if (s.line) s.line.visible = s.ball.visible = !out && !blocked;
+      if (s.marks) placardMarksTick(s.marks, !out && !blocked, 0);
       const far = out || blocked;
       _ccv.project(camera);
       if (far || _ccv.z > 1 || _ccv.z < -1 || _ccv.x < -1.1 || _ccv.x > 1.1 || _ccv.y < -1.2 || _ccv.y > 1.2) { s.el.style.opacity = '0'; s.el.style.visibility = 'hidden'; continue; }
       s.el.style.opacity = '1'; s.el.style.visibility = '';
-      s.el.style.transform = 'translate(-50%,-100%) translate(' + ((_ccv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ccv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      const lift = PLACARDS_NEW ? placardLift(s.x, s.z, s.el) : 0;
+      s.el.style.transform = 'translate(-50%,-100%) translate(' + ((_ccv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ccv.y * 0.5 + 0.5) * window.innerHeight - lift).toFixed(1) + 'px)';
     }
   }
   function concertStatus() {

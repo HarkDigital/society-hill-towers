@@ -275,7 +275,9 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
    at 20 fps.
 8. Camden (shipped, Round 231): three port structures nobody has checked against imagery, Camden City Hall's shape
    (still a 13 m box), and whether to stream the LiDAR tiles east of the river for the 420 buildings still at 10.5 m.
-9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
+9. The new event placards (Round 246, behind `?placards=new`): the private side by side at
+   https://claude.ai/artifact/RuF1ST4A384EubhM2wxvnG; on by default only at his pick (JavaScript and CSS, no new program).
+10. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks
 on tiers 1 and 2; far streets and towns arriving after Enter; the El; sound; the river's pool level.

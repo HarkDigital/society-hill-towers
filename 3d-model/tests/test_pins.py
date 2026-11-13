@@ -121,7 +121,9 @@ console.log(JSON.stringify(result));
                        'pinSceneDepth(amtrakPin);'):
             self.assertIn(anchor, self.source)
         self.assertEqual(self.source.count('pinSceneDepth(line);'), 2)  # scores + concerts
-        self.assertEqual(self.source.count('pinSceneDepth(ball);'), 2)
+        self.assertEqual(self.source.count('pinSceneDepth(ball);'), 3)  # scores + concerts + Round 246's placardMarks
+        self.assertIn('pinSceneDepth(ring);', self.source)
+        self.assertIn('pinSceneDepth(ripple);', self.source)
         self.assertIn('const h = pickSceneHit(hits, pickOccluded);', self.source)
 
 
