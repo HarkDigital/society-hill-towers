@@ -14562,3 +14562,13 @@ keys. Suite: 1,510 tests, OK (one expected failure). Sent to Mike as a private s
 Known: the tower tiles above the street floors have the same salt-and-pepper lit windows after dark on some kinds (the
 glass curtain walls by City Hall, `c-brutalist` at night); that is `bake_tile`'s mask, not this one, and is not touched
 here. A lit lobby repeats every 7.76 m like every street floor (one desk a bay); a second picture a kind would break it.
+
+## Round 244 — clean street floors by default (Nov 12)
+
+Mike, after Round 243 went live: "I am still seeing the rough texture", then "turn it on by default." His link carried no
+`?streetfloor=`, so he was seeing `old`; rendered on philly3d.com at his pose, both `clean` and `lit` take the speckle
+away. `clean` is now the default (`STREET_FLOOR` falls back to 'clean'): data only, the street floors' program and its
+text exactly as before, so no device compiles anything new. `lit` changes that program's text, so under the one-shader-
+train rule it stays behind `?streetfloor=lit` for the Stage 2 train; `?streetfloor=old` keeps the speckled masks.
+Checked: his link with no flag on the new build, by day and at 21:30, `__dbg.fronts().streetFloor` 'clean', no failed
+step. `test_app_art` pins the default.

@@ -32768,8 +32768,10 @@ if (uOlLamp > 0.001) {
   // pepper on the glass-heavy ones, each pane patches of glossy reflection and of matte black. ?streetfloor=clean lays each
   // ragged mask's panes as whole rectangles over the same pictures; ?streetfloor=lit does that and puts four lobbies made
   // again with clear glass onto a lit lobby (lobby1, lobby2, office1, office2) in place of the black ones
-  // (street_floor_art.json, bake_street_floors.py). Data only: the program and its text are the same under every choice
-  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\b/.exec(location.search) || [])[1] || 'old';
+  // (street_floor_art.json, bake_street_floors.py). Clean is the default since Mike's "turn it on by default" (Nov 12,
+  // Round 244): data only, the program's text as it was. Lit changes that text, so it waits behind its flag for the
+  // shader train; ?streetfloor=old keeps the speckled masks
+  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\b/.exec(location.search) || [])[1] || 'clean';
   function streetFloorBases(B) {
     const A = typeof STREET_FLOOR_ART !== 'undefined' && STREET_FLOOR_ART ? STREET_FLOOR_ART : null;
     if (!A || STREET_FLOOR === 'old') return B;

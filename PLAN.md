@@ -133,6 +133,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   and matte black (14,293 street floors laid, 1,573 under the big buildings). Behind `?streetfloor=`, off by default:
   `clean` (the masks as whole panes, data only) and `lit` (and four big-building lobbies made again with clear glass onto
   a lit lobby, a shader variant only under the flag). Side by side sent to Mike.
+- **Round 244** (Mike: "turn it on by default"): `clean` street floors are the default (data only). `lit` waits behind
+  `?streetfloor=lit` for the Stage 2 shader train (listed there).
 
 ## In flight (finish these first)
 
@@ -170,6 +172,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   leaves out probes that produced no ratio.
 
 ## Stage 2: the shader train (one deploy; each look behind a flag or at zero strength)
+
+- The lit lobbies (Round 243, `?streetfloor=lit`): four big-building street floors with clear glass onto a lit lobby;
+  one program's text changes (the street floors', its own cache key under the flag). Mike asked for the fix by default and
+  got `clean` (Round 244); offer `lit` with the train.
 
 Performance, no look change: the program diet (about 31 fewer of about 140: one facade program with its gains in a
 uniform, the Fishtown stations' four identical hooks under one key, venue boards, lamp lenses, water, the roof kit 8 to
@@ -244,8 +250,6 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
 ## What is waiting on Mike
 
 1. The people: his look at Round 242's thirty, then the list of decisions above.
-1b. The street floors (Round 243): `old`, `clean` or `lit` by default? `lit` changes one program's text, so it rides
-    the shader train once picked; `clean` is data only.
 2. Three minutes of flying the site on his Mac, then once with `?dpr=1` (Stage 6 cannot be planned without it).
 3. May the beacon name the graphics chip on website computers (one sentence in the privacy policy)?
 4. The veil: a computer's veil shows the city rising since Round 234 (his pick). Still his: may it name the compile wait,

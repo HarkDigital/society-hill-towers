@@ -350,6 +350,8 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         self.assertIn('const T = SKIN_BASES[b]; return [b, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
         self.assertIn("  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? streetFloorBases(FRONTS_DATA.bases) : null;\n", s)
         # Round 243: ?streetfloor= lays street_floor_art.json's records over the bases, its masks and pictures by the same keys
+        # Round 244: clean by default (data only); lit, whose shader text differs, only behind its flag
+        self.assertIn("  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\\b/.exec(location.search) || [])[1] || 'clean';\n", s)
         self.assertIn("    for (const k in B) out[k] = { ...B[k], ...(A.clean[k] || {}), ...(STREET_FLOOR === 'lit' && A.lit[k] ? A.lit[k] : {}) };\n", s)
         self.assertIn('    artImage(GLASS_DATA.rooms.rooms).then((rooms) => {\n', s)
         named = {f for f, _ in pairs()}
