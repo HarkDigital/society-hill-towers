@@ -29,8 +29,11 @@
 # Gated:      the test suite runs before anything is built (warns if tests/
 #             does not exist yet), and the gzip must fall inside
 #             GZ_MIN..GZ_MAX bytes (a truncated or bloated build never ships).
+# Committed:  the page just built must be HEAD's committed page, byte for byte (Nov 13, after Round 244's
+#             deploy built and shipped another session's half-done app.js, edited in the shared checkout
+#             during the tests' minutes). PHILLY3D_UNCOMMITTED=1 ships a build that is not committed.
 #
-# Overrides (environment): PHILLY3D_HOST (ssh alias), GZ_MIN, GZ_MAX.
+# Overrides (environment): PHILLY3D_HOST (ssh alias), GZ_MIN, GZ_MAX, PHILLY3D_UNCOMMITTED.
 set -eu
 cd "$(dirname "$0")"
 
@@ -116,6 +119,14 @@ fi
 # 2. build + stage
 echo "== build"
 python3 build.py
+# ship only what is committed: another session editing this tree after the commit would otherwise ride along
+if [ "${PHILLY3D_UNCOMMITTED:-0}" != 1 ]; then
+  git show HEAD:3d-model/society-hill-towers.html > "$TMP/head.html" 2>/dev/null \
+    || fatal "could not read HEAD's committed page (not a git checkout?); PHILLY3D_UNCOMMITTED=1 skips this check"
+  [ "$(sha society-hill-towers.html)" = "$(sha "$TMP/head.html")" ] \
+    || fatal "the page just built is not HEAD's committed page: commit the build first, or another session is editing this tree (deploy from a worktree at HEAD); nothing deployed"
+  echo "   the build is HEAD's committed page"
+fi
 for f in brand/dist/favicon.ico brand/dist/favicon.svg \
          brand/dist/apple-touch-icon.png brand/dist/og.png; do
   [ -f "$f" ] || fatal "missing $f (run brand/make_brand.py)"
