@@ -3338,6 +3338,13 @@
   // is a coping (stone, terra cotta or aluminium on its top, never the roof's gravel: gap#6); a gable end with the second
   // is the house's wall carried to the ridge, so it takes the wall's material (buildings#12). Nothing else writes either
   const ST_COPING = REAL ? 3 + 96 : 3, ST_GABLE = REAL ? 3 + 64 : 3;
+  // Stage 2 (Round 247, the plan's REALDATA-4 step A): pack_city.py used to give every merged far-ring strip of several
+  // houses form 0, so the roofs the LiDAR pass measured went to the lottery, which dealt the smaller strips gables over
+  // flat rows. It now packs a strip's measured form in the codes no single building uses, 5 flat, 6 gable, 7 hip (the
+  // strip's members by area, see strip_form there); the page reads them as 4, 1 and 2 under ?farforms=1 and as 0, the
+  // lottery as before, without it, so the default draws exactly what it did. Only roof words changed in city.b64
+  const FAR_FORMS = /[?&]farforms=1\b/.test(location.search);
+  const FAR_FORM_OF = [0, 0, 0, 0, 0, 4, 1, 2];
   function roofBits(roofW, packed) {
     if (roofW == null || roofW === -1) return [-1, 0, 0];
     if (!packed) return [roofW, 0, 0];
@@ -5453,6 +5460,12 @@
   // computer, an RGBA8 target and r149's 16-bit depth buffer): 2048 under Auto, 24 MB, and 4096 under Sharper; the headless
   // A/B at 90, 300 and 600 m showed no difference past the near box, where a texel of 1.8 to 3.9 m is a pixel or two
   const FARSH = { on: false, can: false, light: null, ext: 0, cx: NaN, cz: NaN, sun: new V3(), drawn: 0, pending: false, last: -1e9, hid: [], fail: '', res: 0, wide: false, wideH: 250, waited: 0, owe: false, lastT: -1e9 };
+  // Stage 2 (Round 247, the plan's AERIAL-2 step 1, behind ?orbitsh=1): the entry orbit flies at 318 m, just over the
+  // switch at 250, so the first view's towers and streets were shaded by the far map (2.34 m a texel) instead of the near
+  // one (0.29 m). At 360 the outer districts' buildings stay in the near map up to the orbit and a little over; the near
+  // map then redraws about once a second there with their roofs (Round 188: about 1 ms on an M2 Max). A computer's only:
+  // a phone has no far map. JavaScript alone, so it can be turned on later with no compile
+  if (/[?&]orbitsh=1\b/.test(location.search)) FARSH.wideH = 360;
   const farRes = (pick) => (pick === 'sharper' ? 4096 : 2048);
   FARSH.can = POST.on && REAL && !LITE && !/[?&]shadowwide=0\b/.test(location.search) && gfxPick() !== 'smoother';
   if (FARSH.can) {
@@ -12596,6 +12609,11 @@ vec2 wRing(vec2 rc, float tt) {
   // lift + ACES compress darks far more than lights); invert per channel so the
   // rendered roof matches the ortho-sampled sRGB. Calibrated by canvas-pixel probe.
   const roofInv = (t) => Math.min(1, Math.pow(Math.max(t, 4) / 31.5, 2.364) / 255);
+  // Stage 2 (Round 247, the plan's AERIAL-1): a flat cap whose colour is the City's 2024 orthophoto sample carries a mark
+  // in its floor byte, which no cap reads otherwise (a floor height is 22 decimetres or more): 1 for the sample as it is,
+  // 2 for the far ring's and the towns' caps after farCapLight's lift. Under ?roofpick the shader deals such a roof its
+  // kind (tar, gravel, silver, white) by the sample's own brightness instead of the seed's lottery
+  const ROOF_SAMPLED = 0.1, ROOF_SAMPLED_LIFT = 0.2;
   const ROOF_PAL = (typeof FACADE_PAL !== 'undefined' && FACADE_PAL && FACADE_PAL.roof)
     ? FACADE_PAL.roof.map(cc => new THREE.Color(roofInv(cc[0]), roofInv(cc[1]), roofInv(cc[2]))) : null;
   const OPA_POOLS = {
@@ -13612,7 +13630,7 @@ vec2 wRing(vec2 rc, float tt) {
           if (b.rp != null && ROOF_PAL && !b.minH) {
             try {
               parts.push({ geom: capGeom(b.poly, b.holes, hFlat + 0.09),
-                color: ROOF_PAL[b.rp].clone().multiplyScalar(0.94 + hash01(i * 8.9) * 0.14), style: 3 });
+                color: ROOF_PAL[b.rp].clone().multiplyScalar(0.94 + hash01(i * 8.9) * 0.14), style: 3, flh: ROOF_SAMPLED });
             } catch (e2) {}
           }
           // flat-roofed rowhouses get a projecting cornice ring at the parapet
@@ -15478,7 +15496,7 @@ vec2 wRing(vec2 rc, float tt) {
           FAR_LIT ? FAR_LIT_GLSL : '',
           'uniform float uNight;',
           'uniform float uDetFar;',
-          'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofOwn, uRoofDbg; uniform vec2 uRoofPad; uniform vec3 uRoofMean[4];',
+          'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofOwn, uRoofDbg; uniform vec2 uRoofPad; uniform vec3 uRoofMean[4]; uniform vec4 uRoofPick; uniform vec2 uRoofHold;',
           'uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9];',
           'uniform sampler2D uPitchArt; uniform float uPitchOn, uPitchPad, uPitchPx; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];',
           'uniform sampler2D uSnowArt; uniform float uSnowOn, uSnowM; uniform vec3 uSnowMean; uniform vec4 uRoofKindK;',
@@ -15583,6 +15601,9 @@ vec2 wRing(vec2 rc, float tt) {
           '    float cps = fract(sin(vBase * 13.1 + vTint * 7.7) * 43758.5453);',
           '    diffuseColor.rgb = (cps < 0.5 ? vec3(0.62, 0.58, 0.51) : (cps < 0.8 ? vec3(0.50, 0.25, 0.16) : vec3(0.60, 0.61, 0.63))) * uFabG.x;',
           '  } else if (n.y > 0.7) {',
+          // Round 247: the cap's own brightness, read before the mottle below multiplies into it (three thresholds read after
+          // it would deal two kinds inside one roof close in), the far ring's lift taken back off
+          '    float rL0 = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uFabG.y * (vFloorH > 1.5 && vFloorH < 2.5 ? 0.813 : 1.0);',
           '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
           '    float rn = shtVN(vWPos.xz * 0.9) * 0.6 + shtVN(vWPos.xz * 5.0) * 0.4;',
           '    diffuseColor.rgb *= 1.0 + rdet * 0.22 * (rn - 0.5);',
@@ -15605,6 +15626,15 @@ vec2 wRing(vec2 rc, float tt) {
           '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uFabG.y;',
           '      float rk = rsd < 0.36 ? 1.0 : (rsd < 0.66 ? 0.0 : (rsd < 0.86 ? 2.0 : 3.0));',   // silver, tar, white, gravel
           '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
+          // Round 247 (the plan's AERIAL-1, behind ?roofpick, uRoofPick.x): a photographed cap takes its kind from its own
+          // sample, the thresholds (yzw) the palette's sRGB 110, 170 and 215 through roofInv, each moved up to 12% by the
+          // house's seed so a block still varies; a cap with no photograph (the towns, the unsampled far cells, a unit's top)
+          // is dealt at the shares the photographs measured (tar 15, gravel 26, silver 38, white 21), so no district keeps
+          // the old 30% tar beside a city at 15
+          '      if (uRoofPick.x > 0.5) {',
+          '        if (vFloorH > 0.5 && vFloorH < 2.5) { float rq = rL0 * (0.88 + 0.24 * fract(rsd * 53.7)); rk = rq < uRoofPick.y ? 0.0 : (rq < uRoofPick.z ? 3.0 : (rq < uRoofPick.w ? 1.0 : 2.0)); }',
+          '        else rk = rsd < 0.15 ? 0.0 : (rsd < 0.41 ? 3.0 : (rsd < 0.79 ? 1.0 : 2.0));',
+          '      }',
           // (the realism pass: the gravel at a third of the others' scale, its stones 3 to 8 cm, not the cobbles 8 m made them)
           '      vec2 rG = vec2(dot(vWPos.xz, vec2(0.986, 0.167)), dot(vWPos.xz, vec2(-0.167, 0.986))) / (uRoofM * ' + (REAL ? '(rk > 2.5 ? 0.35 : 1.0)' : '1.0') + ') + rsd * 17.0;',
           // the realism round two (R4): each kind is four photographs in its own quadrant's 2 by 2 (Round 185's, then a patched,
@@ -15632,6 +15662,7 @@ vec2 wRing(vec2 rc, float tt) {
           // roof's own mean, its kind's colour at the same share, so a house keeps its kind at any distance; each kind's
           // albedo spread by uRoofKindK (the means had come out 0.013 to 0.109, a narrow grey band), and a tone a house
           '      float rKk = rk < 0.5 ? uRoofKindK.x : (rk < 1.5 ? uRoofKindK.y : (rk < 2.5 ? uRoofKindK.z : uRoofKindK.w));',
+          '      if (uRoofPick.x > 0.5) rKk *= vFloorH > 0.5 && vFloorH < 1.5 ? uRoofHold.x : uRoofHold.y;',   // Round 247: ?roofpick=held
           '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * uFabR * rKk, uRoofOwn);',
           '      vec3 rFar = mix(diffuseColor.rgb, rMean * uFabR * rKk, uRoofOwn);',
           '      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',
@@ -28549,7 +28580,7 @@ if (uOlLamp > 0.001) {
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h);
-    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao) => {
+    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao, capS) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const n = poly.length;
       const r = color.r, g = color.g, b = color.b;
@@ -28581,8 +28612,8 @@ if (uOlLamp > 0.001) {
       const capStart = ch.n;
       const cr = capColor ? capColor.r : r * 0.72, cg = capColor ? capColor.g : g * 0.72, cb = capColor ? capColor.b : b * 0.72;
       const capSt = st >= 96 && (st & 31) === 3 ? st : 3;   // the realism pass: a coping's top is a coping (ST_COPING)
-      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, capSt, base);
-      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, capSt, base);
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, capSt, base, capS);
+      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, capSt, base, capS);
       // earcut emits CCW triangles in the shape plane regardless of ring winding,
       // and CCW in (x,-z) maps to up-facing — never flip by ring orientation
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
@@ -29262,7 +29293,7 @@ if (uOlLamp > 0.001) {
           midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
-          appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
+          appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0, capC ? ROOF_SAMPLED : 0);
           if (!mh && hTop === h && !(spec && spec.crown && spec.crown.type !== 'flat') && h < 60) roofClutter((pg, y0, y1, hex, st2, holes) => { cCap.set(hex); appendBuilding(chk, pg, y0, y1, cCap, st2, base, holes); }, poly, base, h, Math.abs(signedArea(poly)), t, fa, i, c, false);
         }
       }
@@ -32930,7 +32961,7 @@ if (uOlLamp > 0.001) {
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h);
-    const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor, ao) => {
+    const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor, ao, capS) => {
       const n = poly.length, r = color.r, g = color.g, b = color.b;
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const tint = glassTintKey(color, st);
@@ -32955,7 +32986,7 @@ if (uOlLamp > 0.001) {
       try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
       const capStart = ch.n;
       const cr = capColor ? capColor.r : r * 0.72, cg = capColor ? capColor.g : g * 0.72, cb = capColor ? capColor.b : b * 0.72;
-      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base, capS);
       // earcut emits CCW triangles in the shape plane regardless of ring winding
       // (pack_city rings arrive in shapely's CW convention — flipping by ring
       // orientation culled every merged roof); always emit forward = up-facing
@@ -33007,6 +33038,7 @@ if (uOlLamp > 0.001) {
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       if (style === 19 && fa) { const masonry = opaWallPool(fa); if (masonry) c.set(masonry[Math.floor(hsh * masonry.length) % masonry.length]); }
       const rb = roofBits(roofW, roofPacked);
+      if (rb[1] >= 5) rb[1] = FAR_FORMS ? FAR_FORM_OF[rb[1]] : 0;   // Round 247: a merged strip's measured form, behind ?farforms=1
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (capC && h <= 45 && t <= 6) farCapLight(capC);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
@@ -33019,7 +33051,7 @@ if (uOlLamp > 0.001) {
       RMS.n++;   // Round 220: a record raised
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
       else {
-        appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
+        appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0, capC ? (h <= 45 && t <= 6 ? ROOF_SAMPLED_LIFT : ROOF_SAMPLED) : 0);
         if (!mh && h < 60) roofClutter((pg, y0, y1, hex, st2, holes) => { if (holes) return; cCap.set(hex); appendB(getChunk(cx, cz), pg, y0, y1, cCap, st2, base); }, poly, base, h, Math.abs(signedArea(poly)), t, fa, i, c, true);
       }
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
@@ -52552,7 +52584,17 @@ float pinOccGate() {
   // each kind in its quadrant, uRoofPad the pads (the quadrant's outside, between its variants); ?roofs16=0 deals only the
   // first variant, Round 185's picture
   const ROOFS16 = REAL && !/[?&]roofs16=0\b/.test(location.search);
+  // Round 247 (the plan's AERIAL-1): ?roofpick=photo deals each photographed flat roof its kind by its own sample (a paler
+  // city: the kinds' drawn albedos sit above the photographs' bins), ?roofpick=held the same pick with every kind's gain
+  // scaled to hold today's mean roof brightness; off by default until Mike picks from the side by side. Shader text either
+  // way, so the pick turns on later with no compile. The hold is per tier (uRoofHold: x for a cap as sampled, the outer
+  // districts and the core; y for the far ring's lifted caps and every unsampled roof), from the replay of today's lottery
+  // and the pick over wide.b64's and city.b64's flat sampled roofs by area (devlog Round 247): the kind term's mean goes
+  // 0.470 to 0.637 in the outer districts and 0.526 to 0.569 in the far ring, so one scale would open a seam at York Street
+  const ROOF_PICK = (/[?&]roofpick=(photo|held)\b/.exec(location.search) || [])[1] || '';
+  const ROOF_HOLD = ROOF_PICK === 'held' ? [0.739, 0.925] : [1, 1];
   const roofArtU = { uRoofArt: { value: null }, uRoofOn: { value: 0 }, uRoofM: { value: 8 }, uRoofPad: { value: new THREE.Vector2(0.0625, 0.015625) }, uRoofOwn: { value: 0.75 }, uRoofDbg: { value: 0 },
+    uRoofPick: { value: new THREE.Vector4(ROOF_PICK ? 1 : 0, 0.0754, 0.211, 0.367) }, uRoofHold: { value: new THREE.Vector2(ROOF_HOLD[0], ROOF_HOLD[1]) },
     uRoofMean: { value: [new THREE.Vector3(0.1, 0.1, 0.1), new THREE.Vector3(0.3, 0.3, 0.3), new THREE.Vector3(0.6, 0.6, 0.6), new THREE.Vector3(0.3, 0.28, 0.25)] } };
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
     uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 },

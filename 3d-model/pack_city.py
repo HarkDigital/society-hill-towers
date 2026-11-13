@@ -23,10 +23,17 @@ from shapely.ops import unary_union, polygonize
 from philly_frame import LON0, LAT0, KX, KZ
 
 ap = argparse.ArgumentParser(description='osm_city_raw.json -> city.b64 (far ring)')
+ap.add_argument('--against', metavar='CITY_B64',
+                help='write that city.b64 again with only its merged strips\' roof forms filled in from this pack '
+                     '(a record matched by its exact outline, at form 0 there and 5 to 7 here, its colour index the '
+                     'same): every other int16 is the old file\'s (Round 247; the inputs have drifted since Sep 17)')
+ap.add_argument('--no-strip-forms', action='store_true',
+                help='pack every merged strip at form 0 as before Round 247 (reproduces the old city.b64)')
 ap.add_argument('--allow-missing', action='store_true',
                 help='pack even when a join LUT (LiDAR heights / OPA attrs / roof colours) is missing; '
                      'the affected attributes are dropped from the far ring')
 ARGS = ap.parse_args()
+STRIP_FORMS = not ARGS.no_strip_forms
 
 S = 0.7
 WIDE = (-3700, 2300, -4480, 6400)
@@ -175,7 +182,7 @@ for el in ways:
         solo.append((pg, h, bt, aw_, rw_, rf_))
     else:
         key = (int(cx // 400), int(cz // 400), int(round(h / 4)))
-        merge_groups.setdefault(key, []).append((pg, aw_, rw_, rf_))
+        merge_groups.setdefault(key, []).append((pg, aw_, rw_, rf_, el['id']))
 
 body = []
 nb = 0
@@ -214,6 +221,36 @@ def roof_pick(idxs):
     if not ROOF_LUM: return Counter(idxs).most_common(1)[0][0]
     mean = sum(ROOF_LUM[i] for i in idxs) / len(idxs)
     return min(idxs, key=lambda i: (abs(ROOF_LUM[i] - mean), i))
+# Stage 2 (Round 247, the plan's REALDATA-4 step A): a strip of several houses kept form 0 whatever its members were
+# measured as, so about 29,800 measured forms went to the page's lottery, which dealt the smaller strips gables over
+# flat rows. A strip now takes a form from its members by area: flat when 60% of its area was measured or tagged flat;
+# a gable (or a hip) when 60% was measured pitched with every pitched member's ridge within 20 degrees of the others'
+# mean and of the strip's own long axis, at the members' median rise. It packs in the codes no single building uses
+# (5 flat, 6 gable, 7 hip), so the page can keep the lottery for them until Mike picks (app.js FAR_FORM_OF), and only
+# roof words change: no record moves, no colour pool shifts
+STRIP_SHARE, STRIP_RIDGE = 0.6, math.radians(20)
+def _adiff(a, b):   # two ridge directions (mod pi)
+    d = abs(a - b) % math.pi
+    return min(d, math.pi - d)
+def strip_form(g, mine):
+    tot = sum(m[0].area for m in mine)
+    if tot <= 0: return (0, 0.0)
+    flat = sum(m[0].area for m in mine if m[3][0] == 4)
+    if flat >= STRIP_SHARE * tot: return (5, 0.0)
+    pit = [(m[0].area, ROOF_LIDAR[m[4]]) for m in mine if m[3][0] in (1, 2) and m[4] in ROOF_LIDAR and ROOF_LIDAR[m[4]][0] in (1, 2)]
+    if sum(a for a, _ in pit) < STRIP_SHARE * tot: return (0, 0.0)
+    # the ridges' mean direction, on the doubled angle (a ridge at 179 degrees is one at 1)
+    sx = sum(a * math.cos(2 * r[3]) for a, r in pit); sz = sum(a * math.sin(2 * r[3]) for a, r in pit)
+    mean = (math.atan2(sz, sx) / 2) % math.pi
+    if any(_adiff(r[3], mean) > STRIP_RIDGE for _, r in pit): return (0, 0.0)
+    rr = g.minimum_rotated_rectangle
+    cs = list(rr.exterior.coords)
+    e0 = (cs[1][0] - cs[0][0], cs[1][1] - cs[0][1]); e1 = (cs[2][0] - cs[1][0], cs[2][1] - cs[1][1])
+    lx, lz = e0 if math.hypot(*e0) >= math.hypot(*e1) else e1
+    if _adiff(math.atan2(lz, lx) % math.pi, mean) > STRIP_RIDGE: return (0, 0.0)
+    hips = sum(a for a, r in pit if r[0] == 2)
+    rises = sorted(max(0.0, float(r[2]) - float(r[1])) for _, r in pit)
+    return (7 if hips * 2 > sum(a for a, _ in pit) else 6, rises[len(rises) // 2])
 def attr_pick(members):
     aws = Counter(m[1] for m in members if m[1] != -1)
     return aws.most_common(1)[0][0] if aws else -1
@@ -229,7 +266,7 @@ for (gx, gz, hb), members in merge_groups.items():
         if not mine: mine = members
         aw_ = attr_pick(mine)
         rw_ = roof_pick([m[2] for m in mine])
-        rf_ = mine[0][3] if len(mine) == 1 else (0, 0.0)
+        rf_ = mine[0][3] if len(mine) == 1 else (strip_form(g, mine) if STRIP_FORMS else (0, 0.0))
         pending.append((Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_, rf_))
 for pg, h, bt, aw_, rw_, rf_ in solo:
     pending.append((pg.simplify(0.8), h, 0, bt, aw_, rw_, rf_))
@@ -424,8 +461,51 @@ if SAT:
         if len(shown) >= 12: break
     sys.exit(1)
 
-hdr = struct.pack('<4i', 0x5348545C, nb, nr, na)
-blob = hdr + struct.pack('<%dh' % len(body), *body)
+def strip_forms_against(old_path, new_body, new_nb):
+    """The old blob's int16s with only the roof words of matched merged strips replaced. A record is matched by its
+    centroid (within 2 m), its area (within 5%) and its height word: the Sep 17 pack ran an older shapely and its
+    outlines differ from a rerun's in the last unit (an exact outline matched 93,275 of 180,097, this 156,897)."""
+    raw = base64.b64decode(open(old_path).read().strip())
+    ohdr = struct.unpack_from('<4i', raw, 0)
+    ob = list(struct.unpack_from('<%dh' % ((len(raw) - 16) // 2), raw, 16))
+    def recs(b, n):
+        i, out = 0, []
+        for _ in range(n):
+            k = b[i]; xs = b[i + 6:i + 6 + 2 * k:2]; zs = b[i + 7:i + 7 + 2 * k:2]
+            a = sum(xs[j] * zs[(j + 1) % k] - xs[(j + 1) % k] * zs[j] for j in range(k))
+            out.append((i, sum(xs) / k * S, sum(zs) / k * S, abs(a) / 2 * S * S, b[i + 1], b[i + 5])); i += 6 + 2 * k
+        return out
+    grid = {}
+    for r in recs(new_body, new_nb):
+        if ((r[5] & 0xFFFF) >> 9) & 7 >= 5: grid.setdefault((int(r[1] // 20), int(r[2] // 20)), []).append(r)
+    n_set = n_col = 0
+    for i, x, z, ar, hw, rw in recs(ob, ohdr[1]):
+        o16 = rw & 0xFFFF
+        if rw == -1 or (o16 >> 9) & 7 != 0: continue
+        best, bd = None, 2.0
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                for q in grid.get((int(x // 20) + dx, int(z // 20) + dz), ()):
+                    d = math.hypot(q[1] - x, q[2] - z)
+                    if d < bd and q[4] == hw and abs(q[3] - ar) <= 0.05 * max(ar, 1.0): bd, best = d, q
+        if best is None: continue
+        n16 = best[5] & 0xFFFF
+        if (o16 & 0x1FF) != (n16 & 0x1FF): n_col += 1; continue   # the colour index must not move
+        v = (o16 & 0x1FF) | (n16 & 0xFE00)
+        ob[i + 5] = v - 65536 if v > 32767 else v
+        n_set += 1
+    print(f'--against {old_path}: {n_set} strip forms set, {n_col} with another colour index left at form 0; '
+          f'every other int16 as it was', flush=True)
+    return ohdr, ob
+
+if ARGS.against:
+    ohdr, ob = strip_forms_against(ARGS.against, body, nb)
+    hdr = struct.pack('<4i', *ohdr)
+    blob = hdr + struct.pack('<%dh' % len(ob), *ob)
+    nb, nr, na = ohdr[1], ohdr[2], ohdr[3]
+else:
+    hdr = struct.pack('<4i', 0x5348545C, nb, nr, na)
+    blob = hdr + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(blob).decode()
 open('city.b64', 'w').write(b64)
 print(f'city.b64: {len(b64)/1e6:.2f} MB base64 ({nb} buildings, {nr} roads, {na} areas)', flush=True)

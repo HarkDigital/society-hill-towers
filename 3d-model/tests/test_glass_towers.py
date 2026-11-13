@@ -649,7 +649,7 @@ class ThirdReview(unittest.TestCase):
         self.assertIn('if (GLASS_ON && !spec && t === 10 && base + hTop - ys0 >= 30) gRoute = glassGenericSys(skinKindOf(style, null, i, t), i);', s)
         # every other mid-rise keeps main's skin line exactly
         self.assertIn("poly[0][0], poly[0][1]) < 0)\n          midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185", s)
-        self.assertIn('    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao) => {', s)
+        self.assertIn('    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao, capS) => {', s)
 
     def test_the_glint_under_a_deck(self):
         h = self.hook

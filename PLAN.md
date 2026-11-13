@@ -197,6 +197,11 @@ uniform, the Fishtown stations' four identical hooks under one key, venue boards
 2, the rebuilds folded into one family); the sky dome and apron drawn last; the cloud shadow's gate.
 The first view by day (side-by-side page one): each flat roof takes its kind from its own photograph; the far ring keeps
 its measured roof forms; crisp shadows in the entry orbit.
+On the stage2 branch (Nov 13, not deployed): batch 1 (the program diet's first cuts, the backdrops last, the cloud
+gate), batch 2 (the landmark rebuilds in one program family: 40 programs to 8 at their poses), batch 3 (page one's
+three looks behind flags, off by default: `?roofpick=photo|held`, `?orbitsh=1`, `?farforms=1`; city.b64 changed in
+roof words only, through `pack_city.py --against`). Page one is published for his picks:
+https://claude.ai/artifact/GBT1hC4E3sCetyGoQQ5ZpR (private).
 The night and winter (page two): lit floors on masonry and skinned towers; floodlights on the Art Museum, Independence
 Hall and Founder's Hall; generated fronts and skins answering the clock and the weather; door lamps and light out of
 open shops; snow that lies as long as the real snow.
