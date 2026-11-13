@@ -58,6 +58,7 @@ MANIFESTS += ('nj_art.json',)   # the USS New Jersey's plating, bulkhead, deck a
 MANIFESTS += ('moshulu_art.json',)   # the Moshulu's hull plating and teak deck (Round 195)
 MANIFESTS += ('olympia_art.json',)   # the cruiser Olympia's plating, superstructure, deck and buff (Round 215)
 MANIFESTS += ('blade_art.json',)   # the blade signs' six blanks (the realism round two, R9)
+MANIFESTS += ('street_floor_art.json',)   # the street floors made again, behind ?streetfloor= (Round 243)
 MANIFESTS += ('bridge_art.json',)   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage (Round 195)
 MANIFESTS += ('people_art.json',)   # the walking people's atlases, one a wardrobe (Rounds 227 and 242)
 
@@ -76,7 +77,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people|floors)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 

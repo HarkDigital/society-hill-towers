@@ -14519,3 +14519,46 @@ step, the bob, the wardrobe rule and its hysteresis, and an atlas swap. Suite: 1
 Known: walkers still cross lawns where no sidewalk is drawn and pass through each other; feet still slide a little
 within a picture; figures walking toward the eye face the lens (the front strips were asked for the face to the camera). The memory is the new
 cost: a phone carries 12.5 MB for the people where it carried 1.9 (the flag is still off by default and refused at tier 2).
+
+## Round 243 — the street floors' glass, behind `?streetfloor=` (Nov 12)
+
+Mike, from the street north of City Hall (`#p=-1849.7,6.9,-330.4,-2.364,-0.004`): "I see this texture a lot on the
+ground floor of large buildings. It is not good. Can we swap it out with something better?"
+
+What it was: the street floors the realism pass put under the generated tower and mid-rise walls (`skinBasesLay`,
+`FRONTS_DATA.bases`, `bake_fronts.py bake_base`), here `office2` (bronze piers over black glass). Isolated by flags: only
+`?real=0` changed the pose; `?sfart=0`, `?midskin=0`, `?townart=0`, `?walls=plain` and `?fronts=0` did not. The picture
+was not the fault, its window MASK was: bake_base finds the glass from the picture's darkness alone (darker than 0.6 of
+the median and not warm, or darker than 0.25 of it), and on the glass-heavy pictures, whose panes carry reflections and
+an interior as dark as their frames, the mask came out as salt and pepper. Where the mask is set the shader makes the
+pane glossy by day and lights it after dark; where it is not the pane is matte and unlit. So every pane drew as patches
+of reflection and patches of flat black by day, and as speckled light after dark. Nine of the sixteen masks are ragged
+(lobby1, lobby2, office2, aptmod1, aptmod2, loft1, loft2, shop1, shop2). Laid citywide (`__dbg.fronts().bases`): 14,293
+street floors; the four the big buildings take, lobby1 561, lobby2 358, office1 466, office2 188 (1,573); the other
+ragged five 5,957 more.
+
+Two answers, both behind `?streetfloor=` (off by default, `old`; never saved), from `bake_street_floors.py` into
+`street_floor_art.json` (inlined as `STREET_FLOOR_ART`, its art under `art/floors/`), laid over `FRONTS_DATA.bases` by
+`streetFloorBases` so every existing call line is unchanged:
+- `clean`: the same pictures, each ragged mask redrawn as its panes' rectangles (`MASK_RECTS`, measured off the 768 by
+  512 tile on a 40 by 20 grid; an auto-fill of the darkness mask was tried first and left lobby1 and lobby2 ragged).
+  Data only: no shader text changes.
+- `lit`: clean, and the four big-building floors made again (gpt-image-2 at bake_base's frame, two candidates each, one
+  kept: `lidar_cache/fronts5_raw/base_lit/`) with clear glass onto a softly lit lobby (stone floors, a desk, lift doors,
+  ceiling lights) in place of the old prompt's "the glass dark and unlit". Their masks carry green on the panes too, and
+  under `lit` only the street floors' one program reads it: a lit lobby's picture is its own light after dark (1.1 times
+  the picture), in place of the dark-glass glow, which drew a lit lobby as its negative with black ceiling lamps. With
+  the flag off the program's text is byte for byte as before (`customProgramCacheKey` 'skin-base|wx'; under lit
+  'skin-base|wx|lit'), so the shader train is untouched until Mike picks it.
+`__dbg.fronts().streetFloor` reports the choice; `__dbg.fronts().floorsNear(x, z, r, base)` lists the street floors
+round a point by their picture.
+
+Checked: Mike's pose and four more round City Hall (`a-broad-east`, `b-north`, `c-brutalist`, `d-south`), by day and at
+21:30, in all three arms, headless (`render.mjs`, Metal); the phone path (`--touch`) under lit by day and night. None of
+the arms failed a step. Tests: `test_app_art` holds the new `SKIN_BASES` line and the overlay, and checks the new masks
+have no half; `test_art_files` reads `street_floor_art.json` (kind `floors`); `test_realism_fronts_skins` the two cache
+keys. Suite: 1,510 tests, OK (one expected failure). Sent to Mike as a private side by side.
+
+Known: the tower tiles above the street floors have the same salt-and-pepper lit windows after dark on some kinds (the
+glass curtain walls by City Hall, `c-brutalist` at night); that is `bake_tile`'s mask, not this one, and is not touched
+here. A lit lobby repeats every 7.76 m like every street floor (one desk a bay); a second picture a kind would break it.

@@ -32763,7 +32763,21 @@ if (uOlLamp > 0.001) {
     aptbrick: ['apt1', 'shop1'], gardenapt: ['apt2', 'apt1'], loftbrick: ['loft1', 'shop2'], warehouse: ['loft1', 'loft2'],
     institution: ['school1', 'school2'], modernapt: ['aptmod1', 'aptmod2'], commercial: ['office1', 'shop1'], paintedbrick: ['shop1', 'shop2'],
     officemid: ['office1', 'lobby1'], stucco: ['aptmod2', 'apt2'] };
-  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? FRONTS_DATA.bases : null;
+  // Round 243 (Mike, from the street north of City Hall: "I see this texture a lot on the ground floor of large buildings.
+  // It is not good"): the street floors' window masks were found from the pictures' darkness alone and came out as salt and
+  // pepper on the glass-heavy ones, each pane patches of glossy reflection and of matte black. ?streetfloor=clean lays each
+  // ragged mask's panes as whole rectangles over the same pictures; ?streetfloor=lit does that and puts four lobbies made
+  // again with clear glass onto a lit lobby (lobby1, lobby2, office1, office2) in place of the black ones
+  // (street_floor_art.json, bake_street_floors.py). Data only: the program and its text are the same under every choice
+  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\b/.exec(location.search) || [])[1] || 'old';
+  function streetFloorBases(B) {
+    const A = typeof STREET_FLOOR_ART !== 'undefined' && STREET_FLOOR_ART ? STREET_FLOOR_ART : null;
+    if (!A || STREET_FLOOR === 'old') return B;
+    const out = {};
+    for (const k in B) out[k] = { ...B[k], ...(A.clean[k] || {}), ...(STREET_FLOOR === 'lit' && A.lit[k] ? A.lit[k] : {}) };
+    return out;
+  }
+  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? streetFloorBases(FRONTS_DATA.bases) : null;
   function skinBaseOf(c) {
     if (!SKIN_BASES || c.g0 == null || c.y0 - c.g0 < 2.5) return null;
     const ok = (SKIN_BASE[c.kind] || []).filter((k) => SKIN_BASES[k]);
@@ -32804,7 +32818,7 @@ if (uOlLamp > 0.001) {
       dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), skewed: FRONTS.skewed || 0, noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
       towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, msParts: TSKIN.msParts || null, error: TSKIN.error, late: skinLateU.value.toArray().map((v) => +v.toFixed(3)) },
-      storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, shopOn: frShopOn.value, bases: { ...TSKIN.bases }, fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
+      storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, shopOn: frShopOn.value, bases: { ...TSKIN.bases }, streetFloor: STREET_FLOOR, floorsNear: (x, z, r = 300, base) => TSKIN.cands.map((c) => { const b = skinBaseOf(c); if (!b || (base && b !== base)) return null; let cx = 0, cz = 0; for (const p of c.poly) { cx += p[0]; cz += p[1]; } cx /= c.poly.length; cz /= c.poly.length; const d = Math.hypot(cx - x, cz - z); return d <= r ? { base: b, kind: c.kind, x: Math.round(cx), z: Math.round(cz), d: Math.round(d), h: Math.round(c.y1 - c.g0), g0: +c.g0.toFixed(1) } : null; }).filter(Boolean).sort((a, b) => a.d - b.d), fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
   }
   // the realism pass's measure of the fit (critic gap 0): over every honest side, the offset of the wall's line from the
   // box's side and its angle (median and 95th percentile), and the share whose wall covers less than 98% of the side
@@ -49684,9 +49698,14 @@ float pinOccGate() {
             '  float sg = 1.0 - smoothstep(0.05, 0.3, mix(dl, bl, 0.35)), st = clamp(dl / max(bl, 0.015), 0.25, 1.8);\n' +
             '  vec3 sc = mix(vec3(1.0, 0.76, 0.5), vec3(1.0, 0.92, 0.8), step(0.6, bh));\n' +
             '  totalEmissiveRadiance += sbMask.r * (1.0 - 0.85 * sbBar) * step(0.25, bh) * uNight * sc * (sg * (0.22 + 0.3 * smoothstep(0.2, 1.0, vUv.y)) * (0.3 + 0.7 * st) + (1.0 - sg) * 0.06 * sbTex); }');
+        // Round 243, ?streetfloor=lit only (the text under every other choice is as it was): a lit lobby's picture is its
+        // own light after dark, where its mask's green says so, in place of the glow the dark glass takes (which drew a
+        // lit lobby as its negative, the ceiling's lamps black)
+        if (STREET_FLOOR === 'lit') sh.fragmentShader = sh.fragmentShader
+          .replace('totalEmissiveRadiance += sbMask.r * (1.0 - 0.85 * sbBar) * step(0.25, bh)', 'totalEmissiveRadiance += sbMask.g * uNight * sbTex * 1.1;\n  totalEmissiveRadiance += sbMask.r * (1.0 - sbMask.g) * (1.0 - 0.85 * sbBar) * step(0.25, bh)');
         wxSurfacePatch(sh);
       };
-      mat.customProgramCacheKey = () => 'skin-base|wx';   // one program for every street floor: the shader is the same
+      mat.customProgramCacheKey = () => (STREET_FLOOR === 'lit' ? 'skin-base|wx|lit' : 'skin-base|wx');   // one program for every street floor: the shader is the same
       const m = new THREE.Mesh(g, mat);
       m.castShadow = false; m.receiveShadow = true; m.name = 'skin-base-' + b;
       m.frustumCulled = false; pendingUpload.push(m);

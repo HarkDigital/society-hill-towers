@@ -128,6 +128,11 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   intersection"): 1,832 of 3,774 baked names crossed a junction box or a zebra. The bake now slides each along its
   street to a block it fits in, else letters it at 0.75, 0.6 or 0.45 of its height: none in a junction, 3,655 names,
   fifteen tiny streets without one. Data and twelve text heights in the page; the atlas unchanged.
+- **Round 243** (Mike: "I see this texture a lot on the ground floor of large buildings. It is not good"): the street
+  floors' window masks were salt and pepper on nine of sixteen pictures, so lobby glass drew as patches of reflection
+  and matte black (14,293 street floors laid, 1,573 under the big buildings). Behind `?streetfloor=`, off by default:
+  `clean` (the masks as whole panes, data only) and `lit` (and four big-building lobbies made again with clear glass onto
+  a lit lobby, a shader variant only under the flag). Side by side sent to Mike.
 
 ## In flight (finish these first)
 
@@ -239,6 +244,8 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
 ## What is waiting on Mike
 
 1. The people: his look at Round 242's thirty, then the list of decisions above.
+1b. The street floors (Round 243): `old`, `clean` or `lit` by default? `lit` changes one program's text, so it rides
+    the shader train once picked; `clean` is data only.
 2. Three minutes of flying the site on his Mac, then once with `?dpr=1` (Stage 6 cannot be planned without it).
 3. May the beacon name the graphics chip on website computers (one sentence in the privacy policy)?
 4. The veil: a computer's veil shows the city rising since Round 234 (his pick). Still his: may it name the compile wait,

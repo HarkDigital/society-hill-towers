@@ -348,7 +348,9 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # the tower tiles' and the skin bases' masks, and the glass towers' rooms (a computer's: a phone never draws them)
         self.assertIn('const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
         self.assertIn('const T = SKIN_BASES[b]; return [b, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
-        self.assertIn("  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? FRONTS_DATA.bases : null;\n", s)
+        self.assertIn("  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? streetFloorBases(FRONTS_DATA.bases) : null;\n", s)
+        # Round 243: ?streetfloor= lays street_floor_art.json's records over the bases, its masks and pictures by the same keys
+        self.assertIn("    for (const k in B) out[k] = { ...B[k], ...(A.clean[k] || {}), ...(STREET_FLOOR === 'lit' && A.lit[k] ? A.lit[k] : {}) };\n", s)
         self.assertIn('    artImage(GLASS_DATA.rooms.rooms).then((rooms) => {\n', s)
         named = {f for f, _ in pairs()}
         stems = {p.rsplit('/', 1)[0] + '/' + p.rsplit('/', 1)[1].split('.')[0] for p in named}
@@ -356,6 +358,8 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         F = json.loads((ROOT / 'fronts.json').read_text())
         masks = [T for group in ('tiles', 'bases') for T in F[group].values()]
         self.assertGreater(len(masks), 40)
+        S = json.loads((ROOT / 'street_floor_art.json').read_text())
+        masks += list(S['clean'].values()) + list(S['lit'].values())
         for T in masks:
             self.assertNotIn('maskHalf', T)
             self.assertFalse(twin(T['mask']), T['mask'])

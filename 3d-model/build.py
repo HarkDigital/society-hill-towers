@@ -203,6 +203,7 @@ const("WALL_ART", text_of("wall_art.json", "null"))   # the walls' and pitched r
 const("LAND_MASK", text_of("land_mask.json", "null"))   # the ground's land mask: built up, woods, river bank (bake_landmask.py), the realism pass
 const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pier deck and white water (bake_water_art.py), Oct 12
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
+const("STREET_FLOOR_ART", text_of("street_floor_art.json", "null"))   # the street floors made again, clean masks and four lit lobbies over FRONTS_DATA.bases, read under ?streetfloor= (bake_street_floors.py), Round 243
 const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
 const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefronts' generated shopfronts (bake_storefront_art.py), Round 189
 const("BLADE_ART", text_of("blade_art.json", "null"))   # the blade signs' six generated blanks on one sheet (bake_blade_art.py), the realism round two
@@ -236,7 +237,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "street_floor_art.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
              "glory_art.json", "storefront_art.json", "blade_art.json", "glass_art.json", "tavern_art.json", "indhall_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json", "nj_art.json", "moshulu_art.json", "olympia_art.json", "bridge_art.json", "people_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
