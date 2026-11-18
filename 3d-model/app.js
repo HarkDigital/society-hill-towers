@@ -829,6 +829,137 @@
     veil.style.display = 'none';
     return;
   }
+  // ---- Round 255 (Stage 4's probe, the Nov 10 plan's 3.4; Mike, Nov 18: "Start Stage 4"): two questions a phone answers
+  // before Stage 4 builds on them, each measured on the device itself and sent on a beacon. Touch only (a computer keeps
+  // its webp art and has no cache question); ?probe4=0 refuses both. Nothing drawn changes.
+  // ix, on the ready beacon: does a record kept in IndexedDB survive a relaunch (Stage 5's device cache is built only if it
+  // does)? At boot the page opens the 'philly3d' database and reads the one record; the perf beacon's minute writes it
+  // again with the time. The answer: h.<open ms>.<hours since the write> when it was read back, m.<open ms>.<hours> when
+  // this device wrote one and it is gone (the marker that says so is kept in localStorage and, in the app, in the native
+  // Preferences, which outlive a web view's data), n.<open ms> when nothing was ever written, u with no IndexedDB, e.<where>
+  // on an error, '' when the open had not answered by Ready. The record is a time stamp and nothing else.
+  // ax, on the perf beacon: does an ASTC texture upload and sample as it should (the art's ASTC twins are baked only if
+  // it does)? Four one-block textures, 4x4 and 6x6 in linear and sRGB, each a void-extent block of one colour (red 0.5,
+  // green 0, blue 1), sampled once into a 1 by 1 target and read back: a 1 per format that reads right (red 128 linear,
+  // 55 sRGB, within 6), x on a GL error at the upload, w on a wrong colour, 0 without the extension (an L before them: the
+  // program did not link); then the sRGB 4x4's red as read, the probe's whole ms, the link's ms and the first read's ms
+  // (the wait for the frame the GPU still had queued: 10 to 68 ms headless, the whole 19 to 79). The ix ms is the open's
+  // answer as the page saw it, queued behind the build's own work (6.7 s headless under SwiftShader), not the open alone. Raw GL once a device, while still (one synchronous read on a
+  // 1 by 1 target; its cost rides the field), and renderer.resetState() after, so three's state cache matches the context.
+  // Since the Simulator's run, once a device and only while still (astcProbeStart).
+  const PROBE4_ON = isTouch && !/[?&]probe4=0\b/.test(location.search);
+  const PROBE4 = { ix: '', ax: '', db: null };
+  const IX_MARK = 'philly3d.ixw';   // when this device last wrote the record (ms since the epoch)
+  function ixMarkGet() {
+    let t = 0;
+    try { t = +localStorage.getItem(IX_MARK) || 0; } catch (e) { t = 0; }
+    const P = IN_APP && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
+    if (!P) return Promise.resolve(t);
+    try { return Promise.resolve(P.get({ key: IX_MARK })).then((r) => Math.max(t, +(r && r.value) || 0), () => t); } catch (e) { return Promise.resolve(t); }
+  }
+  function ixMarkSet(v) {
+    try { localStorage.setItem(IX_MARK, String(v)); } catch (e) { /* private mode: the marker is a convenience */ }
+    const P = IN_APP && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Preferences;
+    if (P) { try { Promise.resolve(P.set({ key: IX_MARK, value: String(v) })).catch(() => {}); } catch (e) { /* the bridge */ } }
+  }
+  function ixProbe() {
+    if (!PROBE4_ON) return;
+    if (typeof indexedDB === 'undefined' || !indexedDB) { PROBE4.ix = 'u'; return; }
+    const t0 = performance.now(), hrs = (t) => Math.round((Date.now() - t) / 3600000);
+    let req;
+    try { req = indexedDB.open('philly3d', 1); } catch (e) { PROBE4.ix = 'e.open'; return; }
+    req.onupgradeneeded = () => { try { req.result.createObjectStore('kv'); } catch (e) { /* an existing store */ } };
+    req.onerror = () => { PROBE4.ix = 'e.' + Math.round(performance.now() - t0); };
+    req.onsuccess = () => {
+      const db = req.result, om = Math.round(performance.now() - t0);
+      PROBE4.db = db;
+      try {
+        const g = db.transaction('kv', 'readonly').objectStore('kv').get('probe');
+        g.onerror = () => { PROBE4.ix = 'e.get'; };
+        g.onsuccess = () => {
+          const r = g.result;
+          if (r && r.t) { PROBE4.ix = 'h.' + om + '.' + hrs(r.t); return; }
+          ixMarkGet().then((w) => { PROBE4.ix = w ? 'm.' + om + '.' + hrs(w) : 'n.' + om; });
+        };
+      } catch (e) { PROBE4.ix = 'e.tx'; }
+    };
+  }
+  function ixWrite() {
+    const db = PROBE4.db;
+    if (!db) return;
+    try {
+      const now = Date.now(), tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put({ t: now }, 'probe');
+      tx.oncomplete = () => ixMarkSet(now);
+    } catch (e) { /* the next launch reads n or m */ }
+  }
+  // Once a device and only while still (the Simulator's WebKit, Nov 18: ax=1111.55.380.351.23, the link of the probe's own
+  // small program 351 ms, a stall a person would feel): from 45 s after Enter, every 2 s, the probe runs when nothing has
+  // moved or been touched for PACE_IDLE_AFTER, gives up at 170 s, and keeps its answer in localStorage philly3d.axw; a later
+  // session reports the kept answer at once. ax ends .0 when measured this session, .1 when kept from an earlier one.
+  const AX_MARK = 'philly3d.axw';
+  function astcProbeStart() {
+    if (!PROBE4_ON) return;
+    let kept = '';
+    try { kept = localStorage.getItem(AX_MARK) || ''; } catch (e) { kept = ''; }
+    if (kept) { PROBE4.ax = kept + '.1'; return; }
+    const t0 = performance.now();
+    const iv = setInterval(() => {
+      const now = performance.now();
+      if (PROBE4.ax || now - t0 > 170000) { clearInterval(iv); return; }
+      if (now - t0 < 45000 || now - PACE.lastInput < PACE_IDLE_AFTER || now - PACE.moved < PACE_IDLE_AFTER || document.hidden) return;
+      clearInterval(iv);
+      let r;
+      try { r = astcProbe(); } catch (e) { r = 'e'; }
+      PROBE4.ax = r + '.0';
+      try { localStorage.setItem(AX_MARK, r); } catch (e) { /* asked again next session */ }
+    }, 2000);
+  }
+  function astcProbe() {
+    const gl = renderer.getContext();
+    if (!renderer.capabilities.isWebGL2) return 'g';
+    const ext = gl.getExtension('WEBGL_compressed_texture_astc');
+    if (!ext) return '0';
+    const t0 = performance.now();
+    const blk = new Uint8Array([0xfc, 0xfd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x80, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff]);
+    const F = [[0x93b0, 4, 128], [0x93d0, 4, 55], [0x93b4, 6, 128], [0x93d4, 6, 55]];   // RGBA 4x4, SRGB8_ALPHA8 4x4, RGBA 6x6, SRGB8_ALPHA8 6x6
+    const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s; };
+    const vs = sh(gl.VERTEX_SHADER, '#version 300 es\nvoid main() { vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0); gl_Position = vec4(p, 0.0, 1.0); }');
+    const fs = sh(gl.FRAGMENT_SHADER, '#version 300 es\nprecision mediump float; uniform sampler2D t; out vec4 o; void main() { o = texture(t, vec2(0.5)); }');
+    const pr = gl.createProgram(); gl.attachShader(pr, vs); gl.attachShader(pr, fs); gl.linkProgram(pr);
+    const linked = gl.getProgramParameter(pr, gl.LINK_STATUS), t1 = performance.now();   // the link's own wait
+    let t2 = 0;   // the first read back: what the GPU still had queued
+    const rb = gl.createRenderbuffer(), fb = gl.createFramebuffer(), px = new Uint8Array(4);
+    let out = '', red = '';
+    try {
+      gl.bindRenderbuffer(gl.RENDERBUFFER, rb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, 1, 1);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, rb);
+      gl.bindVertexArray(null); gl.useProgram(pr); gl.uniform1i(gl.getUniformLocation(pr, 't'), 0);
+      gl.viewport(0, 0, 1, 1); gl.disable(gl.BLEND); gl.disable(gl.DEPTH_TEST); gl.disable(gl.CULL_FACE); gl.disable(gl.SCISSOR_TEST); gl.colorMask(true, true, true, true);
+      gl.activeTexture(gl.TEXTURE0);
+      while (gl.getError()) { /* drain what came before */ }
+      for (const [fmt, n, want] of F) {
+        const tx = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tx);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, fmt, n, n, 0, blk);
+        if (gl.getError()) out += 'x';
+        else {
+          gl.drawArrays(gl.TRIANGLES, 0, 3);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          if (!t2) t2 = performance.now();
+          if (fmt === 0x93d0) red = px[0];
+          out += Math.abs(px[0] - want) <= 6 && px[1] <= 6 && px[2] >= 249 ? '1' : 'w';
+        }
+        gl.deleteTexture(tx);
+      }
+    } catch (e) { out += 'e'; }
+    gl.deleteFramebuffer(fb); gl.deleteRenderbuffer(rb); gl.deleteProgram(pr); gl.deleteShader(vs); gl.deleteShader(fs);
+    renderer.resetState();
+    const t3 = performance.now();
+    return (linked ? '' : 'L') + out + '.' + red + '.' + Math.round(t3 - t0) + '.' + Math.round(t1 - t0) + '.' + Math.round((t2 || t1) - t1);
+  }
+  ixProbe();   // Round 255: the open and the read start now, so their answer is in by Ready
   // ---- Round 229, measurement round two (Stage 1 of the Nov 10 plan: the numbers Stages 3, 4 and 6 are decided on). Fields
   // and timers only: nothing here draws, and no shader text is touched. What the first measurement round (Round 220) could
   // not say, MEASURED from its own beacons: a cold flush is 32 to 34 s on Apple devices and 12 to 57 s on Windows PCs against
@@ -1199,7 +1330,7 @@
       const F = MEAS.fence, o = { cold, lk: measLk(R.link, LINK0) + '.' + Math.round(R.med), tu: R.link.tn + '.' + Math.round(R.link.tms),
         fll: [...by].map((e) => e[0] + '.' + e[1].join('.')).join('_'), gw: Array.from(MEAS.gw, (v) => v || 0).join('.'), gi: MEAS.gi.join('_'),
         gy: [YLD.n, YLD.ms, YLD.max, YLD.afN, YLD.afMs].map(Math.round).join('.'), gf: [F.n, F.late, F.lo, F.hi, F.max, F.at, F.pend, F.cms, F.st].map(Math.round).join('.'),
-        hd: R.hd, hn: R.hn, bl: HID.bail >= 0 ? HID.bail : '', cap: f(capField), db: f(dbField), gbf: f(famField), on: MEAS.on, an: MEAS.artNull, wn: LINK.err + MEAS.err };
+        hd: R.hd, hn: R.hn, bl: HID.bail >= 0 ? HID.bail : '', cap: f(capField), db: f(dbField), gbf: f(famField), on: MEAS.on, an: MEAS.artNull, wn: LINK.err + MEAS.err, ix: f(() => PROBE4.ix) };   // Round 255: ix, the IndexedDB probe
       if (R.top) o.l5 = R.top;
       if (MEAS.pp) { o.pp = MEAS.pp; if (MEAS.ppk) o.ppk = MEAS.ppk; }   // part two: the link probe, on the loads that ran it
       return o;
@@ -1213,10 +1344,12 @@
     }
     if (st === 'perf' || st === 'settled' || st === 'late') {
       const M = MEAS, S = M.stall, C = M.cap, eh = M.eh.reduce((a, b) => a + b, 0), t = (v) => Math.round(v * 10);
-      return { stl: [S.n, S.ms, S.pn, S.pms, S.max].map(Math.round).join('.'), prg: f(() => renderer.info.programs.length), db: f(dbField), gbf: f(famField),
+      const o = { stl: [S.n, S.ms, S.pn, S.pms, S.max].map(Math.round).join('.'), prg: f(() => renderer.info.programs.length), db: f(dbField), gbf: f(famField),
         pl: f(() => PIN_OCC.landN + '.' + Math.round(PIN_OCC.landMs)), pt: C.n ? [C.n, C.tris / C.n / 1000, C.calls / C.n, t(C.ms / C.n), C.near].map(Math.round).join('.') : '',
         eh: eh ? M.eh.map((v) => Math.round(100 * v / eh)).join('.') : '', js: M.jsN ? M.js.map((v) => t(v / M.jsN)).join('.') + '.' + M.jsN : '',
         fgl: [M.fg[1] ? t(M.fg[0] / M.fg[1]) : 0, M.fg[1], M.fg[3] ? t(M.fg[2] / M.fg[3]) : 0, M.fg[3]].join('.'), trm: Math.round(M.traf * 10) / 10, an: M.artNull };
+      { const ax = f(() => PROBE4.ax); if (ax) o.ax = ax; }   // Round 255: the ASTC probe's answer, on the run beacons once it has one
+      return o;
     }
     return {};
   }
@@ -56028,7 +56161,8 @@ float pinOccGate() {
     beacon('enter', { ms: Math.round(performance.now()), ...enterFacts() });   // Round 220: the first frames' facts (enterFacts)
     PERF.enterT = performance.now();
     DPR.live = true; dprMode(); DPR.ch1 = 0; PACE.lastInput = performance.now(); DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here (Round 220: ch1 cleared after the re-seat, so dc1 is the first trial's change)
-    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 60000);
+    astcProbeStart();   // Round 255: the ASTC probe, once a device, while still
+    setTimeout(() => { if (PROBE4_ON) ixWrite(); const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 60000);
     setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 180000);
     setTimeout(() => { const p = perfStats(); beacon('late', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon(), ...runFacts(), ...gputBeacon() }); }, 600000);   // Round 168: ten minutes in, where a phone's heat shows   // Round 166: where it settled
     veil.classList.add('hidden');
@@ -57124,7 +57258,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { probe4: () => ({ on: PROBE4_ON, ix: PROBE4.ix, ax: PROBE4.ax, db: !!PROBE4.db }), astcProbe, ixWrite, ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

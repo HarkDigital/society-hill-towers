@@ -482,6 +482,16 @@ What Round 229 added (Stage 1's second batch):
   building (OSM's `bridge:support`, or one held by name) goes in `lidar_join.py`'s `ROOF_HELD`; never cure a raised bridge
   structure with a `BRIDGE_SKIP` entry alone, whose `continue` sits before the sampler and would move `wideColK`.
 
+What Round 255 added (Stage 4's probe, the plan's 3.4; touch only, `?probe4=0` refuses, nothing drawn changes):
+- `ix` on the ready beacon: an IndexedDB record ('philly3d', store 'kv', key 'probe', `{ t }` and nothing else) read at
+  boot (`ixProbe`) and written again at the perf beacon's minute (`ixWrite`); `h`, `m` (written before and gone, the
+  marker `philly3d.ixw` in localStorage and the app's native Preferences), `n`, `u`, `e`, each with the open's ms.
+- `ax` on the perf beacon: four one-block ASTC textures (4x4 and 6x6, linear and sRGB) uploaded, sampled into a 1 by 1
+  target and read back (`astcProbe`, raw GL, `renderer.resetState()` after; the codes, the sRGB red, then
+  the whole, link and first-read ms; once a device and only while still, `astcProbeStart`, kept in `philly3d.axw`, .0 or .1).
+  The privacy policy names the
+  record. `__dbg.probe4()`, `tests/test_probe4.py`. Both fields come out once Stage 4 and Stage 5 have their answers.
+
 ## The Vine Street Expressway's cut (Round 228)
 
 The cut runs from 10th Street to the tunnel under 20th Street and the Parkway, with a built portal at each mouth and

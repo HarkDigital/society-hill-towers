@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 18, 2026, after Round 254 (the new event cards on by default); Stage 4 starting.
+Last updated: Nov 18, 2026, after Round 255 (Stage 4's probe).
 
 ## The ask
 
@@ -67,7 +67,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 | 1 | Free seconds, missing numbers, no dead button (JavaScript and data only) | Batches one and two shipped (Rounds 225, 229, and Camden's heights as 231). Remainder below. |
 | 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Shipped as Round 252 (Nov 13), with Mike's picks from both pages. Left for a later train: the straighter day toe, `?streetfloor=lit`, the buses' lamps. |
 | 3 | Link ahead (the cold load's main fix) | Not started. Built only for an engine where Round 229's probe shows batched linking under half of serial. |
-| 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Not started. |
+| 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Started Nov 18: Round 255's probe (ASTC upload, IndexedDB survival) on every phone's beacons. |
 | 5 | Repeat launches, and Ready on the near city | Not started. |
 | 6 | The Mac's frame | Waits on Mike's flight on the Mac, then once with `?dpr=1`. |
 | Picks | People walking, canopy, junctions, street pace, the Art Museum, twenty towers, tree heights, the Schuylkill's pool | People: first look shipped behind a flag (Round 227). The rest not started. |
@@ -150,6 +150,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   (`GLOW_FALL` 1.2, `?glowfall=0`); the horizon's clipped share 8.5 to 16% down to 0.2 to 1.1%. A computer unchanged.
 - **Round 254** (Mike's pick, Nov 18: "New cards everywhere"): Round 246's concert and game placards are the default on
   every device; `?placards=old` keeps the old ones. JavaScript only.
+- **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
 
 ## In flight (finish these first)
 
@@ -240,6 +241,21 @@ open shops; snow that lies as long as the real snow.
 The light: the clear-sky fill is already 1.2 (Round 234, his pick); what is left is the straighter day toe, shown on a
 test build first. Materials that answer the sun: he made no pick on the first page, where the sheen washed out South
 Philadelphia's roofs toward the sun; not on the train unless he asks again.
+
+## Stage 4: where it stands (Nov 18)
+
+The beacons already answer two of the probe's four questions (Mike's iPhone app, Nov 10 to 18):
+- The web view offers ASTC (`cap` absre1pk on every iPhone load).
+- The art is larger than the plan assumed. Tier 1: textures 165 MB at Ready, 232 to 292 MB after a flight (of 787 to
+  856 MB in all; buffers 483 to 511). Tier 0 at Ready: buffers 655 MB, textures 177 (865 in all); one tier 0 session
+  stood at 939 MB at its perf beacon (Nov 10) before a later death. So ASTC is the larger saving on tier 1 and the walls
+  as instance records on tier 0.
+Round 255 asks the other two on every phone (the Simulator, a real WebKit web view, already answers yes to both: ASTC
+decodes right in linear and sRGB, and the record survived a kill and reinstall): `ax`, whether an ASTC texture uploads and samples right (linear and sRGB,
+4x4 and 6x6), and `ix`, whether an IndexedDB record survives a relaunch. Still needed from Mike: one JetsamEvent report
+from the iPhone (Settings, Privacy and Security, Analytics and Improvements, Analytics Data) for the real ceiling.
+Next, by the numbers: the ASTC twins (an encoder in the pipeline, the container, the loader, the ground's baked means,
+GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then memory or sharpness), then the walls.
 
 ## Stages 3 to 6, in one line each
 

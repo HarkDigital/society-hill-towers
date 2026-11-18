@@ -14871,3 +14871,34 @@ Mike, shown Round 246's side by side again (https://claude.ai/artifact/RuF1ST4A3
 everywhere". `PLACARDS_NEW` now reads `!/[?&]placards=old\b/`: the scoreboard card with the team's colour, the status
 pill, the roof ring and the live ripple on every device, and `?placards=old` keeps the old bubbles and placards. No shader
 text, no new program (the ring and ripple are the ball's own material). `tests/test_placards_new.py` pins the new default.
+
+## Round 255 — Stage 4's probe: ASTC and IndexedDB on every phone's beacons (Nov 18)
+
+Mike: "Start Stage 4". The plan puts one probe build first (3.4: texture megabytes, whether the web view grants ASTC,
+whether an IndexedDB record survives a relaunch, one JetsamEvent report). The beacons since Round 229 already answer two:
+- ASTC is offered: `cap` reads `absre1pk.16384.8` on every iPhone load (Nov 11 to 18).
+- Texture megabytes (`gbs`, Mike's iPhone app, tier 1): 165 at Ready, 232 to 292 after a flight, of 787 to 856 in all,
+  buffers 483 to 511. Tier 0 (Nov 13): 655 buffers and 177 textures at Ready, 865 in all; a tier 0 session on Nov 10 stood
+  at 939 MB at its perf beacon. The art is about three times the synthesis's 80 MB gate, so the ASTC twins come first on
+  tier 1, and the walls' instance records on tier 0.
+This round asks the other two, touch only, `?probe4=0` refusing, nothing drawn changed:
+- `ix` (ready): `ixProbe` opens IndexedDB 'philly3d' at boot and reads one record; `ixWrite` writes `{ t }` at the perf
+  beacon's minute. h (read back), m (this device wrote one and it is gone: a marker in localStorage and, in the app, the
+  native Preferences, which outlive the web view's data), n (never written), u, e; each with the open's ms and the
+  record's age in hours. The privacy policy names the record (Nov 18).
+- `ax` (perf): `astcProbe` uploads four one-block ASTC textures (4x4 and 6x6, linear and sRGB), each a void-extent block
+  of red 0.5, green 0, blue 1, samples it into a 1 by 1 RGBA8 target and reads it back: 1 right (red 128 linear, 55 sRGB,
+  within 6), x a GL error, w a wrong colour, 0 no extension; then the sRGB 4x4's red and the whole, link and first-read ms.
+  Raw GL once a session, `renderer.resetState()` after. Headless Chrome on the Mac's GPU, phone path: 1111, red 55, 19 to
+  54 ms (link 5 to 9, the first read 10 to 41, waiting on the queued frame); the first try right after a load's busiest
+  frames read 368. Under SwiftShader through the real beacons: ready ix=n.6684 (the open's answer queued behind the build),
+  perf ax=1111.55.79.4.68, no stall counted.
+- In a real WebKit web view (the app in the iOS Simulator, iPhone 18 Pro Max, beacons read from the server): the first
+  session's ready read ix=n.657; its perf, ax=1111.55.380.351.23 with four stalls over 250 ms, the probe's own program
+  taking 351 ms to link. So the ASTC probe now runs once a device and only while still (`astcProbeStart`: from 45 s after
+  Enter, every 2 s, nothing moved or touched for PACE_IDLE_AFTER, the tab in front, giving up at 170 s), keeps its answer in
+  localStorage philly3d.axw and reports it on the run beacons, .0 measured this session and .1 kept. After the app was
+  killed and reinstalled: ready ix=h.258.0 (the record survived, the open answered in 258 ms), and once the intro's circle
+  was stopped, settled ax=1111.55.20.4.9.0 (20 ms, the link 4 ms from the system's cache) with no stall. The entry
+  circle counts as motion, so a session nobody touches never runs it.
+The JetsamEvent report is Mike's to send from the phone.
