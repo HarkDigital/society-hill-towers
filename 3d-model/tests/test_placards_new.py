@@ -22,7 +22,7 @@ class PlacardsNew(unittest.TestCase):
 
     def test_flag_gates_it(self):
         s = self.src
-        self.assertIn("const PLACARDS_NEW = /[?&]placards=new\\b/.test(location.search);", s)
+        self.assertIn("const PLACARDS_NEW = !/[?&]placards=old\\b/.test(location.search);", s)
         sset = s[s.index('  function scoresSet(games) {'):s.index('  const EVENT_PIN_R = 1609.34;')]
         # the old path is untouched: its markup, its border colour, its ball
         self.assertIn("} else el.innerHTML = logo + '<span class=\"txt\"><span class=\"live\"></span>'", sset)

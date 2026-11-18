@@ -14864,3 +14864,10 @@ Mike, with a screenshot from the phone at night: "The lights all bunch up on mob
   1.1%; 1.6 and 2 thinned the carpet further for no less clipping. `?glowfall=0` the old law, `?glowfall=<p>` a power.
 - A computer draws what it did (`uGlowFall.x` 0; the differences are the moving traffic and aircraft).
   `tests/test_glow_fall.py`.
+
+## Round 254 — the new concert and game cards on by default (Nov 18)
+
+Mike, shown Round 246's side by side again (https://claude.ai/artifact/RuF1ST4A384EubhM2wxvnG), picked "New cards
+everywhere". `PLACARDS_NEW` now reads `!/[?&]placards=old\b/`: the scoreboard card with the team's colour, the status
+pill, the roof ring and the live ripple on every device, and `?placards=old` keeps the old bubbles and placards. No shader
+text, no new program (the ring and ripple are the ball's own material). `tests/test_placards_new.py` pins the new default.

@@ -40936,13 +40936,14 @@ float pinOccGate() {
   const EVENT_TAP_R = 60;   // m from a placard's spot: its hall (the placards stand on the building's own centroid)
   const EVENT_X = '<button type="button" class="lx" aria-label="Hide this until you tap its building">×</button>';
   // ---- Round 246 (Mike: "Make the concert and sport boxes look cooler"): the new placards, behind ?placards=new until he
-  // picks. A slate card in the HUD's own language with a team-coloured edge (no logos: no brand marks, the team named in
+  // picked. A slate card in the HUD's own language with a team-coloured edge (no logos: no brand marks, the team named in
   // words), a kicker over a scoreboard of two rows or the matchup and its time, a status pill (Live, pulsing; Today; Final),
   // a caret over the tether; the concerts the same card with the artist first. On the roof a flat ring round a smaller
   // ball, and a ripple from it while a game is live. Nothing here makes a new program: the ring and the ripple are the
   // ball's own MeshBasicMaterial through pinSceneDepth, the tether the same LineBasicMaterial. With the flag off nothing
-  // changes (the old markup, pins and CSS exactly as they were).
-  const PLACARDS_NEW = /[?&]placards=new\b/.test(location.search);
+  // changes (the old markup, pins and CSS exactly as they were). Round 254 (Nov 18, Mike's pick from the side by side: "New
+  // cards everywhere"): on by default on every device; ?placards=old keeps the old bubbles and placards.
+  const PLACARDS_NEW = !/[?&]placards=old\b/.test(location.search);
   const TEAM_NAME = { mlb: 'Phillies', nfl: 'Eagles', nhl: 'Flyers', nba: '76ers' };
   const TEAM_HEX = { mlb: 'e81828', nfl: '004c54', nhl: 'f74902', nba: '006bb6' };   // when ESPN sends no colour
   const PLACARD_BRONZE = 0xc89b5e;

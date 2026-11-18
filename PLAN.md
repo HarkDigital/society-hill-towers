@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 13, 2026, after Round 251 (the buses' lanes, no grass through paving).
+Last updated: Nov 18, 2026, after Round 254 (the new event cards on by default); Stage 4 starting.
 
 ## The ask
 
@@ -145,6 +145,11 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   own at a slant (0.4% of slots). On the bus streets of six districts the old rule touched a parked car along 9 to 56 km
   each, the new at 0 to 3 places of about 100,000. Grass tufts keep off every drawn street, walk, path and sidewalk ring.
   About 1 ms more a fresh lay. `?buslane=old`, `?parkslant=0`, `?grasswalk=0`. JavaScript only.
+- **Round 252** (Stage 2, the shader train): see the Stage 2 section below.
+- **Round 253** (Mike: the lights bunch up white on a phone at night): far lamp glow fades by its dot's size on touch only
+  (`GLOW_FALL` 1.2, `?glowfall=0`); the horizon's clipped share 8.5 to 16% down to 0.2 to 1.1%. A computer unchanged.
+- **Round 254** (Mike's pick, Nov 18: "New cards everywhere"): Round 246's concert and game placards are the default on
+  every device; `?placards=old` keeps the old ones. JavaScript only.
 
 ## In flight (finish these first)
 
@@ -307,9 +312,7 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
    at 20 fps.
 8. Camden (shipped, Round 231): three port structures nobody has checked against imagery, Camden City Hall's shape
    (still a 13 m box), and whether to stream the LiDAR tiles east of the river for the 420 buildings still at 10.5 m.
-9. The new event placards (Round 246, behind `?placards=new`): the private side by side at
-   https://claude.ai/artifact/RuF1ST4A384EubhM2wxvnG; on by default only at his pick (JavaScript and CSS, no new program).
-10. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
+9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks
 on tiers 1 and 2; far streets and towns arriving after Enter; the El; sound; the river's pool level.
