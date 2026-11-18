@@ -56639,6 +56639,7 @@ float pinOccGate() {
   // Round 218: the lite tiers had drawn no near map, so their pools were the far map's 7.8 m wash under every pole
   const LAMPNEAR = { on: REAL, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
   const LAMP_NEAR_EVERY = isTouch ? 250 : 0;
+  const GLOW_FALL = (() => { const m = /[?&]glowfall=([0-9.]+)/.exec(location.search); return m ? +m[1] : 1.2; })();   // Round 253: a phone's far lamp glow, the fade's power (0 the old law)
   // Stage 2 (Round 252, the plan's STREET-6, behind ?doorlamps=1): the night street's small lights, as pools in the near map
   // only (the far map never sees them): a lamp at about three doors in five of the generated house fronts whose picture has a
   // door (FRONTS.doors, laid by frontsLay), 2700 K, a 5 m pool on the step and the walk; and the light out of every storefront
@@ -56928,6 +56929,7 @@ float pinOccGate() {
     pg.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
     // Round 205: two of these on a phone, the far glow's with the hidden circle (uPoleHide) and the near glow's and the
     // bridge walkway lamps' without; a computer's one has none
+    const GLOW_FALL_U = { value: new THREE.Vector2(isTouch ? GLOW_FALL : 0, 0) };   // Round 253: a phone's far lamps fade
     const glowMat = (hide) => {
       const m = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
       m.onBeforeCompile = (shader) => {
@@ -56940,6 +56942,19 @@ float pinOccGate() {
         // so the far city reads as a carpet of lights (same trick as headlights)
         shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
           'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
+        // Round 253 (Mike, from the phone at night: "The lights all bunch up on mobile to just look white"): past the floor
+        // (about 875 m) a lamp kept its whole light on a dot that could shrink no more, so its share of the pixel was 30 times
+        // its own at 5 km, and a phone, with no tone curve after the additive glow, summed the far city's thousands into a
+        // clipped white band (8.5 to 16% of the horizon band's pixels at 255, under 1% with the glow hidden; a computer's
+        // ACES composite rolls them off, 0 to 0.02%). On a phone a lamp past the floor fades by (its own size over the floor)
+        // to the power uGlowFall.x: the carpet stays, thinning with distance. ?glowfall=0 keeps the old law, ?glowfall=<p>
+        // pins a power. A computer is untouched (uGlowFall.x 0)
+        shader.uniforms.uGlowFall = GLOW_FALL_U;
+        shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform vec2 uGlowFall; varying float vGlowK;')
+          .replace('gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);',
+            'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);\nvGlowK = uGlowFall.x > 0.0 ? pow(min(1400.0 / max(1.0, -mvPosition.z) / 1.6, 1.0), uGlowFall.x) : 1.0;');
+        shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGlowK;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= vGlowK;');
         // (the wet air's halo is a point of its own on these buffers, the weather's wxHaloMesh: the glow keeps one look)
         shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
           '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');

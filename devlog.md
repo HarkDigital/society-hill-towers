@@ -14847,3 +14847,20 @@ and the facts row and its styles are gone.
 
 1,560 tests pass on the page merged with Round 251; it smoke-rendered on the computer and phone paths with no failed step and no console
 error. Not built: the straighter day toe, `?streetfloor=lit`, the buses' lamps (left for a later train).
+
+## Round 253 — a phone's night horizon is lights again, not a white band (Nov 17)
+
+Mike, with a screenshot from the phone at night: "The lights all bunch up on mobile to just look white. Can we fix that?"
+
+- The cause, measured on the phone path at night (three views, 200 and 400 m up looking north and the opening circle): the
+  street lamps' glow points. Each is an additive dot sized 1400 / d px with a floor of 1.6, so past about 875 m a lamp keeps
+  its whole light on a dot that can shrink no more (30 times its own share of the pixel at 5 km), and a phone has no tone
+  curve after the glow: 8.5 to 16% of the horizon band's pixels were at 255, against 0.05 to 0.8% with the glow hidden. A
+  computer's ACES composite rolls the same dots off: 0 to 0.02%. (The plan's AERIAL-7 had asked whether the far room
+  blocks were the band; the glow is.)
+- The fix, phone only: past the floor a lamp's glow fades by its own size over the floor to the power `GLOW_FALL` 1.2
+  (`uGlowFall`, a varying on both glow programs), so a lamp at 2 km keeps about a third of its light and at 5 km about a
+  fifth: the carpet of lights stays (Round 54, Round 157) and thins with distance. The band's clipped share falls to 0.2 to
+  1.1%; 1.6 and 2 thinned the carpet further for no less clipping. `?glowfall=0` the old law, `?glowfall=<p>` a power.
+- A computer draws what it did (`uGlowFall.x` 0; the differences are the moving traffic and aircraft).
+  `tests/test_glow_fall.py`.

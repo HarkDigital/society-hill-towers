@@ -29,7 +29,7 @@ class GlowDepth(unittest.TestCase):
     def node(self, body):
         if not shutil.which('node'):
             raise unittest.SkipTest('Node.js unavailable')
-        script = "const THREE = require('./three.min.js');\nconst m = {}, poleHideU = { value: null };\nlet hide = false;\n" + self.hook + r'''
+        script = "const THREE = require('./three.min.js');\nconst m = {}, poleHideU = { value: null }, GLOW_FALL_U = { value: null };   // Round 253: the phone's far fade, a uniform\nlet hide = false;\n" + self.hook + r'''
 // a small preprocessor: #define, #undef, #ifdef, #ifndef, #if defined(A) && defined(B), #else, #endif, and #include of
 // three's chunks; returns the live lines
 function live(src, defs) {
