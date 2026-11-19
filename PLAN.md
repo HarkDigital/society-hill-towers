@@ -354,7 +354,8 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
    (still a 13 m box), and whether to stream the LiDAR tiles east of the river for the 420 buildings still at 10.5 m.
 9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
-10. The soft pin gate (Round 262, https://claude.ai/code/artifact page "Steadier Pins", and `?pinsoft=1` on the site): on by
+10. The soft pin gate (Round 262: the private page "Steadier Pins", https://claude.ai/artifact/9rDk4o3Z36d1LdboTubPtz, and
+   `?pinsoft=1` on the site): on by
    default? It changes the pins' vertex shader text, so it rides the next shader batch (every device compiles the pin
    programs once), and the ramp (0.02 to 0.35) can move first if he wants more edge pins whole.
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks
