@@ -14940,3 +14940,14 @@ Mike picked "4x4, half size" from Round 256's side by side (https://claude.ai/ar
   tier 1), searched to 300 Delancey Street: perf `as=18.0.16`, settled `as=34.0.30` (17 front-set loads as the circle went
   round, none failed), textures 246 MB, `an=0`. Seen on the way: after a search the app's canvas stays at the size it had
   while the keyboard was up (about three quarters of the screen), every time; not this round's, reported to Mike.
+
+## Round 258 — the search field no longer zooms a phone (Nov 18)
+
+Found in Round 257's Simulator run and fixed at Mike's word ("Fix the canvas bug"): after a search in the app the city was
+drawn in about three quarters of the screen, every time. The cause: the touch rule that sets the search field to 16px (iOS
+zooms the page in on a focused field under 16px) was `#searchInput` (one id), and `#searchpanel input` (an id and an
+element) set it to 12px later in the sheet and won; on the phone path it computed to 12px. iOS zoomed in on focus, and the
+canvas, which `fitView` sizes from `innerWidth`/`innerHeight`, kept the zoomed window's size after the keyboard went. Both
+touch rules now read `#searchpanel #searchInput` (16px on the phone path, measured; the date field was already 16px; the
+share link is read-only and raises no keyboard). In the Simulator the panel no longer zooms and the city fills the screen
+after a search. `tests/test_input_zoom.py` holds the specificity (it fails on the old sheet). CSS only.

@@ -1045,9 +1045,11 @@ body.touchfly .pad { display: flex; }
 #timepanel .readout span { white-space: nowrap; }
 #layerspanel .lrow kbd, #vehinfo .vroute { font-weight: 600; }
 
-/* iOS Safari zooms the page when a focused input is under 16px; the viewport no longer pins the scale */
+/* iOS Safari zooms the page when a focused input is under 16px; the viewport no longer pins the scale. Round 258: the rule
+   must out-rank `#searchpanel input` (12px, below), which it did not: the search field was 12px on every phone, iOS zoomed
+   in on it, and the app kept the zoomed size after the keyboard went (the city drawn in about three quarters of the screen) */
 @media (pointer: coarse) {
-  #searchInput, #timepanel input[type="date"] { font-size: 16px; }
+  #searchpanel #searchInput, #timepanel input[type="date"] { font-size: 16px; }
 }
 /* the guide's Credits link is the only way into the About panel (Round 87, Mike: the bottom credit line
    is gone on every device and the attributions live in the info panel); the i button and the i key still work */
@@ -1374,7 +1376,7 @@ button { -webkit-tap-highlight-color: transparent; }
 @media (pointer: coarse) {
   #bar .iconbtn, .panelclose, #searchpanel .mini, #timepanel .mini, #sharepanel .mini, #guide .gbtn { min-height: 44px; }
   .panelclose { min-width: 44px; }
-  #searchInput, #timepanel input[type="date"] { font-size: 16px; }
+  #searchpanel #searchInput, #timepanel input[type="date"] { font-size: 16px; }   /* Round 258: out-ranks #searchpanel input */
   #viewcontext { display: none; }
 }
 @media (max-height: 540px) {
