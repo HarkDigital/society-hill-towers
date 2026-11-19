@@ -3982,7 +3982,7 @@
     uBallast: { value: null }, uBallastM: { value: 1 }, uBallastOn: { value: 0 }, uBallastLen: { value: 7.2 }, uBallastRails: { value: new THREE.Vector2(0.33, 0.65) },
     uLotTex: { value: null }, uLotM: { value: 1 }, uLotOn: { value: 0 } };
   const streetTex = (im, mirror) => {
-    const t = picTex(im);   // Round 260: or its ASTC twin t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+    const t = picTex(im); t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;   // Round 260: or its ASTC twin
     t.anisotropy = anisoOf(8); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
     return freeTexOnUpload(t);
   };
@@ -34392,6 +34392,16 @@ if (uOlLamp > 0.001) {
   function sfArtPrefetch() {
     if (sfArtPre || sfArtP) return;
     const A = STOREFRONT_ART;
+    // Round 261 (Mike: "The shopfronts"): where the phone takes ASTC twins, the twins themselves are fetched here, 3.5 MB of
+    // blocks held to the step (the pictures' pixels, 10 MB, stay out of the build's peak as the third review asked); a twin
+    // that does not come answers null and the step asks for the pictures as before (sfArtLoad); sfb reads 2
+    const tw = (src) => (astcOn() && ASTC_ART.twins ? ASTC_ART.twins[src] : '');
+    if (tw(artSrc(A.img, A.imgHalf)) && tw(artSrc(A.mask, A.maskHalf))) {
+      const one = (src) => { const t = new THREE.Texture(); return artAstc(tw(src), t).then((ok) => (ok ? t : null)); };
+      sfArtPre = [one(artSrc(A.img, A.imgHalf)), one(artSrc(A.mask, A.maskHalf))];
+      sfArtPre.twins = true; SF.preBlob = 2;
+      return;
+    }
     const get = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
     sfArtPre = [get(artSrc(A.img, A.imgHalf)), get(artSrc(A.mask, A.maskHalf))];
     sfArtPre[0].then((b) => { SF.preBlob = typeof Blob !== 'undefined' && b instanceof Blob ? 1 : 0; });   // Round 220: whether this device's fetch handed back a Blob (p01's open question; sfb on the ready beacon)
@@ -34406,6 +34416,12 @@ if (uOlLamp > 0.001) {
     }
     // the <img> from the prefetched bytes where there are any (a page opened as a file, an old browser or a failed fetch
     // asks for the file itself), decoded before it is handed on
+    if (sfArtPre && sfArtPre.twins) {   // Round 261: the twins, or the pictures if either did not come
+      const tws = Promise.all(sfArtPre);
+      sfArtPre = null;
+      sfArtP = tws.then((t) => (t[0] && t[1] ? t : Promise.all([artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))])));
+      return sfArtP;
+    }
     const pre = sfArtPre || [null, null];
     sfArtPre = null;
     const one = (p, src) => Promise.resolve(p).then((blob) => {
@@ -34426,8 +34442,8 @@ if (uOlLamp > 0.001) {
     return tex;
   }
   function sfTextures(im, mk) {
-    const map = new THREE.Texture(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = Math.min(isTouch ? 4 : 8, renderer.capabilities.getMaxAnisotropy() || 1); map.needsUpdate = true;
-    const mask = new THREE.Texture(mk); mask.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); mask.needsUpdate = true;   // linear: its values are numbers, not colours
+    const map = picTex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = Math.min(isTouch ? 4 : 8, renderer.capabilities.getMaxAnisotropy() || 1); map.needsUpdate = true;   // Round 261: or its ASTC twin
+    const mask = picTex(mk); mask.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); mask.needsUpdate = true;   // linear: its values are numbers, not colours
     return [sfBitmapTex(map), sfBitmapTex(mask)];
   }
   // the panel: x 0 to 1 along the viewer's right, y 0 to 1 up, the front at z 0 and its ends and cap going back into the

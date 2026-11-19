@@ -141,6 +141,8 @@ def sources():
     B = J('bridge_art.json'); out += [(B['detailHalf'], False), (B['elevHalf'], True)]
     L = J('liberty_art.json'); out += [(L[k]['imgHalf'], True) for k in ('base', 'glazing')]
     D = J('stadium_art.json'); out += [(D[k], False) for k in ('wallsHalf', 'seatsHalf', 'grassHalf', 'clayHalf')]
+    # Round 261 (Mike: "The shopfronts"): the shopfronts' atlas and mask (the names are a texture of the page's own)
+    F2 = J('storefront_art.json'); out += [(F2['imgHalf'], True), (F2['maskHalf'], False)]
     seen, uniq = set(), []
     for p, srgb in out:
         if p not in seen:

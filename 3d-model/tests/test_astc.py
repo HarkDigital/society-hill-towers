@@ -122,6 +122,30 @@ class Page(unittest.TestCase):
             self.assertEqual(b[:4], b'P3DA')
         self.assertIn("a = np.asarray(im.convert('RGBA' if alpha else 'RGB'))", (ROOT / 'bake_astc.py').read_text())
 
+    def test_no_texture_setup_hides_in_a_comment(self):
+        # Rounds 260 and 261: a comment dropped into the middle of a line swallowed the rest of it twice (streetTex lost its wrap,
+        # encoding and upload; sfTextures its upload, which drew every shopfront black on the picture path). Read with the
+        # comments stripped, each maker still sets what it set before
+        try:
+            from .test_app_art import strip_comments
+        except ImportError:
+            from test_app_art import strip_comments
+        code = strip_comments(self.src)
+        def body(start):
+            i = code.index(start)
+            return code[i:code.index('\n  }', i)] if start.startswith('  function') else code[i:code.index('\n  };', i)]
+        st = body('  const streetTex = (im, mirror) => {')
+        for t in ('t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping;', 't.encoding = THREE.sRGBEncoding;', 't.needsUpdate = true;'):
+            self.assertIn(t, st)
+        sf = body('  function sfTextures(im, mk) {')
+        for t in ('map.encoding = THREE.sRGBEncoding;', 'map.needsUpdate = true;', 'mask.needsUpdate = true;'):
+            self.assertIn(t, sf)
+        # and no line that makes a texture from a picture or a twin carries code after its comment
+        for line in self.src.split('\n'):
+            if ('picTex(' in line or 'artInto(' in line) and '//' in line:
+                tail = line.split('//', 1)[1]
+                self.assertNotRegex(tail, r'\b\w+\.(needsUpdate|wrapS|encoding|anisotropy|minFilter|generateMipmaps) = ', line.strip())
+
     def test_the_run_beacons_say_how_many_came(self):
         self.assertIn("if (as) o.as = as; }   // Round 257", self.src)
         b = (ROOT.parent / '.claude' / 'skills' / 'philly3d-capture' / 'scripts' / 'beacons.py').read_text()

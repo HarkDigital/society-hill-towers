@@ -15003,3 +15003,25 @@ beside the fronts, 33.4 MB, in sixteen `astc-` kinds, every one carried in the a
   traffic and live flights).
 - In the app in the iOS Simulator (tier 1): ready textures 107 MB (129 in Round 259, 165 before Round 259); perf at the entry
   view `as=90.0.26`, `an=0`, no stall, textures 151 MB (192, 246), 704 MB in all (744; Mike's tier 1 sessions 787 to 847).
+
+## Round 261 — the shopfronts as 4x4 twins, and Round 260's street textures mended (Nov 19)
+
+Mike: "The shopfronts". The shopfronts' atlas (2048 by 1024 on a phone) and mask (1024 by 512), about 14 MB as RGBA8 with
+mips, take 4x4 twins: about 3.5 MB. The names are a texture of the page's own (`uSfNames`) and stay as they are.
+- A phone fetches the shopfronts' bytes at the top of the build (`sfArtPrefetch`); where it takes twins it fetches the twins
+  there instead (3.5 MB of blocks held to the step, never a picture's pixels: the third review's rule, and
+  `test_realism_storefronts` holds the word), and `sfArtLoad` hands them to `sfTextures` at the step, or asks for the
+  pictures as before if either twin did not come. `sfb` reads 2 on such a load.
+- Found on the way, live since Round 260 on every device: a comment dropped into the middle of a line swallowed the rest of
+  it in `streetTex` (the wrap and the sRGB encoding; the upload sat on the next line and stood), so the streets' generated
+  textures (the lane wear, the sidewalk concrete, the lots' asphalt, and on a computer the El's steel and the ballast)
+  clamped instead of repeating and were read as linear colour, for the hour Round 260 was live. The same slip in this round's first `sfTextures` drew every
+  shopfront black on the picture path, and the capture caught it against the live page. Both are mended, and
+  `test_astc.test_no_texture_setup_hides_in_a_comment` reads the makers with their comments stripped and refuses code
+  after a comment on any line that makes a texture from a picture or a twin.
+- Phone path (headless Chrome on the Mac's GPU, 956 by 440 at 1.6): textures 279.1 MB against 166.5 with `?astc=1`, 114
+  twins, none failed, the shopfront step built on both; East Passyunk's shopfronts alike (mean colours within 0.1, the
+  per-pixel difference 0.9), Chestnut Street by day and night and a Society Hill street alike but for the traffic and the
+  tufts in the wind.
+- In the app in the iOS Simulator (tier 1): ready `sf=built`, `sfb=2` (the twins), `sfw=5` ms, textures 97 MB at Ready (107
+  in Round 260, 165 before Round 259).

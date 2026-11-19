@@ -504,7 +504,9 @@ only with `?astc=1`, `?astc=0` refuses; a touch device with the extension on Web
   takes a twin never generates its mips, never reads its pixels and sets its own encoding. Since Round 260 every other
   direct loader too (`artInto(src, tex)` fills a placeholder a site holds); a picture the page measures (the ground's six,
   `linMean`) is listed in `measured`, decoded beside its twin once and measured as it always was (a baked mean moved the
-  lawn 4 to 6%). The bake keeps alpha: the tile masks' `a` places a window in its storey.
+  lawn 4 to 6%). The bake keeps alpha: the tile masks' `a` places a window in its storey. Round 261: the shopfronts' twins are
+  fetched at the top of the build in place of their bytes (`sfArtPrefetch`, `sfb` 2), never decoded pictures. Never put a
+  comment in the middle of a line of code: twice it swallowed a texture's setup (`test_astc` reads the makers stripped).
 
 ## The Vine Street Expressway's cut (Round 228)
 

@@ -394,7 +394,7 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # twin, a path astc_art.json names, which the app does not carry (art-touch.mjs leaves the twins out)
         self.assertEqual(s.count('fetch(src)'), 3)
         self.assertEqual(region(s, '  function artAstc(src, tex) {').count('fetch(src)'), 1)
-        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src', 'tw', 'tw', 'tw'])   # tw: artPic's twin, twice (Round 259; the measured pictures, Round 260), and artInto's
+        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src', 'tw', 'tw', 'tw', 'tw(src)'])   # tw: artPic's twin, twice (Round 259; the measured pictures, Round 260), and artInto's; tw(src): the shopfronts' prefetch (Round 261)
         self.assertIn("  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));\n", s)
         for a in calls(s, 'gloryBytes'):
             self.assertTrue(a.startswith('artSrc('), a)
