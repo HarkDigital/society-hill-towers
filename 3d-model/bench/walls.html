@@ -1,0 +1,340 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Philly3D Walls Benchmark</title>
+<style>
+  :root { --ink: #161a1e; --paper: #efe9dc; --dim: rgba(239, 233, 220, 0.66); --bronze: #c89b5e; --line: rgba(222, 214, 196, 0.16); }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ink); color: var(--paper); font: 15px/1.5 -apple-system, system-ui, sans-serif; padding: 20px max(16px, env(safe-area-inset-left)) 40px; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: var(--dim); max-width: 60ch; margin: 0 0 14px; }
+  button { font: 600 16px -apple-system, system-ui, sans-serif; background: var(--bronze); color: var(--ink); border: 0; border-radius: 10px; padding: 12px 22px; }
+  button:disabled { opacity: 0.5; }
+  pre { white-space: pre-wrap; font: 13px/1.45 ui-monospace, Menlo, monospace; background: #1c2227; border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-top: 16px; }
+  canvas { display: block; width: 100%; max-width: 640px; aspect-ratio: 956 / 440; margin-top: 16px; border-radius: 8px; border: 1px solid var(--line); }
+</style>
+<h1>Walls benchmark</h1>
+<p>Stage 4 of the plan, before the walls are rebuilt: this draws about a million city walls two ways, the way the app draws them today and the proposed compact way, and times each. It takes about a minute. Keep the phone still and the screen on until it says Done.</p>
+<button id="go" type="button">Run</button>
+<canvas id="c"></canvas>
+<pre id="out">Ready.</pre>
+<script src="three.min.js"></script>
+<script>
+// Round 264 (Stage 4, GEOMEM-1's "measure first", Mike: "Start the walls"). Today a wall is four 32-byte vertices and six
+// Uint16 indices (140 B: position Float32x3, normal Int8x4, colour Uint8x4, aSFT Uint8x4, aBase Float32, aFacade Int16x2).
+// The proposal draws it as one 40-byte instance record over a shared unit quad (aW0 Float32x4 the ends, aW1 Float32x3 the
+// bottom, top and base, aW2 Int16x2 the length and height in decimetres, colour and aSFT Uint8x4). Both draw the same walls
+// with the same fragment shader; the vertex shader is the only difference, and the bytes. Each way is timed as a lit pass
+// and as a depth-only pass (the pins' capture redraws the walls every moving frame), each frame closed by a 1-pixel
+// readback so the time is the GPU's, in alternating blocks so heat and clocks fall on both alike. The verdict the plan asks
+// for: the compact way within 5% of today's on both passes.
+(() => {
+  const out = document.getElementById('out'), btn = document.getElementById('go'), cv = document.getElementById('c');
+  const say = (s) => { out.textContent = s; };
+  const qs = new URLSearchParams(location.search), N = Math.min(2000000, +(qs.get('n') || 1000000)), BLOCKS = +(qs.get('blocks') || 3), FR = +(qs.get('frames') || 24), REPS = +(qs.get('reps') || 8), ALL = qs.get('all') === '1';
+  let seed = 7;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+
+  // the city: blocks of row-like buildings on an 8 km square round the origin, 4 to 7 edges each, 7 to 40 m tall
+  function buildings(nWalls) {
+    const W = [];   // per wall: ax, az, qx, qz, y0, y1, base, r, g, b, style
+    while (W.length < nWalls * 11) {
+      const cx = (rnd() - 0.5) * 8000, cz = (rnd() - 0.5) * 8000, n = 4 + Math.floor(rnd() * 4), r = 4 + rnd() * 9, h = 7 + Math.pow(rnd(), 3) * 33;
+      const ang = rnd() * Math.PI * 2, base = Math.floor(rnd() * 900) / 10, col = [0.45 + rnd() * 0.35, 0.3 + rnd() * 0.3, 0.25 + rnd() * 0.25], style = Math.floor(rnd() * 20);
+      const ring = [];
+      for (let i = 0; i < n; i++) { const a = ang + i / n * Math.PI * 2, rr = r * (0.8 + rnd() * 0.4); ring.push([cx + Math.cos(a) * rr, cz + Math.sin(a) * rr]); }
+      for (let i = 0; i < n; i++) { const A = ring[i], Q = ring[(i + 1) % n]; W.push(A[0], A[1], Q[0], Q[1], 0, h, base, col[0], col[1], col[2], style); }
+    }
+    return W;
+  }
+
+  const FRAG = `
+    precision highp float;
+    varying vec3 vN; varying vec3 vCol; varying vec2 vUvM; varying float vBase;
+    uniform vec3 uSun;
+    void main() {
+      // a facade-like body: floors and bays from the wall's own metres, a seed from the base, sun and sky light
+      vec2 cell = fract(vUvM / vec2(3.2, 3.1));
+      float win = step(0.18, cell.x) * step(cell.x, 0.82) * step(0.25, cell.y) * step(cell.y, 0.8);
+      float seedv = fract(sin(vBase * 12.9898 + floor(vUvM.x / 3.2) * 78.233) * 43758.5453);
+      vec3 base = mix(vCol, vec3(0.08, 0.1, 0.13) + seedv * 0.05, win * 0.85);
+      float l = 0.35 + 0.65 * max(dot(normalize(vN), uSun), 0.0);
+      gl_FragColor = vec4(pow(base * l, vec3(1.0 / 2.2)), 1.0);
+    }`;
+  const FRAG_DEPTH = `precision highp float; void main() { gl_FragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0); }`;
+  // today's: four vertices a wall carry everything
+  const VERT_A = `
+    attribute vec4 aSFT; attribute float aBase; attribute vec2 aFacade;
+    varying vec3 vN; varying vec3 vCol; varying vec2 vUvM; varying float vBase;
+    void main() {
+      vN = normal; vCol = color; vBase = aBase + aSFT.x * 0.0; vUvM = aFacade * 0.1;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`;
+  // the proposal: one record a wall over a unit quad, the corner made here
+  const VERT_B = `
+    attribute vec4 aW0; attribute vec3 aW1; attribute vec2 aW2; attribute vec4 aSFT;
+    varying vec3 vN; varying vec3 vCol; varying vec2 vUvM; varying float vBase;
+    void main() {
+      vec2 a = aW0.xy, q = aW0.zw, d = q - a;
+      vec3 p = vec3(mix(a, q, position.x), mix(aW1.x, aW1.y, position.y)).xzy;
+      vec2 nn = floor(normalize(vec2(d.y, -d.x)) * 127.0) / 127.0;   // the Int8 store's truncation, as today's normal
+      vN = vec3(nn.x, 0.0, nn.y); vCol = color; vBase = aW1.z + aSFT.x * 0.0; vUvM = vec2(position.x * aW2.x, position.y * aW2.y) * 0.1;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`;
+  // a third way (the pull): no instancing; six vertices a wall, non-indexed, each a corner byte, and the wall's record read
+  // from a float texture by gl_VertexID (three texels: the ends; bottom, top, base and the packed colour; length, height,
+  // style): 48 B of texture and 6 B of corners a wall
+  const PULL_HEAD = `
+    uniform highp sampler2D uRec; attribute float aCorner;
+    vec4 rec(int i) { return texelFetch(uRec, ivec2(i % 4096, i / 4096), 0); }`;
+  const PULL_BODY = `
+      int w = gl_VertexID / 6;
+      vec4 t0 = rec(w * 3), t1 = rec(w * 3 + 1), t2 = rec(w * 3 + 2);
+      float cu = mod(aCorner, 2.0), cvv = floor(aCorner / 2.0);
+      vec2 a = t0.xy, q = t0.zw, d = q - a;
+      vec3 p = vec3(mix(a, q, cu), mix(t1.x, t1.y, cvv)).xzy;`;
+  const VERT_C = PULL_HEAD + `
+    varying vec3 vN; varying vec3 vCol; varying vec2 vUvM; varying float vBase;
+    void main() {` + PULL_BODY + `
+      vec2 nn = floor(normalize(vec2(d.y, -d.x)) * 127.0) / 127.0;
+      float pc = t1.w; vCol = vec3(mod(pc, 256.0), mod(floor(pc / 256.0), 256.0), floor(pc / 65536.0)) / 255.0;
+      vN = vec3(nn.x, 0.0, nn.y); vBase = t1.z + t2.z * 0.0; vUvM = vec2(cu * t2.x, cvv * t2.y);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`;
+  const DEPTH_C = PULL_HEAD + `
+    void main() {` + PULL_BODY + `
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`;
+  // a fourth way (the indexed pull): today's six Uint16 indices a wall over four corners that have no stream at all (an
+  // indexed draw's gl_VertexID is the index read, so the wall is gl_VertexID / 4 and the corner gl_VertexID % 4: no 1-byte
+  // stream, which WebKit would pad, Round 158), the wall from the same texture: 48 + 12 = 60 B a wall, each corner shaded
+  // once as today; the depth pass fetches only the two texels a position needs
+  const IDX_HEAD = `
+    uniform highp sampler2D uRec;
+    vec4 rec(int i) { return texelFetch(uRec, ivec2(i % 4096, i / 4096), 0); }
+    const vec2 CORNER[4] = vec2[4](vec2(0.0, 0.0), vec2(1.0, 0.0), vec2(1.0, 1.0), vec2(0.0, 1.0));`;
+  const VERT_D = IDX_HEAD + `
+    varying vec3 vN; varying vec3 vCol; varying vec2 vUvM; varying float vBase;
+    void main() {
+      int w = gl_VertexID / 4; vec2 cc = CORNER[gl_VertexID % 4];
+      vec4 t0 = rec(w * 3), t1 = rec(w * 3 + 1), t2 = rec(w * 3 + 2);
+      float cu = cc.x, cvv = cc.y;
+      vec2 a = t0.xy, q = t0.zw, d = q - a;
+      vec3 p = vec3(mix(a, q, cu), mix(t1.x, t1.y, cvv)).xzy;
+      vec2 nn = floor(normalize(vec2(d.y, -d.x)) * 127.0) / 127.0;
+      float pc = t1.w; vCol = vec3(mod(pc, 256.0), mod(floor(pc / 256.0), 256.0), floor(pc / 65536.0)) / 255.0;
+      vN = vec3(nn.x, 0.0, nn.y); vBase = t1.z + t2.z * 0.0; vUvM = vec2(cu * t2.x, cvv * t2.y);
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`;
+  const DEPTH_D = IDX_HEAD + `
+    void main() {
+      int w = gl_VertexID / 4; vec2 cc = CORNER[gl_VertexID % 4];
+      vec4 t0 = rec(w * 3), t1 = rec(w * 3 + 1);
+      float cu = cc.x, cvv = cc.y;
+      vec3 p = vec3(mix(t0.xy, t0.zw, cu), mix(t1.x, t1.y, cvv)).xzy;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+    }`;
+  const DEPTH_A = `void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
+  const DEPTH_B = `attribute vec4 aW0; attribute vec3 aW1;
+    void main() { vec3 p = vec3(mix(aW0.xy, aW0.zw, position.x), mix(aW1.x, aW1.y, position.y)).xzy; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`;
+
+  function buildA(W, n) {
+    const meshes = [], PER = 16384;   // 65,536 vertices a mesh, Uint16 indices, as today's chunks seal near 60,000
+    let bytes = 0;
+    for (let s = 0; s < n; s += PER) {
+      const m = Math.min(PER, n - s), v = m * 4;
+      const pos = new Float32Array(v * 3), nor = new Int8Array(v * 4), col = new Uint8Array(v * 4), sft = new Uint8Array(v * 4), bas = new Float32Array(v), fac = new Int16Array(v * 2), idx = new Uint16Array(m * 6);
+      for (let k = 0; k < m; k++) {
+        const o = (s + k) * 11, ax = W[o], az = W[o + 1], qx = W[o + 2], qz = W[o + 3], y0 = W[o + 4], y1 = W[o + 5], L = Math.hypot(qx - ax, qz - az), H = y1 - y0;
+        const nx = (qz - az) / L, nz = -(qx - ax) / L;
+        const C = [[ax, y0, az, 0, 0], [qx, y0, qz, 1, 0], [qx, y1, qz, 1, 1], [ax, y1, az, 0, 1]];
+        for (let c = 0; c < 4; c++) {
+          const i = k * 4 + c;
+          pos[i * 3] = C[c][0]; pos[i * 3 + 1] = C[c][1]; pos[i * 3 + 2] = C[c][2];
+          nor[i * 4] = Math.trunc(nx * 127); nor[i * 4 + 2] = Math.trunc(nz * 127);
+          col[i * 4] = W[o + 7] * 255; col[i * 4 + 1] = W[o + 8] * 255; col[i * 4 + 2] = W[o + 9] * 255; col[i * 4 + 3] = 255;
+          sft[i * 4] = W[o + 10]; bas[i] = W[o + 6];
+          fac[i * 2] = Math.round(C[c][3] * L * 10); fac[i * 2 + 1] = Math.round(C[c][4] * H * 10);
+        }
+        idx.set([k * 4, k * 4 + 1, k * 4 + 2, k * 4, k * 4 + 2, k * 4 + 3], k * 6);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(nor, 4), 3, 0, true));   // 3 of a stride-4 store, as today
+      g.setAttribute('color', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(col, 4), 3, 0, true));
+      g.setAttribute('aSFT', new THREE.BufferAttribute(sft, 4, false));
+      g.setAttribute('aBase', new THREE.BufferAttribute(bas, 1));
+      g.setAttribute('aFacade', new THREE.BufferAttribute(fac, 2, false));
+      g.setIndex(new THREE.BufferAttribute(idx, 1));
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+      bytes += pos.byteLength + nor.byteLength + col.byteLength + sft.byteLength + bas.byteLength + fac.byteLength + idx.byteLength;
+      meshes.push(g);
+    }
+    return { geos: meshes, bytes };
+  }
+  function buildB(W, n) {
+    const geos = [], PER = 65536;
+    let bytes = 0;
+    const quad = new Float32Array([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0]);
+    for (let s = 0; s < n; s += PER) {
+      const m = Math.min(PER, n - s);
+      const w0 = new Float32Array(m * 4), w1 = new Float32Array(m * 3), w2 = new Int16Array(m * 2), col = new Uint8Array(m * 4), sft = new Uint8Array(m * 4);
+      for (let k = 0; k < m; k++) {
+        const o = (s + k) * 11, ax = W[o], az = W[o + 1], qx = W[o + 2], qz = W[o + 3], L = Math.hypot(qx - ax, qz - az);
+        w0.set([ax, az, qx, qz], k * 4); w1.set([W[o + 4], W[o + 5], W[o + 6]], k * 3);
+        w2[k * 2] = Math.round(L * 10); w2[k * 2 + 1] = Math.round((W[o + 5] - W[o + 4]) * 10);
+        col[k * 4] = W[o + 7] * 255; col[k * 4 + 1] = W[o + 8] * 255; col[k * 4 + 2] = W[o + 9] * 255; col[k * 4 + 3] = 255;
+        sft[k * 4] = W[o + 10];
+      }
+      const g = new THREE.InstancedBufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(quad, 3));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      g.setAttribute('aW0', new THREE.InstancedBufferAttribute(w0, 4));
+      g.setAttribute('aW1', new THREE.InstancedBufferAttribute(w1, 3));
+      g.setAttribute('aW2', new THREE.InstancedBufferAttribute(w2, 2));
+      g.setAttribute('color', new THREE.InterleavedBufferAttribute(new THREE.InstancedInterleavedBuffer(col, 4), 3, 0, true));
+      g.setAttribute('aSFT', new THREE.InstancedBufferAttribute(sft, 4));
+      g.instanceCount = m;
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+      bytes += w0.byteLength + w1.byteLength + w2.byteLength + col.byteLength + sft.byteLength;
+      geos.push(g);
+    }
+    return { geos, bytes: bytes + 48 + 12 };
+  }
+
+  function buildC(W, n) {
+    const geos = [], PER = 65536, CORN = [0, 1, 3, 0, 3, 2];   // corner bytes: u in bit 0, v in bit 1, the two triangles of today's index
+    let bytes = 0;
+    for (let s = 0; s < n; s += PER) {
+      const m = Math.min(PER, n - s), rows = Math.ceil(m * 3 / 4096);
+      const rec = new Float32Array(4096 * rows * 4), cor = new Uint8Array(m * 6);
+      for (let k = 0; k < m; k++) {
+        const o = (s + k) * 11, ax = W[o], az = W[o + 1], qx = W[o + 2], qz = W[o + 3], L = Math.hypot(qx - ax, qz - az);
+        const c = Math.round(W[o + 7] * 255) + Math.round(W[o + 8] * 255) * 256 + Math.round(W[o + 9] * 255) * 65536;
+        rec.set([ax, az, qx, qz, W[o + 4], W[o + 5], W[o + 6], c, Math.round(L * 10) / 10, Math.round((W[o + 5] - W[o + 4]) * 10) / 10, W[o + 10], 0], k * 12);
+        cor.set(CORN, k * 6);
+      }
+      const tex = new THREE.DataTexture(rec, 4096, rows, THREE.RGBAFormat, THREE.FloatType);
+      tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('aCorner', new THREE.BufferAttribute(cor, 1));
+      g.setAttribute('position', g.attributes.aCorner);   // three counts a draw from position: the corners stand in for it
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+      g.userData.rec = tex;
+      bytes += rec.byteLength + cor.byteLength;
+      geos.push(g);
+    }
+    return { geos, bytes };
+  }
+
+  function buildD(W, n) {
+    const geos = [], PER = 16384;   // 65,536 corners, Uint16 indices, as today's chunks
+    let bytes = 0;
+    for (let s = 0; s < n; s += PER) {
+      const m = Math.min(PER, n - s), rows = Math.ceil(m * 3 / 4096);
+      const rec = new Float32Array(4096 * rows * 4), idx = new Uint16Array(m * 6);
+      for (let k = 0; k < m; k++) {
+        const o = (s + k) * 11, ax = W[o], az = W[o + 1], qx = W[o + 2], qz = W[o + 3], L = Math.hypot(qx - ax, qz - az);
+        const c = Math.round(W[o + 7] * 255) + Math.round(W[o + 8] * 255) * 256 + Math.round(W[o + 9] * 255) * 65536;
+        rec.set([ax, az, qx, qz, W[o + 4], W[o + 5], W[o + 6], c, Math.round(L * 10) / 10, Math.round((W[o + 5] - W[o + 4]) * 10) / 10, W[o + 10], 0], k * 12);
+        idx.set([k * 4, k * 4 + 1, k * 4 + 2, k * 4, k * 4 + 2, k * 4 + 3], k * 6);
+      }
+      const tex = new THREE.DataTexture(rec, 4096, rows, THREE.RGBAFormat, THREE.FloatType);
+      tex.minFilter = tex.magFilter = THREE.NearestFilter; tex.generateMipmaps = false; tex.needsUpdate = true;
+      const g = new THREE.BufferGeometry();
+      g.setIndex(new THREE.BufferAttribute(idx, 1));   // no vertex stream: the index and the texture are the wall
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+      g.userData.rec = tex;
+      bytes += rec.byteLength + idx.byteLength;
+      geos.push(g);
+    }
+    return { geos, bytes };
+  }
+
+  async function run() {
+    btn.disabled = true;
+    const lines = [];
+    const log = (s) => { lines.push(s); say(lines.join('\n')); };
+    const tick = () => new Promise((r) => setTimeout(r, 0));
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.6), W0 = 956, H0 = 440;
+    const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: false, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(dpr); renderer.setSize(W0, H0, false);
+    const gl = renderer.getContext();
+    if (!renderer.capabilities.isWebGL2) { log('This browser has no WebGL 2: the app needs it, so there is nothing to measure.'); return; }
+    log('Building ' + N.toLocaleString() + ' walls...'); await tick();
+    let Wd = buildings(N);
+    const A = buildA(Wd, N), B = buildB(Wd, N), C = ALL ? buildC(Wd, N) : { geos: [], bytes: 0 }, D = buildD(Wd, N);
+    Wd = null;
+    // every array goes once the GPU has it (a phone's tab holds the GPU's copies alone, as the app does: Round 158)
+    const drop = function () { this.array = null; };
+    for (const g of [...A.geos, ...B.geos, ...C.geos, ...D.geos]) {
+      for (const k in g.attributes) { const a = g.attributes[k]; (a.isInterleavedBufferAttribute ? a.data : a).onUpload(drop); }
+      if (g.index) g.index.onUpload(drop);
+      if (g.userData.rec) g.userData.rec.onUpdate = function () { this.image.data = null; this.onUpdate = null; };
+    }
+    log('Today: ' + (A.bytes / 1048576).toFixed(1) + ' MB in ' + A.geos.length + ' draws. Compact: ' + (B.bytes / 1048576).toFixed(1) + ' MB in ' + B.geos.length + ' draws. Pull: ' + (C.bytes / 1048576).toFixed(1) + ' MB in ' + C.geos.length + ' draws (only with ?all=1). Indexed pull: ' + (D.bytes / 1048576).toFixed(1) + ' MB in ' + D.geos.length + ' draws.'); await tick();
+    const sun = { uSun: { value: new THREE.Vector3(0.4, 0.8, 0.3).normalize() } };
+    const mat = (vs, fs, colour) => new THREE.ShaderMaterial({ vertexShader: vs, fragmentShader: fs, uniforms: sun, vertexColors: colour, side: THREE.DoubleSide });
+    const sceneOf = (geos, m) => { const s = new THREE.Scene(); for (const g of geos) { let mm = m; if (g.userData.rec) { mm = m.clone(); mm.uniforms = { ...m.uniforms, uRec: { value: g.userData.rec } }; } const me = new THREE.Mesh(g, mm); me.frustumCulled = false; s.add(me); } return s; };
+    const S = {
+      'today lit': sceneOf(A.geos, mat(VERT_A, FRAG, true)), 'compact lit': sceneOf(B.geos, mat(VERT_B, FRAG, true)),
+      'today depth': sceneOf(A.geos, mat(DEPTH_A, FRAG_DEPTH, false)), 'compact depth': sceneOf(B.geos, mat(DEPTH_B, FRAG_DEPTH, false)),
+      ...(ALL ? { 'pull lit': sceneOf(C.geos, mat(VERT_C, FRAG, false)), 'pull depth': sceneOf(C.geos, mat(DEPTH_C, FRAG_DEPTH, false)) } : {}),
+      'ipull lit': sceneOf(D.geos, mat(VERT_D, FRAG, false)), 'ipull depth': sceneOf(D.geos, mat(DEPTH_D, FRAG_DEPTH, false)),
+    };
+    const cam = new THREE.PerspectiveCamera(58, W0 / H0, 1, 26000);
+    const px = new Uint8Array(4);
+    const pose = (f) => { const a = f * 0.07; cam.position.set(Math.cos(a) * 700, 320, Math.sin(a) * 700); cam.lookAt(0, 0, 0); cam.updateMatrixWorld(); };
+    // compile and upload every program and buffer before anything is timed
+    for (const k in S) { pose(0); renderer.render(S[k], cam); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px); await tick(); }
+    // parity: today's and the compact lit frame at one pose, read back whole
+    const grab = (sc) => { pose(3); renderer.render(sc, cam); const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight, b = new Uint8Array(w * h * 4); gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, b); return b; };
+    const pa = grab(S['today lit']), pb = grab(S['compact lit']);
+    if (ALL) { const pc = grab(S['pull lit']); let dc = 0; for (let i = 0; i < pa.length; i += 4) dc += Math.abs(pa[i] - pc[i]) + Math.abs(pa[i + 1] - pc[i + 1]) + Math.abs(pa[i + 2] - pc[i + 2]); log('Pull picture: ' + (dc / (pa.length / 4) / 3).toFixed(2) + ' levels a channel from today.'); }
+    { const pd = grab(S['ipull lit']); let dd = 0; for (let i = 0; i < pa.length; i += 4) dd += Math.abs(pa[i] - pd[i]) + Math.abs(pa[i + 1] - pd[i + 1]) + Math.abs(pa[i + 2] - pd[i + 2]); log('Indexed pull picture: ' + (dd / (pa.length / 4) / 3).toFixed(2) + ' levels a channel from today.'); }
+    let diff = 0, big = 0; for (let i = 0; i < pa.length; i += 4) { const d = Math.abs(pa[i] - pb[i]) + Math.abs(pa[i + 1] - pb[i + 1]) + Math.abs(pa[i + 2] - pb[i + 2]); diff += d; if (d > 24) big++; }
+    const npx = pa.length / 4;
+    log('Picture: the two ways differ by ' + (diff / npx / 3).toFixed(2) + ' levels a channel on average, ' + (100 * big / npx).toFixed(2) + '% of pixels by more than 8.'); await tick();
+    const T = {}; for (const k in S) T[k] = [];
+    const order = ALL ? ['today lit', 'compact lit', 'pull lit', 'ipull lit', 'today depth', 'compact depth', 'pull depth', 'ipull depth'] : ['today lit', 'compact lit', 'ipull lit', 'today depth', 'compact depth', 'ipull depth'];
+    for (let b = 0; b < BLOCKS; b++) {
+      for (const k of (b % 2 ? order.slice().reverse() : order)) {
+        for (let f = 0; f < FR; f++) {
+          pose(f + b * FR);
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);   // the queue empty before the clock starts
+          const t0 = performance.now();
+          for (let r = 0; r < REPS; r++) renderer.render(S[k], cam);   // several draws a sample, so a frame stands well above the clock's grain
+          gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+          T[k].push((performance.now() - t0) / REPS);
+        }
+        await tick();
+      }
+      log('Block ' + (b + 1) + ' of ' + BLOCKS + ' done.');
+    }
+    const med = (a) => { const s = a.slice().sort((x, y) => x - y); return s[s.length >> 1]; };
+    const res = {}; for (const k in T) res[k] = med(T[k]);
+    const lit = res['compact lit'] / res['today lit'], dep = res['compact depth'] / res['today depth'];
+    const litC = ALL ? res['pull lit'] / res['today lit'] : 0, depC = ALL ? res['pull depth'] / res['today depth'] : 0;
+    const litD = res['ipull lit'] / res['today lit'], depD = res['ipull depth'] / res['today depth'];
+    log('');
+    for (const k of order) log(k.padEnd(14) + res[k].toFixed(2) + ' ms a frame (median of ' + T[k].length + ')');
+    log('Compact against today: lit ' + ((lit - 1) * 100).toFixed(1) + '%, depth ' + ((dep - 1) * 100).toFixed(1) + '%.');
+    if (ALL) log('Pull against today: lit ' + ((litC - 1) * 100).toFixed(1) + '%, depth ' + ((depC - 1) * 100).toFixed(1) + '%.');
+    log('Indexed pull against today: lit ' + ((litD - 1) * 100).toFixed(1) + '%, depth ' + ((depD - 1) * 100).toFixed(1) + '%.');
+    log((litD <= 1.05 && depD <= 1.05 ? 'Indexed pull: within 5% on both passes. ' : 'Indexed pull: not within 5%. ') + (lit <= 1.05 && dep <= 1.05 ? 'Compact: within 5% on both passes.' : 'Compact: not within 5%.') + (ALL ? ' ' + (litC <= 1.05 && depC <= 1.05 ? 'Pull: within 5% on both passes.' : 'Pull: not within 5%.') : ''));
+    log(litD <= 1.05 && depD <= 1.05 ? 'Verdict: the indexed pull way is worth building on this device.' : 'Verdict: not on this device.');
+    log('Done. ' + (location.hostname === 'philly3d.com' ? 'The numbers have been sent; you can close this page.' : ''));
+    if (location.hostname === 'philly3d.com') {
+      const q = new URLSearchParams({ st: 'bench', k: 'walls', n: N, db: gl.drawingBufferWidth + 'x' + gl.drawingBufferHeight,
+        al: res['today lit'].toFixed(2), bl: res['compact lit'].toFixed(2), ad: res['today depth'].toFixed(2), bd: res['compact depth'].toFixed(2),
+        ...(ALL ? { cl: res['pull lit'].toFixed(2), cd: res['pull depth'].toFixed(2), cmb: (C.bytes / 1048576).toFixed(1) } : {}),
+        dl: res['ipull lit'].toFixed(2), dd: res['ipull depth'].toFixed(2), dmb: (D.bytes / 1048576).toFixed(1),
+        amb: (A.bytes / 1048576).toFixed(1), bmb: (B.bytes / 1048576).toFixed(1), pd: (diff / npx / 3).toFixed(2), blocks: BLOCKS, fr: FR, reps: REPS });
+      try { fetch('/b?' + q.toString(), { method: 'POST', keepalive: true, cache: 'no-store', referrerPolicy: 'no-referrer' }).catch(() => {}); } catch (e) { /* the numbers are on screen */ }
+    }
+    btn.disabled = false;
+  }
+  btn.addEventListener('click', () => { run().catch((e) => { say('Stopped: ' + (e && e.message || e)); btn.disabled = false; }); });
+  if (qs.get('auto') === '1') run().catch((e) => say('Stopped: ' + (e && e.message || e)));
+})();
+</script>

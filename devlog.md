@@ -15072,4 +15072,23 @@ more; he chose to ship it now rather than wait for the next shader batch.
   with no query (1,000 of 1,000 tips at the CPU's size, 168 part covered) and the old ones with `?pinsoft=0`.
 - A default load, phone path, headless: 19 flashes turning in place (105 with `?pinsoft=0`), 18 over Old City; no tip deep
   behind a building shown (0 of 14,872 pin-frames).
+## Round 264 — the walls: the benchmark first (Nov 19)
 
+Mike: "Start the walls". The plan (GEOMEM-1) asks, before anything is built, for a page that draws about a million walls
+both ways and times them on the iPhone, building only if the new way is within 5% of today's on the lit pass and on a
+depth-only pass (the pins' capture redraws the walls every moving frame). `3d-model/bench/walls.html`, published by the
+deploy at https://philly3d.com/bench/walls.html (the deploy copies `bench/*.html` and the page's own `three.min.js` beside
+them), draws 1,000,000 synthetic walls three ways with one fragment shader, each frame timed as eight draws closed by a
+one-pixel readback, alternating blocks, and posts the medians to the beacon log (`st=bench&k=walls`).
+- Today: four 32-byte vertices and six Uint16 indices a wall: 133.5 MB, 62 draws.
+- Compact (the proposal): one 40-byte instance record over a unit quad: 38.1 MB, 16 draws. On the Mac (headless Chrome,
+  ANGLE on Metal) 9 to 12% slower lit and 54 to 69% slower in depth, in four runs: refuted, as the verifiers feared for
+  tiny instanced quads.
+- Pull (no instancing, six vertices a wall from a texture by gl_VertexID): 51.5 MB; 16 to 21% faster lit, 7 to 16% slower
+  in depth (no corner reuse). Behind `?all=1`.
+- Indexed pull: today's six Uint16 indices a wall and NO vertex stream at all (an indexed draw's gl_VertexID is the index,
+  so the wall is gl_VertexID / 4 and the corner gl_VertexID % 4: no one-byte corner stream for WebKit to pad, Round 158),
+  the wall's record in an RGBA32F texture (three texels: the ends; bottom, top, base, the colour packed; length, height,
+  style): 57.3 MB (60 B a wall against 140), 62 draws, the picture identical to today's (0.00 levels), 22 to 28% faster
+  lit and -3 to +4% in depth on the Mac. Within 5%: the way to build, if the iPhone agrees.
+Waiting on Mike's run on the iPhone (Safari, the page above, Run); the beacon log brings the numbers back.

@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 19, 2026, after Round 261 (the shopfronts as ASTC twins).
+Last updated: Nov 19, 2026, after Round 264 (the walls' benchmark).
 
 ## The ask
 
@@ -158,6 +158,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 262** (Mike, Nov 19, a phone recording: pins flash as structures pass in front of them): the soft pin gate behind
   `?pinsoft=1` (page "Steadier Pins", https://claude.ai/artifact/9rDk4o3Z36d1LdboTubPtz). Flashes 92 to 98% fewer on
   three scripted flights, phone and computer; nothing deep behind a building shown; edge pins drawn smaller.
+- **Round 264** (Mike: "Start the walls"): the benchmark the plan asks for first, at philly3d.com/bench/walls.html. On the
+  Mac the proposal's instanced 40-byte records fail (up to 69% slower in the depth pass); an indexed pull from a float
+  texture with no vertex stream passes (60 B a wall against 140, the same picture, faster lit, level in depth). Waiting on
+  Mike's run on the iPhone.
 - **Round 261** (Mike: "The shopfronts"): the shopfronts' atlas and mask as 4x4 twins (14 MB to 3.5); Round 260's street
   textures mended on every device (a comment had swallowed their wrap and encoding). Still pictures: the Comcast strip and glass
   frames (array textures), the trees, signs, snow, land mask and people.

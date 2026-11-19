@@ -154,6 +154,12 @@ GZ=$(wc -c < "$TMP/index.html.gz" | tr -d ' ')
 # 600 and -az faithfully ships that, which nginx answers with a site-wide 403
 # (learned the hard way; macOS openrsync has no --chmod to fix it in flight)
 find "$TMP" -maxdepth 1 -type f -exec chmod 644 {} +
+# Round 264 (Stage 4, the walls): the device benchmarks under bench/, each a page that loads ../three.min.js's own copy
+# beside it (the page's three, r149, the one the city draws with), published at /bench/ for a phone to open and run
+if [ -d bench ]; then
+  mkdir -p "$TMP/bench" && cp bench/*.html "$TMP/bench/" && cp three.min.js "$TMP/bench/three.min.js"
+  find "$TMP/bench" -type d -exec chmod 755 {} + && find "$TMP/bench" -type f -exec chmod 644 {} +
+fi
 # the generated art (Round 184, Mike: load it on demand): files beside the page
 # under art/, each named by its content's hash, so a file never changes under
 # its name. Staged with the same modes (dirs 755), shipped BEFORE the page that
@@ -218,6 +224,7 @@ rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/apple-touch-icon.png" "$TMP/og.png" \
   "$TMP/manifest.webmanifest" "$TMP/sw.js" "$TMP/privacy.html" \
   "$HOST:$WEB/"
+[ -d "$TMP/bench" ] && rsync -az "$TMP/bench/" "$HOST:$WEB/bench/"   # Round 264: the device benchmarks
 
 # 4. prove the live site serves exactly this build
 echo "== verifying $URL against local sha256 $WANT"
