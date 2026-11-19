@@ -16762,12 +16762,24 @@ vec2 wRing(vec2 rc, float tt) {
       for (let i = 0; i < n; i++) { const len = dv.getUint32(o, true); o += 4; mips.push({ data: new Uint8Array(buf, o, len), width: w, height: h }); o += len; w = Math.max(1, w >> 1); h = Math.max(1, h >> 1); }
       tex.isCompressedTexture = true; tex.image = { width: W, height: H }; tex.mipmaps = mips;
       tex.format = bw === 4 ? THREE.RGBA_ASTC_4x4_Format : THREE.RGBA_ASTC_8x8_Format; tex.type = THREE.UnsignedByteType;
-      tex.encoding = u8[7] & 1 ? THREE.sRGBEncoding : THREE.LinearEncoding;
       tex.flipY = false; tex.generateMipmaps = false; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.needsUpdate = true;
       ASTC.loads++; ASTC.bytes += buf.byteLength; ASTC.ms += performance.now() - t0;
       return true;
     }).catch(() => false).then((ok) => { if (!ok) ASTC.fails++; return ok; });
   }
+  // Round 259 (Mike: "Next art kinds"): the other kinds that upload a picture straight into a texture take their twin through
+  // artPic, keyed by the path the page asks for (ASTC_ART.twins): a Texture filled from the twin, or the decoded picture where
+  // there is none or it does not come. picTex wraps either. A site that takes a twin never sets generateMipmaps on it (the
+  // twin carries its own) and never reads its pixels; its encoding stays the site's own (artAstc leaves it alone; the
+  // container's sRGB flag only told the bake how to average the mips).
+  function artPic(src) {
+    const tw = src && astcOn() && ASTC_ART.twins ? ASTC_ART.twins[src] : '';
+    if (!tw) return artImage(src);
+    const t = new THREE.Texture();
+    return artAstc(tw, t).then((ok) => (ok ? t : artImage(src)));
+  }
+  const picTex = (x) => (x && x.isTexture ? x : new THREE.Texture(x));
+  // (a site that reads a picture's width reads it from the twin's image: (x.isTexture ? x.image : x).width)
   let CUSTOM_HOUSE_AT = null;   // the Custom House's footprint and frame, for its night wash in the skyline lights (Round 145)
   // Round 185: its rebuilt stages (metres over its ground), shared by the model and its night: the base's limestone ground
   // floor, brick and top storey, the brick shaft (32 m square), the pale stage (24) and its attic (21), the lantern's head,
@@ -50254,7 +50266,7 @@ float pinOccGate() {
     glassFramesFetch();   // Round 192: the glass's frames asked for with the cladding's tiles, awaited in 'Glazing the towers'
     if (!TSKIN_ON || !TSKIN.cands.length) return;
     // Round 198: the own facades' atlas asked for with the tiles (a phone takes the half copies)
-    const townGot = TOWN_ON && TOWN.cands.length ? Promise.all([artImage(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artImage(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))]) : null;
+    const townGot = TOWN_ON && TOWN.cands.length ? Promise.all([artPic(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artPic(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))]) : null;
     const t0 = performance.now();
     // Round 220 (the measurement round): where the step's time goes, TSKIN.msParts: wait, the tiles' files awaited; lay, the
     // kinds' geometry and materials (the loop's wall time less the waits); other, the street floors' and the town's own lay
@@ -50265,7 +50277,8 @@ float pinOccGate() {
       // Round 184: a phone takes the bake's half file (the mask is already small), so it uploads the image as it comes
       const tex = (src, halved) => {
         let t;
-        if (!isTouch || halved) { t = new THREE.Texture(src); if (isTouch) freeTexOnUpload(t); }
+        if (src && src.isTexture) { t = src; freeTexOnUpload(t); }   // Round 259: an ASTC twin, already at the phone's size
+        else if (!isTouch || halved) { t = new THREE.Texture(src); if (isTouch) freeTexOnUpload(t); }
         else { const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); t = freeTexOnUpload(new THREE.CanvasTexture(cv)); }
         t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
         return t;
@@ -50273,7 +50286,7 @@ float pinOccGate() {
       const byKind = new Map();
       for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
       // every kind's files asked for at once (one at a time cost the build 4.3 s of round trips), each awaited in turn
-      const got = new Map([...byKind.keys()].map((kind) => { const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
+      const got = new Map([...byKind.keys()].map((kind) => { const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artPic(artSrc(T.img, T.imgHalf)), artPic(T.mask)])]; }));
       const baseGot = SKIN_BASES ? skinBasesFetch() : null;   // the street floors' files asked for with the tiles'
       const tKinds = performance.now();   // Round 220
       for (const [kind, list] of byKind) {
@@ -50558,7 +50571,7 @@ float pinOccGate() {
   function skinBasesFetch() {
     const byBase = new Map();
     for (const c of TSKIN.cands) { const b = skinBaseOf(c); if (!b) continue; if (!byBase.has(b)) byBase.set(b, []); byBase.get(b).push(c); }
-    const got = new Map([...byBase.keys()].map((b) => { const T = SKIN_BASES[b]; return [b, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
+    const got = new Map([...byBase.keys()].map((b) => { const T = SKIN_BASES[b]; return [b, Promise.all([artPic(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
     return { byBase, got };
   }
   async function skinBasesLay(tex, aniso, fetched) {
@@ -50679,15 +50692,16 @@ float pinOccGate() {
       if (!im || !mk) { TOWN.error = 'the atlas did not load'; return; }
       const A = TOWN_ART, AW = A.w, AH = A.h;
       const mkTex = (src, srgb) => {
-        const t = new THREE.Texture(src);
-        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+        const t = picTex(src);   // Round 259: an ASTC twin brings its own mips
+        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = !t.isCompressedTexture;
         if (srgb) { t.encoding = THREE.sRGBEncoding; t.anisotropy = aniso; }
         t.needsUpdate = true;
         if (isTouch) freeTexOnUpload(t);
         return t;
       };
       const map = mkTex(im, true), mask = mkTex(mk, false);
-      TOWN.bytes = Math.round((im.width * im.height + mk.width * mk.height) * 4 * 4 / 3);
+      const px = (x) => (x.isTexture ? x.image : x);   // Round 259: a twin's size is its image's; its bytes a quarter of RGBA8's
+      TOWN.bytes = Math.round([im, mk].reduce((a, x) => a + px(x).width * px(x).height * (x.isCompressedTexture ? 1 : 4), 0) * 4 / 3);
       const cellUv = (c) => [c.r[0] / AW, 1 - (c.r[1] + c.r[3]) / AH, c.r[2] / AW, c.r[3] / AH];
       const pos = [], nor = [], uv = [], col = [], seed = [], cell = [], grid = [], off = [], idx = [];
       const quad = (p4, nx, ny, nz, uv4, C, sd, gain, office) => {
@@ -53402,13 +53416,13 @@ float pinOccGate() {
     });
     // Round 185: the flat roofs' atlas and the yards, each as it comes
     if (GROUND_ART.roofs && REAL) {
-      artImage(artSrc(GROUND_ART.roofs, GROUND_ART.roofsHalf)).then((im) => {
+      artPic(artSrc(GROUND_ART.roofs, GROUND_ART.roofsHalf)).then((im) => {
         if (!im) return;
-        const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
+        const t = picTex(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;   // Round 259: or its ASTC twin
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
         roofArtU.uRoofArt.value = t; if (Array.isArray(GROUND_ART.roofPad)) roofArtU.uRoofPad.value.set(GROUND_ART.roofPad[0], GROUND_ART.roofPad[1]);
         // the realism round two: __dbg.PERF.roofs() (uRoofDbg 2 paints the variants, 1 the kinds)
-        const imW = im.width; PERF.roofs = (dbg) => { if (dbg != null) roofArtU.uRoofDbg.value = +dbg; return { on: ROOFS16, art: roofArtU.uRoofOn.value, size: imW, pad: roofArtU.uRoofPad.value.toArray(), means: roofArtU.uRoofMean.value.map((m) => m.toArray().map((v) => +v.toFixed(5))), dbg: roofArtU.uRoofDbg.value }; };
+        const imW = (im.isTexture ? im.image : im).width; PERF.roofs = (dbg) => { if (dbg != null) roofArtU.uRoofDbg.value = +dbg; return { on: ROOFS16, art: roofArtU.uRoofOn.value, size: imW, pad: roofArtU.uRoofPad.value.toArray(), means: roofArtU.uRoofMean.value.map((m) => m.toArray().map((v) => +v.toFixed(5))), dbg: roofArtU.uRoofDbg.value }; };
         roofArtU.uRoofM.value = (GROUND_ART.m && GROUND_ART.m.roof) || 8;
         (GROUND_ART.roofMean || []).forEach((m, k) => roofArtU.uRoofMean.value[k].set(m[0], m[1], m[2]));
         roofArtU.uRoofOn.value = 1;

@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 18, 2026, after Round 258 (the search field no longer zooms a phone).
+Last updated: Nov 19, 2026, after Round 259 (more of the phone's art as ASTC twins).
 
 ## The ask
 
@@ -153,6 +153,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
 - **Round 256** (Stage 4): the house fronts as ASTC twins behind `?astc=h4|h8|f8`, phones only, off; Mike's side by side
   sent. See Stage 4 below.
+- **Round 259** (Mike: "Next art kinds"): the tower tiles, street floors, City Hall's neighbours and the roofs' atlas as 4x4
+  twins in the app (`artPic`): 255 to 193 MB of textures in three phone views. Next: the ground (means baked first), the
+  vehicles, the shopfronts and the landmarks.
 - **Round 258** (found in Round 257's Simulator run): the search field was 12px on a phone, so iOS zoomed in on it and the
   app's canvas kept the zoomed size after a search; it is 16px again. CSS only.
 - **Round 257** (Mike's pick, "4x4, half size"): the app draws the house fronts from their 4x4 twins by default (1.92 MB a

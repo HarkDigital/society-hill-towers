@@ -11,7 +11,8 @@ sRGB texture are), a mask in its coded values. three's flipY does not apply to c
 ImageIO's ASTC writer already stores the block rows bottom first, as GL reads them (measured: a flip here as well drew every
 atlas upside down). The container is the page's own (no KTX parser in the page): 'P3DA', block width, block height,
 levels, flags (1 sRGB), width and height as little-endian u32; then each level's byte count (u32) and its ASTC blocks.
-Files go under art/astc-<kind>/ named by their content's hash (art_files.write_bytes); astc_art.json names them.
+Files go under art/astc-<kind>/ named by their content's hash (art_files.write_bytes); astc_art.json names them: the fronts
+by set, everything else (Round 259) in `twins`, keyed by the path the page asks for.
 
 usage: python3 bake_astc.py   (macOS with Xcode's swiftc)"""
 import io, json, os, struct, subprocess, sys, tempfile
@@ -96,12 +97,42 @@ def twin(exe, tmp, path, block, srgb, kind, name):
     return rel, w0, h0
 
 
+def sources():
+    """Round 259 (Mike: "Next art kinds"): the phone pictures that upload straight into a texture, keyed by the path the page
+    asks for, with whether each is a colour map (its mips averaged in linear light). The tower tiles' pictures and masks
+    (the mask is used at its own size on a phone), the street floors' pictures (their masks are halved by the page and stay
+    webp), the buildings round City Hall (picture and mask) and the flat roofs' atlas."""
+    F = json.load(open(os.path.join(HERE, 'fronts.json')))
+    T = json.load(open(os.path.join(HERE, 'tower_art.json')))
+    G = json.load(open(os.path.join(HERE, 'ground_art.json')))
+    out = []
+    for t in F['tiles'].values():
+        out += [(t['imgHalf'], True), (t['mask'], False)]
+    for b in F['bases'].values():
+        out.append((b['imgHalf'], True))
+    out += [(T['imgHalf'], True), (T['maskHalf'], False), (G['roofsHalf'], True)]
+    seen, uniq = set(), []
+    for p, srgb in out:
+        if p not in seen:
+            seen.add(p)
+            uniq.append((p, srgb))
+    return uniq
+
+
 def main():
     fronts = json.load(open(os.path.join(HERE, 'fronts.json')))
-    out = {'v': 1, 'fronts': {}}
+    out = {'v': 2, 'fronts': {}, 'twins': {}}
     kind = 'astc-fronts'
     with tempfile.TemporaryDirectory() as tmp:
         exe = encoder(tmp)
+        kinds = set()
+        for path, srgb in sources():
+            k = 'astc-' + path.split('/')[1]
+            name = os.path.basename(path).split('.')[0]
+            rel, w, h = twin(exe, tmp, path, '44', srgb, k, name)
+            out['twins'][path] = rel
+            kinds.add(k)
+            print('%-44s %4dx%-4d %8d bytes  %s' % (path, w, h, art_files.size(rel), rel))
         for name, S in fronts['sets'].items():
             rec = {}
             for key, path, block, srgb in (('h4', S['imgHalf'], '44', True), ('m4', S['maskHalf'], '44', False)):   # Mike's pick, Nov 18
@@ -109,10 +140,12 @@ def main():
                 rec[key] = rel
                 print('%-10s %s %4dx%-4d %8d bytes  %s' % (name, key, w, h, art_files.size(rel), rel))
             out['fronts'][name] = rec
-    gone = art_files.prune(kind)
+    gone = art_files.prune(kind) + sum(art_files.prune(k) for k in sorted(kinds) if k != kind)
     json.dump(out, open(OUT, 'w'), indent=1, sort_keys=True)
     total = sum(art_files.size(p) for r in out['fronts'].values() for p in r.values())
-    print('astc_art.json: %d front sets, %.1f MB of twins%s' % (len(out['fronts']), total / 1e6, ', %d stale removed' % gone if gone else ''))
+    tw = sum(art_files.size(p) for p in out['twins'].values())
+    print('astc_art.json: %d front sets, %.1f MB; %d more twins, %.1f MB (%s)%s' % (len(out['fronts']), total / 1e6, len(out['twins']), tw / 1e6,
+          ', '.join(sorted(kinds)), ', %d stale removed' % gone if gone else ''))
 
 
 if __name__ == '__main__':

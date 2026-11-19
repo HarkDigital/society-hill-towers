@@ -83,8 +83,10 @@ class Page(unittest.TestCase):
         i = s.index('  function artAstc(src, tex) {')
         body = s[i:s.index('\n  }\n', i)]
         for t in ('tex.isCompressedTexture = true;', 'tex.flipY = false; tex.generateMipmaps = false;',
-                  'THREE.RGBA_ASTC_4x4_Format : THREE.RGBA_ASTC_8x8_Format', 'u8[7] & 1 ? THREE.sRGBEncoding : THREE.LinearEncoding'):
+                  'THREE.RGBA_ASTC_4x4_Format : THREE.RGBA_ASTC_8x8_Format'):
             self.assertIn(t, body)
+        # Round 259: the texture keeps its site's encoding (the container's flag only told the bake how to average the mips)
+        self.assertNotIn('encoding', body)
         self.assertIn("if (tex.isCompressedTexture) { tex.mipmaps = []; return; }", s)
         # the fronts take the twin when there is one and the webp otherwise, or when the twin does not come
         self.assertIn('Promise.all(AS ? [loadA(AS[ASTC_PICK], map, S.img, S.imgHalf), loadA(AS.m4, mask, S.mask, S.maskHalf)] : [load(S.img, S.imgHalf, map), load(S.mask, S.maskHalf, mask)])', s)

@@ -247,7 +247,7 @@ class Page(unittest.TestCase):
 
     def test_the_cladding_step_lays_them(self):
         step = cut(self.src, "  step('Cladding the towers'", "  step('Mirroring the city'")
-        self.assertIn('artImage(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artImage(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))', step)
+        self.assertIn('artPic(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artPic(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))', step)
         self.assertIn('if (townGot) await townLay(aniso, townGot);', step)
         self.assertIn('towerArt: townProbe', self.src)
 

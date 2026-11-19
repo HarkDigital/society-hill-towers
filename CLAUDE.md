@@ -498,8 +498,11 @@ only with `?astc=1`, `?astc=0` refuses; a touch device with the extension on Web
   `art/astc-<kind>/` as the page's own container (`P3DA`, every mip level baked, never flipped: ImageIO stores the block rows
   bottom first), named by hash; `astc_art.json` is inlined as `ASTC_ART`. `artAstc` fills an existing Texture in place
   and a failed twin falls back to the webp. The app carries an `astc-` kind only once `art-touch.mjs`'s `KEEP_ASTC` names it
-  (`astc-fronts` since Round 257; `tests/test_app_art.py`, `tests/test_astc.py`). The house fronts are the only kind so far:
-  two twins a set, the half picture and the half mask at 4x4.
+  (`tests/test_app_art.py`, `tests/test_astc.py`). The house fronts (Round 257: two twins a set, the half picture and mask at
+  4x4) and, since Round 259, the tower tiles, the street floors' pictures, the town atlas and the roofs' atlas, through
+  `artPic(src)` (a twin keyed by the path the page asks for, `ASTC_ART.twins`, else the picture) and `picTex`. A site that
+  takes a twin never generates its mips, never reads its pixels and sets its own encoding; a site that measures a picture
+  (the ground's `linMean`) needs its means baked before it can take one.
 
 ## The Vine Street Expressway's cut (Round 228)
 

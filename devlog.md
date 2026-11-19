@@ -14951,3 +14951,28 @@ canvas, which `fitView` sizes from `innerWidth`/`innerHeight`, kept the zoomed w
 touch rules now read `#searchpanel #searchInput` (16px on the phone path, measured; the date field was already 16px; the
 share link is read-only and raises no keyboard). In the Simulator the panel no longer zooms and the city fills the screen
 after a search. `tests/test_input_zoom.py` holds the specificity (it fails on the old sheet). CSS only.
+
+## Round 259 — more of the phone's art as 4x4 ASTC twins (Nov 19)
+
+Mike: "Next art kinds", after picking 4x4 half size for the house fronts. Ranked by what a phone's copies would take as
+RGBA8 with mips: the fronts 122.7 MB (done), the tower tiles 55.0, the people 37.6 (off by default), the trees 37.1 (built
+into canvas atlases), the ground 23.8, the vehicles 15.0, the shopfronts and the town atlas 14.0 each, the walls 11.9 (a
+computer's), then a tail of landmarks.
+- This round takes the kinds whose loaders put the picture straight into a texture and read nothing from it: the tower
+  tiles (picture and mask), the street floors' pictures (their masks are halved by the page and stay webp), the buildings
+  round City Hall (atlas and mask) and the flat roofs' atlas. 89 twins, 16.6 MB, under `art/astc-tiles`, `astc-towers`,
+  `astc-ground`. `bake_astc.py`'s `sources()` lists them; `astc_art.json` names them in `twins`, keyed by the path the page
+  asks for. The bake is deterministic (the fronts' 32 files came out byte for byte).
+- The page: `artPic(src)` answers a Texture filled from the twin, or the decoded picture where there is none or it does not
+  come; `picTex` wraps either; a site that takes a twin never generates mips on it and reads a width from its image.
+  `artAstc` no longer sets an encoding: the site's own stands (the container's flag only told the bake how to average).
+- Measured on the phone path (headless Chrome on the Mac's GPU, 956 by 440 at 1.6, three views: Center City's towers,
+  City Hall's neighbours, South Philadelphia's roofs): textures 255.3 MB today against 192.7 with `?astc=1`, 73 twins
+  loaded, none failed, no console error; each view's mean colour within 0.1 of 255 and the pictures alike by eye.
+- On in the app (the same rule as the fronts), a website phone only with `?astc=1`; `art-touch.mjs` carries the three new
+  kinds. Left for the next pass: the ground's lawn, meadow, yard and street pictures (the page measures their colour from
+  their pixels, so their means must be baked first), the vehicles, the shopfronts (the blob prefetch and bitmap paths), the
+  street floors' masks and the landmark atlases.
+- In the app in the iOS Simulator (iPhone 18 Pro Max, tier 1): ready textures 129 MB against 165 on every tier 1 load before
+  (the tiles and the town atlas load during the build); perf at the entry view `as=61.0.12`, textures 192 MB against 246 in
+  Round 257's run there, 744 MB in all against 787 to 847 in Mike's tier 1 sessions.

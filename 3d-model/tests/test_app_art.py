@@ -177,7 +177,7 @@ class TheListIsArtSrc(unittest.TestCase):
         self.assertEqual(r['keepFull'], [])
         self.assertLessEqual(set(r['keepFull']), kinds)
         self.assertEqual(r['none'], {'carry': r['carry'], 'leave': r['leave'], 'twins': r['twins']})
-        self.assertEqual(r['keepAstc'], ['astc-fronts'], 'Round 257: the house fronts at 4x4, Mike\'s pick; a new kind joins with its own pick')
+        self.assertEqual(r['keepAstc'], ['astc-fronts', 'astc-ground', 'astc-tiles', 'astc-towers'], 'Round 257: the house fronts at 4x4, Mike\'s pick; Round 259 the kinds artPic reads')
         self.assertEqual(r['fronts']['twins'], r['twins'])
         fronts = {f for f, h in self.pairs if h and kind(f) == 'fronts'}
         self.assertGreater(len(fronts), 16)
@@ -277,7 +277,11 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # the rest, each accounted for below: the definition's own parameter; a prefetched blob's URL, then the same artSrc
         # answer again if the blob did not decode (gloryLoad, sfArtLoad); and three direct loads of files with no half copy
         direct = Counter(a for a in got if not a.startswith('artSrc('))
-        self.assertEqual(direct, Counter({'src': 3, 'url || src': 2, 'T.mask': 2, 'GLASS_DATA.rooms.rooms': 1}),
+        # Round 259: artPic's two (its parameter, the fallback and the twin's own path, every one an artSrc answer or T.mask: below)
+        pics = calls(self.s, 'artPic')
+        self.assertEqual(Counter(a for a in pics if not a.startswith('artSrc(')), Counter({'src': 1, 'T.mask': 1}), pics)
+        self.assertGreaterEqual(len(through) + sum(1 for a in pics if a.startswith('artSrc(')), 44)
+        self.assertEqual(direct, Counter({'src': 5, 'url || src': 2, 'T.mask': 1, 'GLASS_DATA.rooms.rooms': 1}),
                          'an art request that does not go through artSrc: if its record has a half copy the app no longer carries the full file')
         self.assertEqual(calls(self.rebuilds, 'artImage') + calls(self.rebuilds, 'artSrc'), [], 'the rebuilds load art through the page')
 
@@ -358,8 +362,9 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
     def test_the_direct_loads_name_files_with_no_half(self):
         s = self.s
         # the tower tiles' and the skin bases' masks, and the glass towers' rooms (a computer's: a phone never draws them)
-        self.assertIn('const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
-        self.assertIn('const T = SKIN_BASES[b]; return [b, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
+        # (Round 259: the tiles' picture and mask, the bases' picture, through artPic, which asks artImage the same path when no twin comes)
+        self.assertIn('const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artPic(artSrc(T.img, T.imgHalf)), artPic(T.mask)])];', s)
+        self.assertIn('const T = SKIN_BASES[b]; return [b, Promise.all([artPic(artSrc(T.img, T.imgHalf)), artImage(T.mask)])];', s)
         self.assertIn("  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? streetFloorBases(FRONTS_DATA.bases) : null;\n", s)
         # Round 243: ?streetfloor= lays street_floor_art.json's records over the bases, its masks and pictures by the same keys
         # Round 244: clean by default (data only); lit, whose shader text differs, only behind its flag
@@ -387,7 +392,7 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # twin, a path astc_art.json names, which the app does not carry (art-touch.mjs leaves the twins out)
         self.assertEqual(s.count('fetch(src)'), 3)
         self.assertEqual(region(s, '  function artAstc(src, tex) {').count('fetch(src)'), 1)
-        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src'])
+        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src', 'tw'])   # tw: artPic's twin (Round 259)
         self.assertIn("  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));\n", s)
         for a in calls(s, 'gloryBytes'):
             self.assertTrue(a.startswith('artSrc('), a)
