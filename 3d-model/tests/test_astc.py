@@ -33,12 +33,12 @@ class Twins(unittest.TestCase):
     def test_every_front_set_has_its_four(self):
         self.assertEqual(set(MAN['fronts']), set(FRONTS['sets']))
         for name, rec in MAN['fronts'].items():
-            self.assertEqual(set(rec), {'h4', 'h8', 'f8', 'm4'}, name)
+            self.assertEqual(set(rec), {'h4', 'm4'}, name)   # Round 257: Mike's pick, the half picture and mask at 4x4
             for k, rel in rec.items():
                 self.assertRegex(rel, r'^art/astc-fronts/%s-%s\.[0-9a-f]{10}\.astc$' % (re.escape(name), k))
 
     def test_the_container_and_its_mips(self):
-        src = {'h4': ('imgHalf', 4, 1), 'h8': ('imgHalf', 8, 1), 'f8': ('img', 8, 1), 'm4': ('maskHalf', 4, 0)}
+        src = {'h4': ('imgHalf', 4, 1), 'm4': ('maskHalf', 4, 0)}
         for name, rec in MAN['fronts'].items():
             S = FRONTS['sets'][name]
             for k, rel in rec.items():
@@ -63,8 +63,6 @@ class Twins(unittest.TestCase):
         rgba = sum(Image.open(ROOT / S[k]).size[0] * Image.open(ROOT / S[k]).size[1] * 4 * 4 / 3 for k in ('imgHalf', 'maskHalf'))
         gpu = lambda *ks: sum(sum(read(r[k])['levels']) for k in ks)
         self.assertAlmostEqual(gpu('h4', 'm4') / rgba, 0.25, delta=0.01)
-        self.assertAlmostEqual(gpu('f8', 'm4') / rgba, 0.25, delta=0.01)
-        self.assertLess(gpu('h8', 'm4') / rgba, 0.11)
 
 
 class Page(unittest.TestCase):
@@ -72,9 +70,10 @@ class Page(unittest.TestCase):
     def setUpClass(cls):
         cls.src = (ROOT / 'app.js').read_text()
 
-    def test_off_unless_asked_and_a_phone_only(self):
+    def test_the_app_by_default_a_phone_only(self):
         s = self.src
-        self.assertIn("const ASTC_PICK = (/[?&]astc=(h4|h8|f8)\\b/.exec(location.search) || [])[1] || '';", s)
+        # Round 257 (Mike's pick, "4x4, half size"): on in the app, a website phone only with ?astc=1, ?astc=0 refuses
+        self.assertIn("const ASTC_PICK = /[?&]astc=0\\b/.test(location.search) ? '' : IN_APP || /[?&]astc=(1|h4)\\b/.test(location.search) ? 'h4' : '';", s)
         on = s[s.index('  const astcOn = () => {'):s.index('  const ASTC = { loads')]
         self.assertIn("if (!ASTC_PICK || !isTouch || typeof ASTC_ART === 'undefined' || !ASTC_ART || !renderer.capabilities.isWebGL2) return false;", on)
         self.assertIn("getExtension('WEBGL_compressed_texture_astc')", on)
@@ -89,6 +88,11 @@ class Page(unittest.TestCase):
         self.assertIn("if (tex.isCompressedTexture) { tex.mipmaps = []; return; }", s)
         # the fronts take the twin when there is one and the webp otherwise, or when the twin does not come
         self.assertIn('Promise.all(AS ? [loadA(AS[ASTC_PICK], map, S.img, S.imgHalf), loadA(AS.m4, mask, S.mask, S.maskHalf)] : [load(S.img, S.imgHalf, map), load(S.mask, S.maskHalf, mask)])', s)
+
+    def test_the_run_beacons_say_how_many_came(self):
+        self.assertIn("if (as) o.as = as; }   // Round 257", self.src)
+        b = (ROOT.parent / '.claude' / 'skills' / 'philly3d-capture' / 'scripts' / 'beacons.py').read_text()
+        self.assertRegex(b, r"RUN2 = \([^)]*'as'\)")
 
     def test_the_byte_table_knows_the_blocks(self):
         self.assertIn('0x93B0: 1, 0x93D0: 1, 0x93B7: 0.25, 0x93D7: 0.25 };', self.src)

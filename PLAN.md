@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 18, 2026, after Round 256 (the house fronts as ASTC twins, behind a flag).
+Last updated: Nov 18, 2026, after Round 257 (the house fronts at 4x4 in the app, Mike's pick).
 
 ## The ask
 
@@ -153,6 +153,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
 - **Round 256** (Stage 4): the house fronts as ASTC twins behind `?astc=h4|h8|f8`, phones only, off; Mike's side by side
   sent. See Stage 4 below.
+- **Round 257** (Mike's pick, "4x4, half size"): the app draws the house fronts from their 4x4 twins by default (1.92 MB a
+  set on the GPU against 7.67); a website phone only with `?astc=1`. The app's art grows 30.7 MB.
 
 ## In flight (finish these first)
 
@@ -258,7 +260,7 @@ decodes right in linear and sRGB, and the record survived a kill and reinstall):
 from the iPhone (Settings, Privacy and Security, Analytics and Improvements, Analytics Data) for the real ceiling.
 Round 256 built the first kind, the house fronts, behind `?astc=` with macOS's own encoder (4x4 and 8x8 blocks only):
 7.67 MB a front set on the GPU today, 1.92 at 4x4 half or 8x8 full, 0.77 at 8x8 half; the download twelve times today's.
-Waiting on Mike's pick from the side by side. After it: the same twins for the storefronts, tower tiles, town atlas,
+Mike picked 4x4, half size (Round 257: on in the app, a website phone only with `?astc=1`). Next: the same twins for the storefronts, tower tiles, town atlas,
 ground (its tone means baked into the manifest: linMean reads pixels), vehicles and the landmark atlases; then
 `KEEP_ASTC` for the app, and whether website phones take them at all.
 Earlier plan: the ASTC twins (an encoder in the pipeline, the container, the loader, the ground's baked means,

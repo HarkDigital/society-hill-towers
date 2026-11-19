@@ -81,6 +81,7 @@ FIELDS = {
     'eh': ('under_12m', 'to_150m', 'to_755m', 'above'),
     'js': ('land_tenths', 'sim_tenths', 'live_tenths', 'steps_tenths', 'pins_tenths', 'frames'),
     'fgl': ('after_landing_tenths', 'landing_frames', 'other_tenths', 'other_frames'),
+    'as': ('loaded', 'failed', 'mb'),   # Round 257: the ASTC twins
     'pp': ('state', 'khr_offered', 'serial_ms', 'serial_draw_ms', 'batch_issue_ms', 'batch_call_ms', 'batch_wait_ms', 'batch_draw_ms', 'serial2_ms', 'serial2_draw_ms', 'redraw_ms', 'build_ms',
            'frag_kchars', 'probe_ms'),
 }
@@ -91,7 +92,7 @@ PROBE_STATE = {1: 'whole', 2: 'stopped-early', 3: 'nothing-to-probe-with', 4: 'a
 CAPS = {'a': 'ASTC', 'b': 'BPTC', 's': 'S3TC', 'r': 'RGTC', 'e': 'ETC2', '1': 'ETC1', 'p': 'PVRTC', 'k': 'parallel-compile', 't': 'gpu-timer'}
 READY2 = ('cold', 'cs', 'lk', 'l5', 'pp', 'ppk', 'tu', 'fll', 'gw', 'gi', 'gy', 'gf', 'hd', 'hn', 'bl', 'cap', 'db', 'gbs', 'gbf', 'on', 'an', 'wn', 'ws', 'fs', 'rs', 'ix')
 ENTER2 = ('cold', 'f1', 'f1p', 'f1k', 'f1t', 'f15', 'lit', 'eb', 'tap')
-RUN2 = ('stl', 'prg', 'db', 'gbs', 'gbf', 'pl', 'pt', 'eh', 'js', 'fgl', 'trm', 'an', 'ax')
+RUN2 = ('stl', 'prg', 'db', 'gbs', 'gbf', 'pl', 'pt', 'eh', 'js', 'fgl', 'trm', 'an', 'ax', 'as')
 
 
 def num(v):

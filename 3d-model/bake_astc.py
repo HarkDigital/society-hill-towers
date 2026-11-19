@@ -1,9 +1,9 @@
 """Round 256 (Stage 4 of the Nov 10 plan, the ASTC art; Mike, Nov 18: "Do the next phase"): GPU-ready twins of the
 phone's art, so a phone holds a quarter or a sixteenth of the bytes an RGBA8 texture costs and decodes nothing.
 
-The first kind is the house fronts (fronts.json), for the side by side the plan asks for before anything is on by
-default: per set, the half picture at 4x4 and 8x8 blocks, the full picture at 8x8 (four times the texels for the bytes of
-the half at 4x4) and the half window mask at 4x4. The encoder is macOS's own (ImageIO; tools/astc_enc.swift, compiled
+The first kind is the house fronts (fronts.json). Round 256's side by side baked four a set (the half picture at 4x4 and
+8x8, the full picture at 8x8, the half mask at 4x4); Mike picked the half picture at 4x4 (Nov 18: "4x4, half size", a
+quarter of the bytes and hard to tell from the webp), so a set is now two: the half picture and the half mask, both 4x4. The encoder is macOS's own (ImageIO; tools/astc_enc.swift, compiled
 here with swiftc, so nothing is downloaded), which writes 4x4 and 8x8 blocks only.
 
 Every twin carries its whole mip chain, made here: a colour map is averaged in linear light (the GPU's own mips of an
@@ -104,8 +104,7 @@ def main():
         exe = encoder(tmp)
         for name, S in fronts['sets'].items():
             rec = {}
-            for key, path, block, srgb in (('h4', S['imgHalf'], '44', True), ('h8', S['imgHalf'], '88', True),
-                                           ('f8', S['img'], '88', True), ('m4', S['maskHalf'], '44', False)):
+            for key, path, block, srgb in (('h4', S['imgHalf'], '44', True), ('m4', S['maskHalf'], '44', False)):   # Mike's pick, Nov 18
                 rel, w, h = twin(exe, tmp, path, block, srgb, kind, '%s-%s' % (name, key))
                 rec[key] = rel
                 print('%-10s %s %4dx%-4d %8d bytes  %s' % (name, key, w, h, art_files.size(rel), rel))

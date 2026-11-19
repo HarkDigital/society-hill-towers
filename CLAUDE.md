@@ -492,12 +492,14 @@ What Round 255 added (Stage 4's probe, the plan's 3.4; touch only, `?probe4=0` r
   The privacy policy names the
   record. `__dbg.probe4()`, `tests/test_probe4.py`. Both fields come out once Stage 4 and Stage 5 have their answers.
 
-What Round 256 added (Stage 4, the ASTC art, behind `?astc=h4|h8|f8`, a touch device with the extension, off by default):
+What Rounds 256 and 257 added (Stage 4, the ASTC art; Mike picked "4x4, half size" on Nov 18: on in the app, a website phone
+only with `?astc=1`, `?astc=0` refuses; a touch device with the extension on WebGL 2):
 - The twins are baked by `bake_astc.py` with macOS's ImageIO encoder (`tools/astc_enc.swift`; 4x4 and 8x8 only) into
   `art/astc-<kind>/` as the page's own container (`P3DA`, every mip level baked, never flipped: ImageIO stores the block rows
   bottom first), named by hash; `astc_art.json` is inlined as `ASTC_ART`. `artAstc` fills an existing Texture in place
-  and a failed twin falls back to the webp. The app carries no `astc-` kind until `art-touch.mjs`'s `KEEP_ASTC` names it
-  (`tests/test_app_art.py`, `tests/test_astc.py`). The house fronts are the only kind so far.
+  and a failed twin falls back to the webp. The app carries an `astc-` kind only once `art-touch.mjs`'s `KEEP_ASTC` names it
+  (`astc-fronts` since Round 257; `tests/test_app_art.py`, `tests/test_astc.py`). The house fronts are the only kind so far:
+  two twins a set, the half picture and the half mask at 4x4.
 
 ## The Vine Street Expressway's cut (Round 228)
 

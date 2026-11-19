@@ -1350,6 +1350,7 @@
         eh: eh ? M.eh.map((v) => Math.round(100 * v / eh)).join('.') : '', js: M.jsN ? M.js.map((v) => t(v / M.jsN)).join('.') + '.' + M.jsN : '',
         fgl: [M.fg[1] ? t(M.fg[0] / M.fg[1]) : 0, M.fg[1], M.fg[3] ? t(M.fg[2] / M.fg[3]) : 0, M.fg[3]].join('.'), trm: Math.round(M.traf * 10) / 10, an: M.artNull };
       { const ax = f(() => PROBE4.ax); if (ax) o.ax = ax; }   // Round 255: the ASTC probe's answer, on the run beacons once it has one
+      { const as = f(() => (ASTC.loads || ASTC.fails ? ASTC.loads + '.' + ASTC.fails + '.' + Math.round(ASTC.bytes / 1048576) : '')); if (as) o.as = as; }   // Round 257: the ASTC twins loaded, failed, and their MB
       return o;
     }
     return {};
@@ -16734,13 +16735,16 @@ vec2 wRing(vec2 rc, float tt) {
   function dropUploadedArray() { this.array = null; }
   const PIER_RINGS = [];   // every pier and paved flat, with its deck height, for the pier lamps (Round 148): { poly, y: fixed top or null, lift over the ground }
   // ---- Round 256 (Stage 4, the ASTC art; Mike, Nov 18: "Do the next phase"): a phone's art as GPU-ready ASTC twins
-  // (bake_astc.py, astc_art.json), behind ?astc=h4|h8|f8 until Mike picks from the side by side: h4, the half picture in
-  // 4x4 blocks (a quarter of an RGBA8 texture's bytes); h8, the half in 8x8 (a sixteenth); f8, the computer's full picture
-  // in 8x8 (four times the texels for h4's bytes). The window masks are the half at 4x4 under all three. Touch only, and only
+  // (bake_astc.py, astc_art.json): h4, the half picture in 4x4 blocks (a quarter of an RGBA8 texture's bytes), and the
+  // half window mask at 4x4. Round 256 also baked h8 (the half in 8x8) and f8 (the full picture in 8x8) for the side by
+  // side; Mike picked h4. Touch only, and only
   // where the context has WEBGL_compressed_texture_astc on WebGL 2; anything missing or failing keeps today's webp.
   // artAstc fills a Texture IN PLACE (the material and the uniforms already hold it): it becomes a compressed one with the
-  // twin's own mips (made by the bake, flipped there, since flipY does not apply), never generated here.
-  const ASTC_PICK = (/[?&]astc=(h4|h8|f8)\b/.exec(location.search) || [])[1] || '';
+  // twin's own mips (made by the bake, never flipped: ImageIO stores the block rows bottom first), never generated here.
+  // Mike's pick from the side by side (Nov 18, Round 257): "4x4, half size". The app takes it by default (its art is in the
+  // bundle); a website phone keeps the webp unless ?astc=1 (a twin is twelve times the download of the half webp), and
+  // ?astc=0 refuses it anywhere. The h8 and f8 twins are no longer baked.
+  const ASTC_PICK = /[?&]astc=0\b/.test(location.search) ? '' : IN_APP || /[?&]astc=(1|h4)\b/.test(location.search) ? 'h4' : '';
   let astcExt;
   const astcOn = () => {
     if (!ASTC_PICK || !isTouch || typeof ASTC_ART === 'undefined' || !ASTC_ART || !renderer.capabilities.isWebGL2) return false;

@@ -14926,3 +14926,17 @@ level for his side by side. Built behind a flag, off by default, phones only, no
   today; f8 crisper on brick and frames with a little blockiness on hard edges; h8 visibly smeared.
 - The side by side for Mike (private): three streets four ways, whole view and close-up, with the `?astc=` links to try on
   his iPhone in Safari. Nothing is on by default until he picks.
+
+## Round 257 — the house fronts at 4x4 in the app, Mike's pick (Nov 18)
+
+Mike picked "4x4, half size" from Round 256's side by side (https://claude.ai/artifact/NFej5mqnQzdcfoujyFf33X).
+- The app draws the house fronts from their 4x4 twins by default (`ASTC_PICK` 'h4' under `IN_APP`): a front set takes 1.92 MB
+  of graphics memory against 7.67, so the four a phone keeps save about 23 MB. A website phone keeps the webp unless
+  `?astc=1` (a twin is twelve times the half webp's download); `?astc=0` refuses it anywhere.
+- `bake_astc.py` bakes two twins a set (h4, m4): 16 sets, 30.7 MB; the h8 and f8 twins are gone from `art/`.
+- `art-touch.mjs`'s `KEEP_ASTC` names `astc-fronts`, so the app carries them: its art grows by 30.7 MB (ASTC is not compressed
+  in the bundle the way webp is; the App Store's own compression takes some back).
+- The run beacons carry `as` (twins loaded, failed, MB) from this round. In the app in the iOS Simulator (iPhone 18 Pro Max,
+  tier 1), searched to 300 Delancey Street: perf `as=18.0.16`, settled `as=34.0.30` (17 front-set loads as the circle went
+  round, none failed), textures 246 MB, `an=0`. Seen on the way: after a search the app's canvas stays at the size it had
+  while the keyboard was up (about three quarters of the screen), every time; not this round's, reported to Mike.

@@ -133,13 +133,14 @@ class TheListIsArtSrc(unittest.TestCase):
         # carries none of a kind KEEP_ASTC does not name
         twins = set(r['twins'])
         self.assertEqual(twins, {f for f in self.named if kind(f).startswith('astc-') and kind(f) not in r['keepAstc']})
-        answers -= twins
+        answers -= {f for f in self.named if kind(f).startswith('astc-')}
         self.assertEqual(carry | leave | twins, self.named)
         self.assertEqual((carry & leave) | (carry & twins) | (leave & twins), set())
         self.assertEqual(len(r['carry']) + len(r['leave']) + len(r['twins']), len(self.named), 'no file twice')
         self.assertEqual(answers - carry, set(), 'a phone can ask for a file the app does not carry: it would draw the procedural look in silence')
         kept_full = {f for f, h in self.pairs if h and kind(f) in r['keepFull']}
-        self.assertEqual(carry, answers | kept_full, 'the app carries a file no phone path asks for')
+        kept_twins = {f for f in self.named if kind(f) in r['keepAstc']}   # Round 257: the kinds artAstc reads in the app
+        self.assertEqual(carry, answers | kept_full | kept_twins, 'the app carries a file no phone path asks for')
 
     def test_what_is_left_out_is_a_full_size_file_whose_half_is_carried(self):
         r = self.r
@@ -154,7 +155,8 @@ class TheListIsArtSrc(unittest.TestCase):
             self.assertNotIn('-half.', f.split('/')[-1])
         # and the saving is the larger part of the folder, as measured (76.7% of its bytes on Nov 10)
         size = lambda ps: sum((ROOT / p).stat().st_size for p in ps)
-        self.assertGreater(size(leave), 2 * size(carry))
+        webp = {f for f in carry if not kind(f).startswith('astc-')}   # Round 257: the ASTC twins the app now carries are their own line
+        self.assertGreater(size(leave), 2 * size(webp))
 
     def test_the_line_run_is_the_pages_own(self):
         r = self.r
@@ -175,7 +177,7 @@ class TheListIsArtSrc(unittest.TestCase):
         self.assertEqual(r['keepFull'], [])
         self.assertLessEqual(set(r['keepFull']), kinds)
         self.assertEqual(r['none'], {'carry': r['carry'], 'leave': r['leave'], 'twins': r['twins']})
-        self.assertEqual(r['keepAstc'], [], 'Round 256: no ASTC kind rides in the app until Mike picks one')
+        self.assertEqual(r['keepAstc'], ['astc-fronts'], 'Round 257: the house fronts at 4x4, Mike\'s pick; a new kind joins with its own pick')
         self.assertEqual(r['fronts']['twins'], r['twins'])
         fronts = {f for f, h in self.pairs if h and kind(f) == 'fronts'}
         self.assertGreater(len(fronts), 16)
