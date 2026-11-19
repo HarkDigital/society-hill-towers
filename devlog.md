@@ -15025,3 +15025,39 @@ mips, take 4x4 twins: about 3.5 MB. The names are a texture of the page's own (`
   tufts in the wind.
 - In the app in the iOS Simulator (tier 1): ready `sf=built`, `sfb=2` (the twins), `sfw=5` ms, textures 97 MB at Ready (107
   in Round 260, 165 before Round 259).
+
+## Round 262 — the soft pin gate, behind `?pinsoft=1` (Nov 19)
+
+Mike, with a 2-second iPhone screen recording of a descent over the rowhouses: "observe how pins can flash based upon
+showing them or not when structures are in their way. Can we come up with a method that will prevent this flashing while
+flying around?" Then, after the proposal: "Yes, build it".
+- The recording (every frame pulled with AVFoundation; the phone drew about 15 frames a second): pins on the street among
+  rowhouses go on, off, on in consecutive drawn frames at full size (a red art pin, an orange closure pin), and others
+  appear for one frame. Their tips sit at the height of the roofs in front of them.
+- The cause: Round 169's gate is a yes or no in the pins' vertex shader from one depth image a sixth of the screen's
+  resolution on a phone (240 pixels across 1.5 screens), drawn anew every frame while the eye moves (Round 252). Each image
+  lays the rooflines on different pixels, so a tip within a pixel of one flips covered and clear frame to frame; and since
+  the CPU's state already says shown (`aPinVis` 1, its read lags), the gate alone switches the pin whole, past the fade.
+- `?pinsoft=1` (off by default; with it off the shader text is Round 252's, so no device compiles anything): the gate draws a
+  pin at the share of a tent two image pixels each way round the tip's exact point that lies behind it, averaged with the
+  image before when that one is at most two frames older, through a ramp (0.02 to 0.35); covered across the whole tent it
+  is hidden at once, as before. The CPU reads the same measure with a dead zone (hidden at 0.1 or under, clear at 0.6 or
+  over, nothing changes between). Every number is a uniform: `__dbg.pinSoft({...})`.
+- Measured with the capture skill's new `pin_flash.mjs` (three scripted flights, layers seeded, headless on the Mac's GPU),
+  today against `?pinsoft=1`: phone at 30 fps, flashes (a pin gone and back, or up and gone, inside 6 frames) 45 to 3 (a
+  South Philly descent), 636 to 22 (Old City), 106 to 19 (a turn in place); a pin's size jumping by half in one frame 115 to
+  24, 1,459 to 277, 171 to 11. Computer at 60 fps: flashes 111 to 5, 775 to 14, 113 to 7. A tip deep behind a building (a 5
+  by 5 neighbourhood of the frame's own image covered) was shown by neither, 0 of 14,835 pin-frames over Old City.
+- The cost: an edge pin is drawn smaller. Over Old City 78.8% of the pin-frames the old rule calls clear are drawn at more
+  than half size (91.4% today); 52 of 62,330 pin-frames stand over half size for a frame with the tip just past a roof edge.
+  Shapes tried from one recorded run (`--posts`): a narrower tent flashed more; the old rule's own 3 by 3 softened kept more
+  pins whole but showed three to fourteen times as many past an edge; a looser ramp (0 to 0.25) the same. Blending only
+  toward hiding halved the gain; no blend kept half the flashes.
+- `tests/pin_gate_gpu.html?pinsoft=1`: the shader draws all 1,000 test pins (168 of them part covered, at building edges) at
+  the size the CPU's measure gives, within 0.03, alone, blended with the image a frame before, and blended only toward
+  hiding; without the flag the old checks pass.
+- Not changed: the pin tap (`pinGateShows`) still asks the old yes or no, the placards keep their own state, and the tips
+  past the near image keep the two-image rule.
+- For Mike: the side by side (an 8-second Old City flight, today over the soft gate) is the private page "Steadier Pins";
+  on by default is his call, and it rides the next shader batch.
+

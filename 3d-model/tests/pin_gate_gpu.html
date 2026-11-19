@@ -3,7 +3,7 @@
 <title>Pin Gate Checks</title>
 <style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
 <h1>Pin Gate Checks</h1>
-<p>Round 169: every instanced pin's vertex shader reads the latest images of the city itself (PIN_GATE_GLSL, the production block from app.js, on a real GPU) and must collapse exactly the pins whose tips the CPU's own answer (pinOccAnswer, cut from app.js) calls covered or unknown: one image, and two (a near image that is the newer, a complete one drawn from another eye), with no image at all hiding every pin. Each pin is drawn alone into a small target that its quad fills, and a pin that leaves a pixel was shown.</p>
+<p>Open with <code>?pinsoft=1</code> for Round 262's soft gate: each pin's drawn size against the CPU's own measure of the same images (the tent's share, blended with the image before, eased through the ramp). Round 169: every instanced pin's vertex shader reads the latest images of the city itself (PIN_GATE_GLSL, the production block from app.js, on a real GPU) and must collapse exactly the pins whose tips the CPU's own answer (pinOccAnswer, cut from app.js) calls covered or unknown: one image, and two (a near image that is the newer, a complete one drawn from another eye), with no image at all hiding every pin. Each pin is drawn alone into a small target that its quad fills, and a pin that leaves a pixel was shown.</p>
 <pre id="result">Running…</pre>
 <script src="../three.min.js"></script>
 <script>
@@ -44,7 +44,7 @@
       return { rt, buf, view: c.matrixWorldInverse.clone(), viewInv: c.matrixWorld.clone(), proj: c.projectionMatrix.clone(), frame, reach: f, eye: pos.clone(), quat: eye.quaternion.clone(), ok: true };
     }
     const PIN_OCC = { w: W, h: H, far: FAR, wide: 1.5, near: { cpu: { ok: false, frame: -1e9 } }, full: { cpu: { ok: false, frame: -1e9 } } };
-    const api = new Function('THREE', 'PIN_OCC', 'camera', 'frameNo', 'const _pov = new THREE.Vector3();\n' + pins + answers + '\nreturn { PIN_GATE, pinSceneDepth, pinOccAnswer };')(THREE, PIN_OCC, eye, 0);
+    const api = new Function('THREE', 'PIN_OCC', 'camera', 'frameNo', 'const _pov = new THREE.Vector3();\n' + pins + answers + '\nreturn { PIN_GATE, PIN_SOFT, pinSceneDepth, pinOccAnswer, occImgSoftShare };')(THREE, PIN_OCC, eye, 0);
     const G = api.PIN_GATE;
     const gateFrom = (A, B) => {   // pinGateSync's selection, from the images themselves
       const aNew = !!(A && B && A.frame > B.frame);
@@ -74,6 +74,33 @@
       check(bad === 0, label + ': the gate agrees with the CPU for ' + (n - bad) + ' of ' + n + ' tips (' + clear + ' clear)' + (bad ? ' ' + JSON.stringify(ex) : ''));
       check(clear > n * 0.15 && clear < n * 0.95, label + ': a fair share of both answers');
     };
+    if (api.PIN_SOFT) {   // Round 262: the soft gate draws each pin at a size; read its top edge off a 128-pixel target
+      const tg = new THREE.WebGLRenderTarget(128, 128), pb = new Uint8Array(128 * 128 * 4), half = 9 * Math.tan(20 * Math.PI / 180);
+      const size = (p) => {
+        m4.makeTranslation(p.x, p.y, p.z); pin.setMatrixAt(0, m4); pin.instanceMatrix.needsUpdate = true;
+        look.position.set(p.x, p.y + 2.9, p.z + 9); look.lookAt(p.x, p.y + 2.9, p.z); look.updateMatrixWorld();
+        renderer.setRenderTarget(tg); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(pinScene, look);
+        renderer.readRenderTargetPixels(tg, 0, 0, 128, 128, pb); renderer.setRenderTarget(null);
+        let top = -1; for (let j = 127; j >= 0 && top < 0; j--) for (let i = 0; i < 128; i++) if (pb[(j * 128 + i) * 4] > 128) { top = j; break; }
+        return top < 0 ? 0 : (((top + 1) / 128 * 2 - 1) * half + 2.9) / 5.825;   // the quad's top stands at 5.825 times the size
+      };
+      const S = G.soft.value, ease = (g) => { const t = Math.min(1, Math.max(0, (g - S.x) / (S.y - S.x))); return t * t * (3 - 2 * t); };
+      const want = (N, P, t) => { let g = api.occImgSoftShare(N, t.x, t.y, t.z); if (g <= 0) return 0; if (P && S.z < 1.5) { const q = api.occImgSoftShare(P, t.x, t.y, t.z); if (q >= 0) g = S.z < 0.5 ? 0.5 * (g + q) : Math.min(g, 0.5 * (g + q)); } return ease(g); };
+      const softCompare = (label, N, P) => {
+        let n = 0, bad = 0, part = 0, zero = 0, full = 0; const ex = [];
+        for (const t of tips.concat(edge)) { const w = want(N, P, t), g = size(t); n++; if (w > 0.05 && w < 0.95) part++; if (w === 0) zero++; if (w >= 0.999) full++; if (Math.abs(w - g) > 0.03 && !(w < 0.08 && g === 0)) { bad++; if (ex.length < 3) ex.push([t.toArray().map(Math.round), +w.toFixed(3), +g.toFixed(3)]); } }
+        check(bad <= n * 0.005, label + ': the drawn size matches the CPU measure within 0.03 for ' + (n - bad) + ' of ' + n + ' tips (' + zero + ' hidden, ' + part + ' partial, ' + full + ' whole)' + (bad ? ' ' + JSON.stringify(ex) : ''));
+        check(part > 40 && zero > n * 0.05 && full > n * 0.1, label + ': hidden, partial and whole pins all seen');
+      };
+      const B0 = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 26000, 10), Bp = image(new THREE.Vector3(1, 25.5, 44), 0.05, -0.052, 26000, 11);
+      const edge = [];   // tips at the buildings' edges, where the soft gate draws a part size: picked by the measure itself
+      for (let i = 0; i < 60000 && edge.length < 300; i++) { const a = rnd() * 2.4 - 1.2, d = 40 + rnd() * rnd() * 5000, t = new THREE.Vector3(Math.sin(a) * d, rnd() * rnd() * 90, -Math.cos(a) * d), g = api.occImgSoftShare(Bp, t.x, t.y, t.z); if (g > 0.01 && g < 0.5) edge.push(t); }
+      gateFrom(null, B0); G.prev.value.set(0, 0, 0, 0); softCompare('soft, one image', B0, null);
+      gateFrom(null, Bp); G.texP.value = B0.rt.texture; G.viewP.value.copy(B0.view); G.projP.value.copy(B0.proj); G.prev.value.set(B0.reach, 1, 0, 0);
+      softCompare('soft, blended with the image a frame before', Bp, B0);
+      S.z = 1; softCompare('soft, blended only toward hiding', Bp, B0); S.z = 0;
+      out.textContent = lines.join('\n') + '\n\nALL PASS'; document.title = 'PASS'; return;
+    }
     gateFrom(null, null);
     { let any = false; for (const t of tips.slice(0, 40)) if (shown(t)) any = true; check(!any, 'no image yet: every pin collapsed'); }
     const B = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 26000, 10);

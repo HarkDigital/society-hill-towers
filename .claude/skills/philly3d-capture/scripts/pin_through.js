@@ -91,6 +91,59 @@
     }
     return 0;
   }
+  // Round 262: the soft gate (?pinsoft=1), reproduced: the tent's clear share round the tip's exact point (null: unknown)
+  function softShare(C, x, y, z, r) {
+    V.set(x, y, z).applyMatrix4(C.view);
+    const vz = -V.z;
+    if (vz <= 1 || (C.reach && vz > C.reach)) return null;
+    V.applyMatrix4(C.proj);
+    const W = C.W, H = C.H, ux = (V.x * 0.5 + 0.5) * W, uy = (V.y * 0.5 + 0.5) * H;
+    if (ux < 0 || uy < 0 || ux >= W || uy >= H) return null;
+    const need = Math.min(vz - (2.5 + vz * 0.02), FAR * 0.9998), bx = Math.floor(ux - 0.5), by = Math.floor(uy - 0.5);
+    let s = 0, n = 0;
+    for (let j = by - 1; j <= by + 2; j++) for (let i = bx - 1; i <= bx + 2; i++) {
+      const k = Math.max(0, 1 - Math.abs(i + 0.5 - ux) / r) * Math.max(0, 1 - Math.abs(j + 0.5 - uy) / r);
+      n += k;
+      if (k > 0 && i >= 0 && j >= 0 && i < W && j < H && unpack(C.buf, (j * W + i) * 4) >= need) s += k;
+    }
+    return n > 0 ? s / n : 0;
+  }
+  // the old rule's own edge, softened: D (a 3 by 3 neighbourhood holds a clear sample) at the pixel centres round the tip,
+  // weighted by a tent of half width r centres (r 1: bilinear between the four nearest; 2: the sixteen)
+  function dilShare(C, x, y, z, r) {
+    V.set(x, y, z).applyMatrix4(C.view);
+    const vz = -V.z;
+    if (vz <= 1 || (C.reach && vz > C.reach)) return null;
+    V.applyMatrix4(C.proj);
+    const W = C.W, H = C.H, ux = (V.x * 0.5 + 0.5) * W, uy = (V.y * 0.5 + 0.5) * H;
+    if (ux < 0 || uy < 0 || ux >= W || uy >= H) return null;
+    const need = Math.min(vz - (2.5 + vz * 0.02), FAR * 0.9998), bx = Math.floor(ux - 0.5), by = Math.floor(uy - 0.5);
+    const cl = (i, j) => i >= 0 && j >= 0 && i < W && j < H && unpack(C.buf, (j * W + i) * 4) >= need;
+    let s = 0, n = 0;
+    const R = r > 1 ? 2 : 1;
+    for (let cj = by - (R - 1); cj <= by + R; cj++) for (let ci = bx - (R - 1); ci <= bx + R; ci++) {
+      const k = Math.max(0, 1 - Math.abs(ci + 0.5 - ux) / r) * Math.max(0, 1 - Math.abs(cj + 0.5 - uy) / r);
+      if (k <= 0) continue;
+      n += k;
+      let d = false;
+      for (let j = cj - 1; j <= cj + 1 && !d; j++) for (let i = ci - 1; i <= ci + 1 && !d; i++) if (cl(i, j)) d = true;
+      if (d) s += k;
+    }
+    return n > 0 ? s / n : 0;
+  }
+  const smooth = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
+  function truthKind(C, x, y, z) {   // 2 deep (every pixel of the 5 by 5 covered), 1 plain clear (the tip's pixel and its four neighbours clear), 0 between
+    V.set(x, y, z).applyMatrix4(C.view);
+    const vz = -V.z;
+    if (vz <= 1) return 0;
+    V.applyMatrix4(C.proj);
+    const W = C.W, H = C.H, px = Math.floor((V.x * 0.5 + 0.5) * W), py = Math.floor((V.y * 0.5 + 0.5) * H);
+    if (px < 2 || py < 2 || px >= W - 2 || py >= H - 2) return 0;
+    const need = Math.min(vz - (2.5 + vz * 0.02), FAR * 0.9998), cl = (i, j) => unpack(C.buf, (j * W + i) * 4) >= need;
+    if (cl(px, py) && cl(px - 1, py) && cl(px + 1, py) && cl(px, py - 1) && cl(px, py + 1)) return 1;
+    for (let j = py - 2; j <= py + 2; j++) for (let i = px - 2; i <= px + 2; i++) if (cl(i, j)) return 0;
+    return 2;
+  }
   const WIDE = 1.5;
   const wideProj = (p) => { const q = p.clone(); q.elements[0] /= WIDE; q.elements[5] /= WIDE; return q; };
   // on screen: the tip within the screen, a little below it (the badge stands over its tip) and a hair beside it
@@ -126,6 +179,7 @@
         const c0 = performance.now();
         d.frameOnce();
         const cpu = performance.now() - c0;
+        if (PM.grab) PM.grab(f);   // a picture of the frame just drawn, in the same task (no await between the frame and the read)
         fq.push(fsync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)); gl.flush();
         camera.updateMatrixWorld();
         const rec = { cam: camera.matrixWorld.clone(), proj: camera.projectionMatrix.clone(), cpu, pins: [], placards: [] };
@@ -142,7 +196,7 @@
             const st = m.userData.occ; if (st && st.why) rec.st = (rec.st || []).concat([st.why[i], st.age[i], st.okC[i], st.arr[i], d.pinOccAt ? 0 : 0]);
           }
         });
-        if (d.pinGate) { const g = d.pinGate(); const im = (q) => q && { view: new THREE.Matrix4().fromArray(q.view), viewInv: new THREE.Matrix4().fromArray(q.viewInv), proj: new THREE.Matrix4().fromArray(q.proj), reach: q.reach, frame: q.frame, noFlats: q.noFlats }; rec.gate = { on: g.on, aNewer: g.aNewer, lag: g.now - g.frame, W: g.W, H: g.H, A: im(g.A), B: im(g.B) }; }
+        if (d.pinGate) { const g = d.pinGate(); const im = (q) => q && { view: new THREE.Matrix4().fromArray(q.view), viewInv: new THREE.Matrix4().fromArray(q.viewInv), proj: new THREE.Matrix4().fromArray(q.proj), reach: q.reach, frame: q.frame, noFlats: q.noFlats }; rec.gate = { on: g.on, aNewer: g.aNewer, lag: g.now - g.frame, W: g.W, H: g.H, A: im(g.A), B: im(g.B), soft: g.soft ? { lo: g.soft.lo, hi: g.soft.hi, blend: g.soft.blend, r: g.soft.r, P: im(g.soft.P) } : null }; }
         // the placards on the page: a score bubble or a concert placard shown, with its tip (the roof point it hangs from)
         for (const s of (window.__placardTips ? window.__placardTips() : [])) rec.placards.push(s);
         frames.push(rec);
@@ -153,7 +207,8 @@
     // the post pass: truth at every frame's exact camera; the gate's image re-rendered from its recorded camera
     post(opts = {}) {
       const { frames } = PM.last, po = d.pinOcc(), W = po.w, H = po.h;
-      const out = { frames: frames.length, pinFrames: 0, onScreen: 0, displayed: 0, through: 0, throughFrames: 0, throughPins: new Set(), placardShown: 0, placardThrough: 0, placardThroughFrames: 0, lat: [], never: 0, blinks: 0, clearShown: 0, clearAll: 0, gateOff: 0, placardClear: 0, placardClearShown: 0, placardBlinks: 0, latCov: [], latView: [], missCpu: 0, missFade: 0, missGate: 0 };
+      const FLASH_N = opts.flashN || 6, flash = new Map();
+      const out = { deep: 0, throughDeep: 0, plain: 0, missPlain: 0, tv: 0, jolts: 0, eases: 0, flashOff: 0, flashOn: 0, partial: 0, frames: frames.length, pinFrames: 0, onScreen: 0, displayed: 0, through: 0, throughFrames: 0, throughPins: new Set(), placardShown: 0, placardThrough: 0, placardThroughFrames: 0, lat: [], never: 0, blinks: 0, clearShown: 0, clearAll: 0, gateOff: 0, placardClear: 0, placardClearShown: 0, placardBlinks: 0, latCov: [], latView: [], missCpu: 0, missFade: 0, missGate: 0 };
       const gateCache = new Map();
       const hist = new Map(), phist = new Map();   // key -> { clearSince, shownAt, lastShown, hideAt }
       const view = new THREE.Matrix4();
@@ -164,8 +219,17 @@
         let GA = null, GB = null;
         const img = (q) => { const k = q.frame + ':' + q.reach; if (!gateCache.has(k)) { if (gateCache.size > 6) gateCache.delete(gateCache.keys().next().value); gateCache.set(k, Object.assign(capture(q.view, q.proj, r.gate.W, r.gate.H, q.noFlats), { reach: q.reach, viewInv: q.viewInv })); } return gateCache.get(k); };
         if (r.gate && r.gate.on) { GB = img(r.gate.B); if (r.gate.aNewer) GA = img(r.gate.A); }
+        const SG0 = r.gate && r.gate.on && r.gate.soft, SG = SG0 && opts.soft ? Object.assign({}, SG0, opts.soft) : SG0, GP = SG && SG.P ? img(SG.P) : null, share = SG && SG.mode === 'dil' ? dilShare : softShare;
         const gateOf = (x, y, z) => {
           if (!GB) return 0;
+          if (SG) {
+            let g;
+            if (!GA) g = share(GB, x, y, z, SG.r);
+            else { V.set(x, y, z).applyMatrix4(GA.view); if (-V.z > GA.reach) return both(GA, GB, x, y, z) === 1 ? 1 : 0; g = share(GA, x, y, z, SG.r); }
+            if (g == null || g <= 0) return 0;
+            if (GP && SG.blend < 1.5) { const p = share(GP, x, y, z, SG.r); if (p != null) g = SG.blend < 0.5 ? 0.5 * (g + p) : Math.min(g, 0.5 * (g + p)); }
+            return smooth(SG.lo, SG.hi, g);
+          }
           if (!GA) return answer(GB, x, y, z) === 1 ? 1 : 0;
           V.set(x, y, z).applyMatrix4(GA.view);
           if (-V.z <= GA.reach) return answer(GA, x, y, z) === 1 ? 1 : 0;
@@ -179,7 +243,10 @@
           const t = answer(truth, x, y, z);
           const gate = r.gate ? gateOf(x, y, z) : 1;
           if (r.gate && !r.gate.on) out.gateOff++;
-          const shown = a > 0.5 && gate === 1;
+          const sz = (a > 0 ? a : 0) * gate, shown = sz > 0.5;
+          { const tk = truthKind(truth, x, y, z); if (tk === 2) { out.deep++; if (sz > 0.25) out.throughDeep++; } else if (tk === 1) { out.plain++; if (sz < 0.75) out.missPlain++; } }
+          // Round 262: the pin's drawn size, frame to frame (flashes: big, gone, big again, or the reverse, inside FLASH_N frames)
+          { let fh = flash.get(mi + ':' + i + ':' + Math.round(x / 30) + ',' + Math.round(z / 30)); if (!fh) { fh = { prev: sz, hi: sz >= 0.7 ? f : -99, lo: sz <= 0.2 ? f : -99, offAt: -99, onAt: -99 }; flash.set(mi + ':' + i + ':' + Math.round(x / 30) + ',' + Math.round(z / 30), fh); } else { const dd = Math.abs(sz - fh.prev); out.tv += dd; if (dd >= 0.5) out.jolts++; if (dd >= 0.05 && dd < 0.5) out.eases++; if (sz <= 0.2 && fh.prev > 0.2) { if (f - fh.hi <= FLASH_N) fh.offAt = f; } if (sz >= 0.7 && fh.prev < 0.7) { if (fh.offAt >= 0 && f - fh.offAt <= FLASH_N) { out.flashOff++; fh.offAt = -99; } if (f - fh.lo <= FLASH_N) fh.onAt = f; } if (sz <= 0.2 && fh.prev > 0.2 && fh.onAt >= 0 && f - fh.onAt <= FLASH_N) { out.flashOn++; fh.onAt = -99; } if (sz >= 0.7) fh.hi = f; if (sz <= 0.2) fh.lo = f; fh.prev = sz; } if (sz > 0.02 && sz < 0.98) out.partial++; }
           if (shown) out.displayed++;
           if (shown && t === 0) { thr++; out.through++; out.throughPins.add(mi + ':' + i); if (r.gate) { if (r.gate.lag === 0 && (out.ex0 || (out.ex0 = [])).length < 12) { V.set(x, y, z); const dd = Math.round(V.distanceTo(new THREE.Vector3().setFromMatrixPosition(r.cam))); let vza = null; if (GA) { V.applyMatrix4(GA.view); vza = Math.round(-V.z); } out.ex0.push({ f, mi, i, d: dd, vza, aReach: GA && Math.round(GA.reach), bReach: Math.round(GB.reach), aF: r.gate.A && r.gate.A.frame, bF: r.gate.B.frame }); } const kk = 'thrLag' + r.gate.lag + (r.gate.aNewer ? 'A' : ''); out[kk] = (out[kk] || 0) + 1; } }
           // appearance: the truth says clear from some frame on; how long until the pin is displayed
@@ -223,6 +290,7 @@
       out.latN = L.length; out.latMedMs = L.length ? Math.round(q(0.5) * 1000 / PM.fps) : null; out.latP90Ms = L.length ? Math.round(q(0.9) * 1000 / PM.fps) : null; out.latMeanMs = L.length ? Math.round(L.reduce((a, b) => a + b, 0) / L.length * 1000 / PM.fps) : null; out.lat0 = L.filter((v) => v === 0).length;
       for (const nm of ['latCov', 'latView']) { const A = out[nm].slice().sort((a, b) => a - b); out[nm] = A.length ? { n: A.length, med: Math.round(A[A.length >> 1] * 1000 / PM.fps), p90: Math.round(A[Math.min(A.length - 1, Math.floor(A.length * 0.9))] * 1000 / PM.fps), zero: A.filter((v) => v === 0).length } : null; }
       delete out.lat;
+      out.tv = +out.tv.toFixed(1); out.flashes = out.flashOff + out.flashOn; out.flashPer1k = out.onScreen ? +(out.flashes * 1000 / out.onScreen).toFixed(2) : null; out.joltPer1k = out.onScreen ? +(out.jolts * 1000 / out.onScreen).toFixed(2) : null;
       out.shownOfClear = out.clearAll ? +(out.clearShown / out.clearAll).toFixed(3) : null;
       return out;
     },

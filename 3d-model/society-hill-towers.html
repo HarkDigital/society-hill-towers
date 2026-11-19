@@ -47789,7 +47789,20 @@ if (uOlLamp > 0.001) {
   // and B, read along the same ray at the tip's depth, lies behind the tip. aPinVis still multiplies in: it carries the showing
   // (a pin new in view waits for an image, the guard, the fade in), which only the CPU decides
   const PIN_GATE = { texA: { value: null }, texB: { value: null }, viewA: { value: new THREE.Matrix4() }, viewAInv: { value: new THREE.Matrix4() }, projA: { value: new THREE.Matrix4() },
-    viewB: { value: new THREE.Matrix4() }, projB: { value: new THREE.Matrix4() }, info: { value: new THREE.Vector4(1, 1, 30000, 0) }, reach: { value: new THREE.Vector4(0, 0, 0, 0) }, frame: -1e9 };
+    viewB: { value: new THREE.Matrix4() }, projB: { value: new THREE.Matrix4() }, info: { value: new THREE.Vector4(1, 1, 30000, 0) }, reach: { value: new THREE.Vector4(0, 0, 0, 0) }, frame: -1e9,
+    texP: { value: null }, viewP: { value: new THREE.Matrix4() }, projP: { value: new THREE.Matrix4() }, prev: { value: new THREE.Vector4(0, 0, 0, 0) }, soft: { value: new THREE.Vector4(0.02, 0.35, 0, 2) } };
+  // Round 262 (Mike, Nov 19, a phone recording of a descent over the rowhouses: "pins can flash based upon showing them or
+  // not when structures are in their way"): the gate above is a yes or no from one image a sixth of the screen's resolution
+  // (240 pixels across 1.5 screens on a phone, a pixel about the width of a rowhouse front), drawn anew every frame while the
+  // eye moves. Each image lays every roofline on a slightly different set of pixels, so a tip within a pixel of one (on a
+  // rowhouse field seen at an angle, most ground pins) reads covered, clear, covered from frame to frame, and since the CPU's
+  // fade cannot follow a gate that flips each frame, the pin blinks whole. ?pinsoft=1 (off until Mike picks) makes the
+  // gate a measure, not a verdict: the share of a tent two image pixels each way round the tip's exact point that lies behind
+  // it (uPinOccSoft.w), averaged with the image before of the same kind when that one is a frame or two old (uPinOccPrev;
+  // .z: 0 both ways, 1 only toward hiding, 2 no blend), eased through a ramp (.x foot, .y head) into the pin's size. A tip
+  // covered across the whole tent of the newest image is hidden at once, as before; the tips past the near image keep the
+  // two-image rule. Every number is a uniform, so a tune compiles nothing; with the flag off the shader text is Round 252's
+  const PIN_SOFT = typeof location !== 'undefined' && /[?&]pinsoft=1\b/.test(location.search);
   const PIN_GATE_GLSL = `
 uniform highp sampler2D uPinOccA, uPinOccB;
 uniform mat4 uPinOccViewA, uPinOccViewAInv, uPinOccProjA, uPinOccViewB, uPinOccProjB;
@@ -47837,7 +47850,44 @@ float pinOccGate() {
   return 0.0;
 }
 `;
-  const PIN_VIS_GLSL = '#include <begin_vertex>\n#ifdef USE_INSTANCING\n  transformed *= aPinVis * pinOccGate();\n#endif';
+  const PIN_GATE_SOFT_GLSL = PIN_GATE_GLSL.replace('float pinOccGate() {', 'float pinOccGateHard() {') + `
+uniform highp sampler2D uPinOccP;
+uniform mat4 uPinOccViewP, uPinOccProjP;
+uniform vec4 uPinOccPrev;   // the image before the newest, of its kind: its reach (0: none to blend)
+uniform vec4 uPinOccSoft;   // the ramp's foot and head, the blend (0 both ways, 1 only toward hiding, 2 none), the tent's half width in pixels
+float pinOccSoftOne(highp sampler2D t, mat4 V, mat4 P, float reach, vec4 w) {
+  vec4 v = V * w;
+  float vz = -v.z;
+  if (vz <= 1.0 || vz > reach) return -1.0;
+  vec4 c = P * v;
+  vec2 u = (c.xy / c.w * 0.5 + 0.5) * uPinOccInfo.xy;
+  if (pinOccOut(floor(u))) return -1.0;
+  float need = pinOccNeed(vz), r = uPinOccSoft.w, s = 0.0, n = 0.0;
+  vec2 b = floor(u - 0.5);
+  for (int j = -1; j <= 2; j++) for (int i = -1; i <= 2; i++) {
+    vec2 q = b + vec2(float(i), float(j)), d = abs(q + 0.5 - u);
+    float k = max(0.0, 1.0 - d.x / r) * max(0.0, 1.0 - d.y / r);
+    n += k;
+    if (k > 0.0 && !pinOccOut(q) && pinOccDepth(t, q) >= need) s += k;
+  }
+  return n > 0.0 ? s / n : 0.0;
+}
+float pinOccGate() {
+  if (uPinOccReach.y < 0.5) return 0.0;
+  vec4 w = modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  float g;
+  if (uPinOccReach.z < 0.5) g = pinOccSoftOne(uPinOccB, uPinOccViewB, uPinOccProjB, uPinOccReach.y, w);
+  else if (-(uPinOccViewA * w).z <= uPinOccReach.x) g = pinOccSoftOne(uPinOccA, uPinOccViewA, uPinOccProjA, uPinOccReach.x, w);
+  else return pinOccGateHard();
+  if (g <= 0.0) return 0.0;
+  if (uPinOccPrev.x > 0.0 && uPinOccSoft.z < 1.5) {
+    float p = pinOccSoftOne(uPinOccP, uPinOccViewP, uPinOccProjP, uPinOccPrev.x, w);
+    if (p >= 0.0) g = uPinOccSoft.z < 0.5 ? 0.5 * (g + p) : min(g, 0.5 * (g + p));
+  }
+  return smoothstep(uPinOccSoft.x, uPinOccSoft.y, g);
+}
+`;
+  const PIN_VIS_GLSL ='#include <begin_vertex>\n#ifdef USE_INSTANCING\n  transformed *= aPinVis * pinOccGate();\n#endif';
   function pinSceneDepth(mesh) {
     const flat = !mesh.isLine;   // the search tether keeps a plain line
     for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
@@ -47852,12 +47902,13 @@ float pinOccGate() {
           const G = PIN_GATE, u = shader.uniforms || (shader.uniforms = {}), vtex = !r || r.capabilities.vertexTextures;   // shared: one update gates every pin
           u.uPinOccA = G.texA; u.uPinOccB = G.texB; u.uPinOccViewA = G.viewA; u.uPinOccViewAInv = G.viewAInv; u.uPinOccProjA = G.projA;
           u.uPinOccViewB = G.viewB; u.uPinOccProjB = G.projB; u.uPinOccInfo = G.info; u.uPinOccReach = G.reach;
+          if (PIN_SOFT) { u.uPinOccP = G.texP; u.uPinOccViewP = G.viewP; u.uPinOccProjP = G.projP; u.uPinOccPrev = G.prev; u.uPinOccSoft = G.soft; }
           shader.vertexShader = shader.vertexShader   // a GPU that cannot read a texture in a vertex shader (none that runs this page is known) keeps the CPU's state alone
-            .replace('#include <common>', '#include <common>\n#ifdef USE_INSTANCING\nattribute float aPinVis;\n' + (vtex ? PIN_GATE_GLSL : 'float pinOccGate() { return 1.0; }\n') + '#endif')
+            .replace('#include <common>', '#include <common>\n#ifdef USE_INSTANCING\nattribute float aPinVis;\n' + (vtex ? (PIN_SOFT ? PIN_GATE_SOFT_GLSL : PIN_GATE_GLSL) : 'float pinOccGate() { return 1.0; }\n') + '#endif')
             .replace('#include <begin_vertex>', PIN_VIS_GLSL)
             .replace('#include <logdepthbuf_vertex>', PIN_ANCHOR_GLSL);
         };
-        mat.customProgramCacheKey = () => 'pinAnchor:gate:' + (prev ? prev.toString() : '');   // the Indego badge chains its atlas remap: never share its program
+        mat.customProgramCacheKey = () => 'pinAnchor:gate:' + (PIN_SOFT ? 'soft:' : '') + (prev ? prev.toString() : '');   // the Indego badge chains its atlas remap: never share its program
       }
     }
     if (flat && mesh.isInstancedMesh) {
@@ -63971,7 +64022,7 @@ float pinOccGate() {
   const PIN_REACH_MIN = 300;
   const PIN_COVER = 1.25;   // the screen widened to this (its own NDC) must stand inside the newest image, 500 m out, or an image is drawn now
   const pinOccImg = () => ({ buf: null, view: new THREE.Matrix4(), viewInv: new THREE.Matrix4(), proj: new THREE.Matrix4(), frame: -1e9, reach: 0, eye: new THREE.Vector3(), quat: new THREE.Quaternion(), ok: false });
-  const PIN_OCC = { w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5, cam: new THREE.PerspectiveCamera(), h: 0, mat: null, ok: false, far: 30000,
+  const PIN_OCC = { w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5, soft: typeof PIN_SOFT !== 'undefined' && PIN_SOFT, cam: new THREE.PerspectiveCamera(), h: 0, mat: null, ok: false, far: 30000,
     every: isTouch ? 10 : 5, moveEvery: PIN_OCC_MOVE_EVERY, fullEvery: PIN_OCC_FULL_EVERY,
     near: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 }, full: { slots: [], gate: -1, cpu: pinOccImg(), last: -1e9 },
     n: 0, renders: 0, rendersNear: 0, cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 }, hid: 0, want: -99, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false, lastRead: -1e9, fresh: false, reach: 0, reachTip: 0,
@@ -64043,6 +64094,14 @@ float pinOccGate() {
     G.info.value.set(PIN_OCC.w, PIN_OCC.h, PIN_OCC.far, 0);
     G.reach.value.set(aNew ? a.reach : 0, b ? b.reach : 0, aNew ? 1 : 0, 0);
     G.frame = Math.max(a ? a.frame : -1e9, b ? b.frame : -1e9);
+    if (PIN_OCC.soft) {   // Round 262: the newest image before the gate's own, of either kind, while it is at most two frames older from about the same eye
+      const n = aNew ? a : b;
+      let q = null;
+      if (n) for (const ch of [PIN_OCC.near, PIN_OCC.full]) for (const t of ch.slots) if (t !== n && t.frame < n.frame && (!q || t.frame > q.frame)) q = t;
+      const ok = !!(q && n.frame - q.frame <= 2 && q.reach > 0 && n.eye.distanceToSquared(q.eye) < PIN_JUMP * PIN_JUMP);
+      if (ok) { G.texP.value = q.rt.texture; G.viewP.value.copy(q.view); G.projP.value.copy(q.proj); }
+      G.prev.value.set(ok ? q.reach : 0, ok ? n.frame - q.frame : 0, 0, 0); G.pSlot = ok ? q : null;
+    }
   }
   function pinOccInstall(ch, s) {   // the CPU's image of this kind is this slot's now (its pixels already stand in ch.cpu.buf)
     const I = ch.cpu;
@@ -64257,6 +64316,46 @@ float pinOccGate() {
     _pov.set(x, y, z).applyMatrix4(N.view);
     return -_pov.z <= N.reach ? occImgAnswer(N, x, y, z) : occImgBoth(N, F, x, y, z);
   }
+  // Round 262 (?pinsoft=1): the CPU's state reads the gate's own measure (the tent's clear share eased through the same ramp,
+  // PIN_GATE.soft; the blend with the image before is the gate's alone) with a dead zone between its answers: covered (hidden
+  // at once) only at or under PIN_SOFT_CPU.hide, clear at or over .show, and 2 between them, which changes nothing
+  // (pinOccStep). A tip past the near image keeps the two-image rule
+  const PIN_SOFT_CPU = { hide: 0.1, show: 0.6 };   // __dbg.pinSoft({ hide, show }) moves them
+  function occImgSoftShare(I, x, y, z) {   // the gate's pinOccSoftOne: the tent's clear share, -1 unknown
+    _pov.set(x, y, z).applyMatrix4(I.view);
+    const vz = -_pov.z;
+    if (vz <= 1 || vz > I.reach) return -1;
+    _pov.applyMatrix4(I.proj);
+    const W = PIN_OCC.w, H = PIN_OCC.h, ux = (_pov.x * 0.5 + 0.5) * W, uy = (_pov.y * 0.5 + 0.5) * H;
+    if (ux < 0 || uy < 0 || ux >= W || uy >= H) return -1;
+    const S = PIN_GATE.soft.value, r = S.w, need = occNeed(vz), bx = Math.floor(ux - 0.5), by = Math.floor(uy - 0.5);
+    let s = 0, n = 0;
+    for (let j = by - 1; j <= by + 2; j++) for (let i = bx - 1; i <= bx + 2; i++) {
+      const k = Math.max(0, 1 - Math.abs(i + 0.5 - ux) / r) * Math.max(0, 1 - Math.abs(j + 0.5 - uy) / r);
+      n += k;
+      if (k > 0 && i >= 0 && j >= 0 && i < W && j < H && occUnpack(I.buf, (j * W + i) * 4) >= need) s += k;
+    }
+    return n > 0 ? s / n : 0;
+  }
+  function occImgSoft(I, x, y, z) {   // the share eased through the gate's ramp (the CPU's images: no blend), -1 unknown
+    const g = occImgSoftShare(I, x, y, z), S = PIN_GATE.soft.value;
+    if (g <= 0) return g;
+    const t = Math.min(1, Math.max(0, (g - S.x) / (S.y - S.x)));
+    return t * t * (3 - 2 * t);
+  }
+  function pinOccAnswerSoft(x, y, z, arr = -1e9) {
+    const N = PIN_OCC.near.cpu, F = PIN_OCC.full.cpu;
+    if (!F.ok) return -1;
+    let v;
+    if (!N.ok || N.frame <= F.frame) { if (F.frame < arr) return -1; v = occImgSoft(F, x, y, z); }
+    else {
+      if (N.frame < arr) return -1;
+      _pov.set(x, y, z).applyMatrix4(N.view);
+      if (-_pov.z > N.reach) return occImgBoth(N, F, x, y, z);
+      v = occImgSoft(N, x, y, z);
+    }
+    return v < 0 ? -1 : v <= PIN_SOFT_CPU.hide ? 0 : v >= PIN_SOFT_CPU.show ? 1 : 2;
+  }
   const pinOccVisible = (x, y, z) => pinOccAnswer(x, y, z) === 1;   // unknown is hidden (Round 169)
   // the placards' answer (Round 169). A DOM placard has no gate, so it is judged on the CPU's images, which are a frame or three
   // old while the eye moves (the complete one, while a phone draws near ones between, up to ten), and the page's own test is the
@@ -64433,6 +64532,7 @@ float pinOccGate() {
   function pinOccStep(st, i, raw, captured, dt) {
     if (raw === 0) { st.tgt[i] = 0; st.lin[i] = 0; st.why[i] = 2; st.okC[i] = 0; st.okT[i] = 0; st.age[i] = 0; return; }   // covered: hidden at once
     st.age[i] += dt;
+    if (raw === 2) return;   // Round 262 (?pinsoft=1): the soft answer's dead zone, which changes nothing
     if (raw < 0) { if (st.tgt[i]) st.why[i] = 0; st.tgt[i] = 0; st.lin[i] = 0; st.okC[i] = 0; st.okT[i] = 0; return; }   // unknown: hidden too
     if (st.tgt[i]) return;
     if (captured && st.okC[i] < 255) st.okC[i]++;
@@ -64544,7 +64644,7 @@ float pinOccGate() {
         // a new pin in this slot arrives now, unless it only changed slots (review: the reconcile's reshuffle)
         const fresh = (i >= st.n || Math.abs(st.px[i] - x) + Math.abs(st.pz[i] - z) > PIN_CARRY) && !(old && pinOccCarry(st, i, old, x, z));
         st.px[i] = x; st.pz[i] = z;
-        pinOccJudge(st, i, x, y, z, pinZone(x, y, z, _pzm), fresh, captured, dt);
+        pinOccJudge(st, i, x, y, z, pinZone(x, y, z, _pzm), fresh, captured, dt, PIN_OCC.soft ? pinOccAnswerSoft : pinOccAnswer);
         let r2 = 0;
         if (st.on[i]) { r2 = (x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz); if (r2 > reach) reach = r2; }
         if (st.tgt[i]) st.lin[i] = Math.min(1, st.lin[i] + step);
@@ -64822,7 +64922,7 @@ float pinOccGate() {
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ shipPinR: SHIP_PIN_R, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const im = (ch) => { const t = ch.slots[ch.gate]; return t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null; }; const r = PIN_GATE.reach.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), vertexTextures: renderer.capabilities.vertexTextures }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, off: ROOFKIT.off, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), roofKitOn, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ shipPinR: SHIP_PIN_R, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const one = (t) => t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null, im = (ch) => one(ch.slots[ch.gate]); const r = PIN_GATE.reach.value, S = PIN_GATE.soft.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), soft: PIN_OCC.soft ? { lo: S.x, hi: S.y, blend: S.z, r: S.w, P: PIN_GATE.prev.value.x > 0 ? one(PIN_GATE.pSlot) : null } : null, vertexTextures: renderer.capabilities.vertexTextures }; }, pinSoft: (o) => { const S = PIN_GATE.soft.value; if (o) { if (o.lo != null) S.x = +o.lo; if (o.hi != null) S.y = +o.hi; if (o.blend != null) S.z = +o.blend; if (o.r != null) S.w = Math.min(2, Math.max(0.5, +o.r)); if (o.hide != null) PIN_SOFT_CPU.hide = +o.hide; if (o.show != null) PIN_SOFT_CPU.show = +o.show; } return { on: PIN_OCC.soft, lo: S.x, hi: S.y, blend: S.z, r: S.w, hide: PIN_SOFT_CPU.hide, show: PIN_SOFT_CPU.show, prev: PIN_GATE.prev.value.toArray() }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, off: ROOFKIT.off, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), roofKitOn, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times
