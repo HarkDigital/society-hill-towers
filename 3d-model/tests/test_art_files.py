@@ -53,6 +53,7 @@ MANIFESTS += ('tower_art.json',)   # the buildings round City Hall in their own 
 MANIFESTS += ('sht_art.json',)   # the Society Hill Towers' concrete (Round 195)
 MANIFESTS += ('liberty_art.json',)   # One and Two Liberty Place's granite base and crown glazing (Round 195)
 MANIFESTS += ('comcast_art.json',)   # the Comcast Technology Center's cladding strip (Round 195)
+MANIFESTS += ('astc_art.json',)   # the phone art's ASTC twins, bake_astc.py (Round 256)
 MANIFESTS += ('stadium_art.json',)   # the sports complex's walls, seat rows, turf and clay (Round 195)
 MANIFESTS += ('nj_art.json',)   # the USS New Jersey's plating, bulkhead, deck and teak (Round 195)
 MANIFESTS += ('moshulu_art.json',)   # the Moshulu's hull plating and teak deck (Round 195)
@@ -77,7 +78,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people|floors)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people|floors|astc-fronts)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png|astc)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
@@ -91,7 +92,7 @@ class Files(unittest.TestCase):
         on_disk = [f for f in (ROOT / 'art').rglob('*') if f.is_file()]
         self.assertGreater(len(on_disk), 700)
         for f in on_disk:
-            m = re.fullmatch(r'[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', f.name)
+            m = re.fullmatch(r'[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png|astc)', f.name)   # astc: Round 256's twins
             self.assertTrue(m, f)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(1), f)
             self.assertEqual(len(f.relative_to(ROOT / 'art').parts), 2, f)   # art/<kind>/<file>, nothing deeper or loose
@@ -104,6 +105,8 @@ class Files(unittest.TestCase):
             if '-half' in p or '-mask' in p:
                 continue
             if p.startswith('art/glass/rooms.'):   # Round 192's review: the glass's room pictures are a computer's (a phone never draws them)
+                continue
+            if p.split('/')[1].startswith('astc-'):   # Round 256: an ASTC twin is itself a phone's copy (of a half or a full picture)
                 continue
             kind, name = p.split('/')[1], p.split('/')[2].split('.')[0]
             if name.endswith('-sharp'):   # Round 227: a sharp copy is a computer's; a phone takes its record's half

@@ -70,7 +70,7 @@ for (const p of named) {
   if (st && st.isFile() && st.size > 0) size.set(p, st.size); else missing.push(p);
 }
 if (missing.length) fatal(missing.length + ' art file(s) the page names are missing or empty under ' + from + ', first ' + missing[0] + ' (a page older than its art? run python3 build.py)');
-const { carry, leave } = artTouch(named);
+const { carry, leave, twins } = artTouch(named);
 const bytes = (list) => list.reduce((a, p) => a + size.get(p), 0);
 // The page and its folder agree exactly, or nothing ships: the bakes prune art/ and build.py refuses a missing file, so
 // a file here the scan did not find is art newer than the page or a name the scan cannot see, and either way the app
@@ -107,3 +107,4 @@ const heldBytes = held.reduce((a, f) => a + statSync(f).size, 0);
 if (held.length !== carry.length || heldBytes !== bytes(carry)) fatal('www/art holds ' + held.length + ' files, ' + heldBytes + ' bytes, against the list\'s ' + carry.length + ' and ' + bytes(carry));
 console.log('www/art <- 3d-model/art: the ' + carry.length + ' files a phone can ask for, ' + mb(bytes(carry), 1) + ' MB (' + copied + ' copied, ' + (carry.length - copied) + ' already there, ' + removed + ' removed)');
 console.log('left out: ' + leave.length + ' full-size files with a half copy, ' + mb(bytes(leave), 1) + ' MB, of the ' + named.length + ' files, ' + mb(bytes(named), 1) + ' MB, the page names');
+if (twins.length) console.log('left out: ' + twins.length + ' ASTC twins, ' + mb(bytes(twins), 1) + ' MB, read only under ?astc= until a kind is kept (KEEP_ASTC)');   // Round 256

@@ -1,0 +1,101 @@
+{
+ "fronts": {
+  "airlite": {
+   "f8": "art/astc-fronts/airlite-f8.2d618127e9.astc",
+   "h4": "art/astc-fronts/airlite-h4.c549615561.astc",
+   "h8": "art/astc-fronts/airlite-h8.2d571435b1.astc",
+   "m4": "art/astc-fronts/airlite-m4.6bf757aea4.astc"
+  },
+  "chestnut": {
+   "f8": "art/astc-fronts/chestnut-f8.84dba82e41.astc",
+   "h4": "art/astc-fronts/chestnut-h4.bc24626a5c.astc",
+   "h8": "art/astc-fronts/chestnut-h8.b07bcfc4a3.astc",
+   "m4": "art/astc-fronts/chestnut-m4.3dd9d7ffab.astc"
+  },
+  "federal": {
+   "f8": "art/astc-fronts/federal-f8.f2d204a77a.astc",
+   "h4": "art/astc-fronts/federal-h4.67fe59ff20.astc",
+   "h8": "art/astc-fronts/federal-h8.ba25098f5f.astc",
+   "m4": "art/astc-fronts/federal-m4.3980c6942e.astc"
+  },
+  "loft": {
+   "f8": "art/astc-fronts/loft-f8.35ea610cc9.astc",
+   "h4": "art/astc-fronts/loft-h4.70c72c3ac4.astc",
+   "h8": "art/astc-fronts/loft-h8.0fa72fa780.astc",
+   "m4": "art/astc-fronts/loft-m4.5dff876475.astc"
+  },
+  "manayunk": {
+   "f8": "art/astc-fronts/manayunk-f8.7961574b32.astc",
+   "h4": "art/astc-fronts/manayunk-h4.9422479402.astc",
+   "h8": "art/astc-fronts/manayunk-h8.5f21edeef9.astc",
+   "m4": "art/astc-fronts/manayunk-m4.39def40de8.astc"
+  },
+  "mixeduse": {
+   "f8": "art/astc-fronts/mixeduse-f8.8081cd6960.astc",
+   "h4": "art/astc-fronts/mixeduse-h4.32cdb8bade.astc",
+   "h8": "art/astc-fronts/mixeduse-h8.d3dbfc13a4.astc",
+   "m4": "art/astc-fronts/mixeduse-m4.144e77e9e0.astc"
+  },
+  "newbuild": {
+   "f8": "art/astc-fronts/newbuild-f8.5c1cda8a35.astc",
+   "h4": "art/astc-fronts/newbuild-h4.7b147b3868.astc",
+   "h8": "art/astc-fronts/newbuild-h8.331345faaa.astc",
+   "m4": "art/astc-fronts/newbuild-m4.6dfbd79a74.astc"
+  },
+  "porch": {
+   "f8": "art/astc-fronts/porch-f8.cb7f2ee737.astc",
+   "h4": "art/astc-fronts/porch-h4.6792903d9d.astc",
+   "h8": "art/astc-fronts/porch-h8.62127f2bb0.astc",
+   "m4": "art/astc-fronts/porch-m4.6478faba3e.astc"
+  },
+  "rittenhouse": {
+   "f8": "art/astc-fronts/rittenhouse-f8.6c14f5e979.astc",
+   "h4": "art/astc-fronts/rittenhouse-h4.386d988f72.astc",
+   "h8": "art/astc-fronts/rittenhouse-h8.573fcbafba.astc",
+   "m4": "art/astc-fronts/rittenhouse-m4.72c1a2ea38.astc"
+  },
+  "shop": {
+   "f8": "art/astc-fronts/shop-f8.4e273e6fc7.astc",
+   "h4": "art/astc-fronts/shop-h4.1017d7e4f3.astc",
+   "h8": "art/astc-fronts/shop-h8.cd1f4afce0.astc",
+   "m4": "art/astc-fronts/shop-m4.5fc872d8e0.astc"
+  },
+  "shop1": {
+   "f8": "art/astc-fronts/shop1-f8.175a7c47d7.astc",
+   "h4": "art/astc-fronts/shop1-h4.3f97e2dacc.astc",
+   "h8": "art/astc-fronts/shop1-h8.f31e038921.astc",
+   "m4": "art/astc-fronts/shop1-m4.dbd0511ea7.astc"
+  },
+  "siding": {
+   "f8": "art/astc-fronts/siding-f8.68f6b0684d.astc",
+   "h4": "art/astc-fronts/siding-h4.4603ed0485.astc",
+   "h8": "art/astc-fronts/siding-h8.4f2ffe04d7.astc",
+   "m4": "art/astc-fronts/siding-m4.e38e71e83b.astc"
+  },
+  "southrow": {
+   "f8": "art/astc-fronts/southrow-f8.ced829c4c6.astc",
+   "h4": "art/astc-fronts/southrow-h4.14be894ebd.astc",
+   "h8": "art/astc-fronts/southrow-h8.61c7eb110c.astc",
+   "m4": "art/astc-fronts/southrow-m4.bec9fdecff.astc"
+  },
+  "stonetwin": {
+   "f8": "art/astc-fronts/stonetwin-f8.1afac1cc41.astc",
+   "h4": "art/astc-fronts/stonetwin-h4.8936822b98.astc",
+   "h8": "art/astc-fronts/stonetwin-h8.939e73cac8.astc",
+   "m4": "art/astc-fronts/stonetwin-m4.b748cecb15.astc"
+  },
+  "univcity": {
+   "f8": "art/astc-fronts/univcity-f8.b22e09cd50.astc",
+   "h4": "art/astc-fronts/univcity-h4.def6901329.astc",
+   "h8": "art/astc-fronts/univcity-h8.020f7afbd7.astc",
+   "m4": "art/astc-fronts/univcity-m4.961e916557.astc"
+  },
+  "victorian": {
+   "f8": "art/astc-fronts/victorian-f8.ffc37b81f1.astc",
+   "h4": "art/astc-fronts/victorian-h4.e0d0fffdcb.astc",
+   "h8": "art/astc-fronts/victorian-h8.5566128fbe.astc",
+   "m4": "art/astc-fronts/victorian-m4.104633a48d.astc"
+  }
+ },
+ "v": 1
+}

@@ -17,6 +17,10 @@
 // for them, which is a change to artSrc's call for that kind and to the test beside it.
 export const KEEP_FULL = new Set([]);
 
+// Round 256 (Stage 4, the ASTC twins, bake_astc.py): the GPU-ready twins live in their own kinds, art/astc-<kind>/, and the
+// app carries none of them until Mike picks a version from the side by side (the page reads them only under ?astc=, which
+// no app launch can carry). A kind named here goes into the bundle.
+export const KEEP_ASTC = new Set([]);
 // 'art/<kind>/<name>.<hash>.<ext>': the kind, and the folder and name without the hash, which is what a twin shares
 const artKind = (p) => p.split('/')[1];
 const artStem = (p) => { const cut = p.lastIndexOf('/') + 1; return p.slice(0, cut) + p.slice(cut).split('.')[0]; };
@@ -34,15 +38,16 @@ export function artNamed(page) {
   return [...set].sort();
 }
 
-// The named files split into what the app carries and what it leaves out: a file is left out when its -half twin is named
+// The named files split into what the app carries and what it leaves out (and, apart, the ASTC twins it does not carry): a file is left out when its -half twin is named
 // too and its kind keeps no full-size files; a -sharp copy, whose twin is its record's <name>-half, whatever its kind keeps
 export function artTouch(named, keepFull = KEEP_FULL) {
   const stems = new Set(named.map(artStem));
-  const carry = [], leave = [];
+  const carry = [], leave = [], twins = [];
   for (const p of named) {
+    if (artKind(p).startsWith('astc-') && !KEEP_ASTC.has(artKind(p))) { twins.push(p); continue; }   // Round 256
     const stem = artStem(p), sharp = stem.endsWith(SHARP);
     const half = stems.has((sharp ? stem.slice(0, -SHARP.length) : stem) + '-half');
     (half && (sharp || !keepFull.has(artKind(p))) ? leave : carry).push(p);
   }
-  return { carry, leave };
+  return { carry, leave, twins };
 }

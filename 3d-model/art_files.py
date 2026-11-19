@@ -29,6 +29,19 @@ def write(im, kind, name, fmt='WEBP', **kw):
     return rel
 
 
+def write_bytes(data, kind, name, ext):
+    """Bytes already encoded (Round 256: bake_astc.py's GPU-ready twins), named and kept as write() names its images."""
+    rel = 'art/%s/%s.%s.%s' % (kind, name, hashlib.sha256(data).hexdigest()[:10], ext)
+    path = os.path.join(HERE, rel)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if not os.path.exists(path):
+        with open(path + '.tmp', 'wb') as f:
+            f.write(data)
+        os.replace(path + '.tmp', path)
+    _written.setdefault(kind, set()).add(os.path.basename(path))
+    return rel
+
+
 def size(rel):
     return os.path.getsize(os.path.join(HERE, rel))
 
@@ -55,7 +68,7 @@ def unhashed(root=ART):
     for d, _, files in os.walk(root):
         for f in files:
             path = os.path.join(d, f)
-            m = re.fullmatch(r'[a-z0-9-]+\.([0-9a-f]{10})\.(?:webp|png|jpg)', f)
+            m = re.fullmatch(r'[a-z0-9-]+\.([0-9a-f]{10})\.(?:webp|png|jpg|astc)', f)
             with open(path, 'rb') as fh:
                 if not m or hashlib.sha256(fh.read()).hexdigest()[:10] != m.group(1):
                     bad.append(os.path.relpath(path, root))

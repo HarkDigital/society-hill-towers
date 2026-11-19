@@ -221,6 +221,7 @@ const("NJ_ART", text_of("nj_art.json", "null"))   # the USS New Jersey's plating
 const("MOSHULU_ART", text_of("moshulu_art.json", "null"))   # the Moshulu's hull plating and teak deck (bake_moshulu_art.py), Round 195
 const("OLYMPIA_ART", text_of("olympia_art.json", "null"))   # the cruiser Olympia's plating, superstructure, deck and buff atlas (bake_olympia_art.py), Round 215
 const("BRIDGE_ART", text_of("bridge_art.json", "null"))   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage elevations (bake_bridge_art.py), Round 195
+const("ASTC_ART", text_of("astc_art.json", "null"))   # the phone art's ASTC twins (bake_astc.py), read under ?astc= (Round 256)
 const("PEOPLE_ART", text_of("people_art.json", "null"))   # the walking people's atlases: thirty figures, ten a wardrobe (cold, cool, warm), eight pictures a step in three views (bake_people_art.py), Rounds 227 and 242; read by the walkers' drawing under ?people=1 (app.js, peopleCells)
 
 
@@ -238,7 +239,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "street_floor_art.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "glory_art.json", "storefront_art.json", "blade_art.json", "glass_art.json", "tavern_art.json", "indhall_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json", "nj_art.json", "moshulu_art.json", "olympia_art.json", "bridge_art.json", "people_art.json"):
+             "glory_art.json", "storefront_art.json", "blade_art.json", "glass_art.json", "tavern_art.json", "indhall_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json", "nj_art.json", "moshulu_art.json", "olympia_art.json", "bridge_art.json", "people_art.json", "astc_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

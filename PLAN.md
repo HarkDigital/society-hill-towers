@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 18, 2026, after Round 255 (Stage 4's probe).
+Last updated: Nov 18, 2026, after Round 256 (the house fronts as ASTC twins, behind a flag).
 
 ## The ask
 
@@ -151,6 +151,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 254** (Mike's pick, Nov 18: "New cards everywhere"): Round 246's concert and game placards are the default on
   every device; `?placards=old` keeps the old ones. JavaScript only.
 - **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
+- **Round 256** (Stage 4): the house fronts as ASTC twins behind `?astc=h4|h8|f8`, phones only, off; Mike's side by side
+  sent. See Stage 4 below.
 
 ## In flight (finish these first)
 
@@ -254,7 +256,12 @@ Round 255 asks the other two on every phone (the Simulator, a real WebKit web vi
 decodes right in linear and sRGB, and the record survived a kill and reinstall): `ax`, whether an ASTC texture uploads and samples right (linear and sRGB,
 4x4 and 6x6), and `ix`, whether an IndexedDB record survives a relaunch. Still needed from Mike: one JetsamEvent report
 from the iPhone (Settings, Privacy and Security, Analytics and Improvements, Analytics Data) for the real ceiling.
-Next, by the numbers: the ASTC twins (an encoder in the pipeline, the container, the loader, the ground's baked means,
+Round 256 built the first kind, the house fronts, behind `?astc=` with macOS's own encoder (4x4 and 8x8 blocks only):
+7.67 MB a front set on the GPU today, 1.92 at 4x4 half or 8x8 full, 0.77 at 8x8 half; the download twelve times today's.
+Waiting on Mike's pick from the side by side. After it: the same twins for the storefronts, tower tiles, town atlas,
+ground (its tone means baked into the manifest: linMean reads pixels), vehicles and the landmark atlases; then
+`KEEP_ASTC` for the app, and whether website phones take them at all.
+Earlier plan: the ASTC twins (an encoder in the pipeline, the container, the loader, the ground's baked means,
 GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then memory or sharpness), then the walls.
 
 ## Stages 3 to 6, in one line each

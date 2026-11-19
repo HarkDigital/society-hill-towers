@@ -14902,3 +14902,27 @@ This round asks the other two, touch only, `?probe4=0` refusing, nothing drawn c
   was stopped, settled ax=1111.55.20.4.9.0 (20 ms, the link 4 ms from the system's cache) with no stall. The entry
   circle counts as motion, so a session nobody touches never runs it.
 The JetsamEvent report is Mike's to send from the phone.
+
+## Round 256 — Stage 4: the house fronts as ASTC twins, behind `?astc=` (Nov 18)
+
+Mike: "Do the next phase/task". Stage 4's next item by the numbers is the ASTC art (Round 255's notes: the art is 232 to
+292 MB of his iPhone's textures after a flight at tier 1), and the plan asks first for one front set three ways at street
+level for his side by side. Built behind a flag, off by default, phones only, nothing drawn changes without it.
+- The encoder is macOS's own: ImageIO writes `org.khronos.astc` (`tools/astc_enc.swift`, compiled by the bake), so nothing
+  was downloaded. It writes 4x4 and 8x8 blocks only (5x5 and 6x6 come back as 4x4). The plan's 6x6 would need ARM's
+  astcenc, a download Mike would be asked about.
+- `bake_astc.py` writes four twins a front set (16 sets): the half picture at 4x4 (`h4`) and 8x8 (`h8`), the full picture at
+  8x8 (`f8`) and the half window mask at 4x4 (`m4`), each with its whole mip chain made in the bake (linear-light means for
+  the sRGB pictures, coded values for the masks), in the page's own container (`P3DA`). No flip: ImageIO already stores the
+  block rows bottom first. The first bake flipped too and drew every atlas upside down (doors under the cornices, every
+  cell's house swapped with its mirror row); caught in the first capture. 61.3 MB on disk, under `art/astc-fronts/`.
+- The page: `?astc=h4|h8|f8` on a touch device with `WEBGL_compressed_texture_astc` on WebGL 2 (`astcOn`); `artAstc` fetches
+  a twin and fills the front set's Texture in place as a compressed one with the twin's mips (`frontSetRes` keeps its
+  material and uniforms), falling back to the webp. `freeTexOnUpload` drops the blocks after the upload; GPUMEM's table
+  knows the two block sizes. `art-touch.mjs` keeps every `astc-` kind out of the app until `KEEP_ASTC` names one.
+- Measured on the phone path (headless Chrome on the Mac's GPU, 956 by 440 at ratio 1.6, five sets in view): textures
+  270.3 MB today, 242.3 at h4 or f8, 236.6 at h8. A front set on the GPU: 7.67 MB today, 1.92 h4 or f8, 0.77 h8. Its download:
+  0.16 MB today against 1.92 or 0.77 (twelve times more for a website phone). Looks, at about 11 m: h4 hard to tell from
+  today; f8 crisper on brick and frames with a little blockiness on hard edges; h8 visibly smeared.
+- The side by side for Mike (private): three streets four ways, whole view and close-up, with the `?astc=` links to try on
+  his iPhone in Safari. Nothing is on by default until he picks.

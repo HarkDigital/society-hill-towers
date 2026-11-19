@@ -100,7 +100,7 @@ const IN = JSON.parse(fs.readFileSync(0, 'utf8'));
   const now = M.artTouch(named);
   console.log(JSON.stringify({
     touch: IN.pairs.map((p) => touch(p[0], p[1] || undefined)), computer: IN.pairs.map((p) => computer(p[0], p[1] || undefined)),
-    carry: now.carry, leave: now.leave, keepFull: [...M.KEEP_FULL].sort(),
+    carry: now.carry, leave: now.leave, twins: now.twins, keepAstc: [...M.KEEP_ASTC].sort(), keepFull: [...M.KEEP_FULL].sort(),
     fronts: M.artTouch(named, new Set(['fronts'])), none: M.artTouch(named, new Set()),
     page: M.artNamed(fs.readFileSync(IN.page, 'utf8')),
   }));
@@ -129,9 +129,14 @@ class TheListIsArtSrc(unittest.TestCase):
     def test_the_app_carries_exactly_what_artSrc_answers_on_a_phone(self):
         r = self.r
         carry, leave, answers = set(r['carry']), set(r['leave']), set(r['touch'])
-        self.assertEqual(carry | leave, self.named)
-        self.assertEqual(carry & leave, set())
-        self.assertEqual(len(r['carry']) + len(r['leave']), len(self.named), 'no file twice')
+        # Round 256: the ASTC twins (bake_astc.py) are asked for by artAstc under ?astc=, never through artSrc, and the app
+        # carries none of a kind KEEP_ASTC does not name
+        twins = set(r['twins'])
+        self.assertEqual(twins, {f for f in self.named if kind(f).startswith('astc-') and kind(f) not in r['keepAstc']})
+        answers -= twins
+        self.assertEqual(carry | leave | twins, self.named)
+        self.assertEqual((carry & leave) | (carry & twins) | (leave & twins), set())
+        self.assertEqual(len(r['carry']) + len(r['leave']) + len(r['twins']), len(self.named), 'no file twice')
         self.assertEqual(answers - carry, set(), 'a phone can ask for a file the app does not carry: it would draw the procedural look in silence')
         kept_full = {f for f, h in self.pairs if h and kind(f) in r['keepFull']}
         self.assertEqual(carry, answers | kept_full, 'the app carries a file no phone path asks for')
@@ -169,7 +174,9 @@ class TheListIsArtSrc(unittest.TestCase):
         # moves in the same commit: until then its full-size files would ride in the bundle unread
         self.assertEqual(r['keepFull'], [])
         self.assertLessEqual(set(r['keepFull']), kinds)
-        self.assertEqual(r['none'], {'carry': r['carry'], 'leave': r['leave']})
+        self.assertEqual(r['none'], {'carry': r['carry'], 'leave': r['leave'], 'twins': r['twins']})
+        self.assertEqual(r['keepAstc'], [], 'Round 256: no ASTC kind rides in the app until Mike picks one')
+        self.assertEqual(r['fronts']['twins'], r['twins'])
         fronts = {f for f, h in self.pairs if h and kind(f) == 'fronts'}
         self.assertGreater(len(fronts), 16)
         self.assertEqual(set(r['fronts']['carry']), set(r['carry']) | fronts, 'a kept kind brings back its full-size files and nothing else')
@@ -334,7 +341,10 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # a front set's two pictures
         fronts = region(s, '    const load = (full, half, tex) => artImage(artSrc(full, half)).then((im) => {')
         loads = [args(a) for a in calls(fronts, 'load')]
-        self.assertEqual([a[:2] for a in loads], [['S.img', 'S.imgHalf'], ['S.mask', 'S.maskHalf']])
+        self.assertEqual([a[:2] for a in loads], [['full', 'half'], ['S.img', 'S.imgHalf'], ['S.mask', 'S.maskHalf']])
+        # Round 256: loadA falls back to that same load with the record's own pair when its twin does not come
+        self.assertIn('    const loadA = (rel, tex, full, half) => artAstc(rel, tex).then((ok) => (ok ? (freeTexOnUpload(tex), true) : load(full, half, tex)));', s)
+        self.assertEqual([args(a) for a in calls(s, 'loadA')], [['AS[ASTC_PICK]', 'map', 'S.img', 'S.imgHalf'], ['AS.m4', 'mask', 'S.mask', 'S.maskHalf']])
         # the container ships' two
         ships = region(s, '    const load = (f, h, cb) => artImage(artSrc(f, h)).then((im) => {')
         loads = [args(a) for a in calls(ships, 'load')]
@@ -371,8 +381,11 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
 
     def test_no_other_way_to_an_art_file(self):
         s = self.s
-        # the two prefetches take their bytes with fetch, both of an artSrc answer
-        self.assertEqual(s.count('fetch(src)'), 2)
+        # the two prefetches take their bytes with fetch, both of an artSrc answer; and (Round 256) artAstc fetches an ASTC
+        # twin, a path astc_art.json names, which the app does not carry (art-touch.mjs leaves the twins out)
+        self.assertEqual(s.count('fetch(src)'), 3)
+        self.assertEqual(region(s, '  function artAstc(src, tex) {').count('fetch(src)'), 1)
+        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src'])
         self.assertIn("  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));\n", s)
         for a in calls(s, 'gloryBytes'):
             self.assertTrue(a.startswith('artSrc('), a)
@@ -390,7 +403,7 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         self.assertEqual(s.count("typeof fetch !== 'function'"), 2)
         self.assertEqual(mentions(s, 'fetch') - sum(got.values()), 2, 'fetch is named somewhere it is not called')
         feeds = Counter({
-            'src': 2, 'url': 2, 'u': 1,   # the art prefetches; the beacon and the Amtrak pull; the weather stations
+            'src': 3, 'url': 2, 'u': 1,   # the art prefetches and artAstc; the beacon and the Amtrak pull; the weather stations
             'SEPTA_BAKED': 1, 'SEPTA_V2 + path': 1, 'CARTO_SQL + encodeURIComponent(q)': 1, 'SCORE_URL(k)': 1,
             "SCORE_URL(t.k) + '?dates=' + key.replace(/-/g, '')": 1, 'CONCERTS_URL': 1, 'INDEGO_URL': 1, 'FLIGHT_HOSTS[FLIGHTS.host]': 1,
             'AIS_RELAY': 1, 'LIGHTS_URL': 1, 'CLOSURES_URL': 1, 'LIGHTNING_URL': 1, 'ALERT_SITES_URL': 1, 'AQI_URL': 1,
@@ -465,7 +478,7 @@ class CopyWeb(unittest.TestCase):
                 self.assertTrue(filecmp.cmp(ROOT / p, www / p, shallow=False), p)
             # both totals, in the files' own counts and megabytes
             size = lambda ps: '%.1f' % (sum((ROOT / p).stat().st_size for p in ps) / 1e6)
-            n, left, named = len(carry), r0['leave'], r0['carry'] + r0['leave']
+            n, left, named = len(carry), r0['leave'], r0['carry'] + r0['leave'] + r0['twins']
             self.assertIn('www/art <- 3d-model/art: the %d files a phone can ask for, %s MB (%d copied, 0 already there, 0 removed)' % (n, size(carry), n), r.stdout)
             self.assertIn('left out: %d full-size files with a half copy, %s MB, of the %d files, %s MB, the page names' % (len(left), size(left), len(named), size(named)), r.stdout)
             # a second sync writes no art (the names are content hashes), which is what spares Dropbox the rewrite
@@ -640,7 +653,7 @@ class CopyWeb(unittest.TestCase):
     def test_the_script_is_wired(self):
         c = (SCRIPTS / 'copy-web.mjs').read_text()
         self.assertIn("import { artNamed, artTouch } from './art-touch.mjs';", c)
-        self.assertIn('const { carry, leave } = artTouch(named);', c)
+        self.assertIn('const { carry, leave, twins } = artTouch(named);', c)
         self.assertNotIn('cpSync', c, 'the whole folder is never copied again')
         # every check comes before the first write: the www that reaches the source, the missing file, the unnamed art
         body = c[c.index('const here = '):]
