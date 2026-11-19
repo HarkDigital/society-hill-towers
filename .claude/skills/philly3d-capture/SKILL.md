@@ -222,12 +222,12 @@ Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flic
   camera, the gate recomputed. Compare `through` and `placardThrough` on `before.html` and the new build;
   set `__PM.fps = 60` on a computer-sized page. Round 169 went from 981 to 8,388 pin-frames a run to 0 to
   105 on a phone (every one on a frame a phone draws no image) and 0 on a computer.
-- **Pin flashes, headless** (Round 262): `node scripts/pin_flash.mjs <dir> <page> "dev=1&rkcheck=0[&pinsoft=1]" <label> -`
+- **Pin flashes, headless** (Round 262): `node scripts/pin_flash.mjs <dir> <page> "dev=1&rkcheck=0[&pinsoft=0]" <label> -`
   drives `pin_through.js` through three scripted flights in its own headless Chrome (no 45 s limit, phone path by default,
   `--desk` for a computer at 60 fps) and prints `through`, `throughDeep`, `flashes` and `jolts` per flight; `--posts` scores
   many gate shapes from one recorded run, `--grab oldcity:240:0` writes the frames, `scripts/frames_to_mp4.swift` turns
   them into an MP4 and `scripts/video_frames.swift` pulls the frames out of a screen recording Mike sends (no ffmpeg here).
-  Round 262's baseline, phone, Old City: 636 flashes today, 22 with `?pinsoft=1`.
+  Round 262's baseline, phone, Old City: 636 flashes on the old gate (`?pinsoft=0` since Round 263), 22 on the soft one.
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
 

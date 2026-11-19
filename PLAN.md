@@ -153,8 +153,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
 - **Round 256** (Stage 4): the house fronts as ASTC twins behind `?astc=h4|h8|f8`, phones only, off; Mike's side by side
   sent. See Stage 4 below.
+- **Round 263** (Mike's pick, Nov 19: "Yes, make it default"): the soft pin gate is the default, `?pinsoft=0` the old one.
+  The pins' vertex programs compile once more on every device; nothing else's text changed.
 - **Round 262** (Mike, Nov 19, a phone recording: pins flash as structures pass in front of them): the soft pin gate behind
-  `?pinsoft=1`, OFF and the shader text unchanged until he picks (see "What is waiting on Mike"). Flashes 92 to 98% fewer on
+  `?pinsoft=1` (page "Steadier Pins", https://claude.ai/artifact/9rDk4o3Z36d1LdboTubPtz). Flashes 92 to 98% fewer on
   three scripted flights, phone and computer; nothing deep behind a building shown; edge pins drawn smaller.
 - **Round 261** (Mike: "The shopfronts"): the shopfronts' atlas and mask as 4x4 twins (14 MB to 3.5); Round 260's street
   textures mended on every device (a comment had swallowed their wrap and encoding). Still pictures: the Comcast strip and glass
@@ -354,10 +356,6 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
    (still a 13 m box), and whether to stream the LiDAR tiles east of the river for the 420 buildings still at 10.5 m.
 9. Housekeeping: about 59 MB of orphaned pack files in `.git/objects/pack` from the Nov 10 repack race (nothing lost;
    left for his say).
-10. The soft pin gate (Round 262: the private page "Steadier Pins", https://claude.ai/artifact/9rDk4o3Z36d1LdboTubPtz, and
-   `?pinsoft=1` on the site): on by
-   default? It changes the pins' vertex shader text, so it rides the next shader batch (every device compiles the pin
-   programs once), and the ramp (0.02 to 0.35) can move first if he wants more edge pins whole.
 Later, each with its evidence in hand: the three.js substitutions (Stage 3); ASTC spent on memory or sharpness; sidewalks
 on tiers 1 and 2; far streets and towns arriving after Enter; the El; sound; the river's pool level.
 

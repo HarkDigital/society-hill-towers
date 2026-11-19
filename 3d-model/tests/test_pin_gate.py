@@ -164,6 +164,65 @@ console.log(JSON.stringify(r));''')
                                'farClear': True, 'reads2': 2, 'noGate': True, 'covers': True, 'coversClear': False, 'coversOutside': False,
                                'coversStill': True, 'coversMoved': False})
 
+    def test_soft_answer(self):
+        # Round 262/263: the soft gate's CPU twin. A wall fills the left half of the screen 100 m out, open sky the right; a tip
+        # 500 m out at image column u (the boundary is between columns 119 and 120). The tent's share over the 4 by 4 centres round
+        # the tip's exact point, through the ramp 0.02 to 0.35: 0 deep in the wall, 0.1875 a pixel inside its edge (eased to
+        # 0.511, the dead zone: 2), 0.625 just past it (clear). The old 3 by 3 rule calls the second clear
+        out = self.run_js(r"""
+const PIN_GATE = { soft: { value: new THREE.Vector4(0.02, 0.35, 0, 2) } };
+PIN_OCC.full.cpu = image((x, y) => x < 0 ? 100 : FAR);
+const sx = (u) => (u / W - 0.5) * 2 * 1.5, r = {};
+for (const u of [100.25, 118.25, 119.25, 120.25, 125.25]) { const p = at(sx(u), 0, 500); r[u] = [pinOccAnswerSoft(p.x, p.y, p.z), +occImgSoftShare(PIN_OCC.full.cpu, p.x, p.y, p.z).toFixed(4), +occImgSoft(PIN_OCC.full.cpu, p.x, p.y, p.z).toFixed(3), pinOccAnswer(p.x, p.y, p.z)]; }
+PIN_SOFT_CPU.hide = 0.6; { const p = at(sx(119.25), 0, 500); r.moved = pinOccAnswerSoft(p.x, p.y, p.z); }   // the dead zone's edges are knobs
+const p = at(sx(130), 0.99, 500); r.outside = pinOccAnswerSoft(p.x, p.y * 3, p.z);
+console.log(JSON.stringify(r));""")
+        self.assertEqual(out['100.25'], [0, 0, 0, 0])
+        self.assertEqual(out['118.25'], [0, 0, 0, 0])
+        self.assertEqual(out['119.25'], [2, 0.1875, 0.511, 1])
+        self.assertEqual(out['120.25'], [1, 0.625, 1, 1])
+        self.assertEqual(out['125.25'], [1, 1, 1, 1])
+        self.assertEqual(out['moved'], 0)
+        self.assertEqual(out['outside'], -1)
+
+    def test_dead_zone_changes_nothing(self):
+        step = cut('  function pinOccStep(', "  // a pin's frame:")
+        script = 'const PIN_COV_IMGS = 1, PIN_HOLD = 0.45, PIN_DWELL = 0.1;\n' + step + r"""
+const mk = () => ({ tgt: new Uint8Array(1), lin: new Float32Array(1), why: new Uint8Array(1), okC: new Uint8Array(1), okT: new Float32Array(1), age: new Float32Array(1) });
+const a = mk(); a.tgt[0] = 1; a.lin[0] = 1; for (let i = 0; i < 30; i++) pinOccStep(a, 0, 2, true, 0.1);
+const b = mk(); b.why[0] = 2; for (let i = 0; i < 30; i++) pinOccStep(b, 0, 2, true, 0.1);
+const hidden = [b.tgt[0], b.okC[0], +b.okT[0].toFixed(2)], age = +b.age[0].toFixed(1);
+pinOccStep(b, 0, 1, true, 0.1);
+console.log(JSON.stringify({ shown: [a.tgt[0], a.lin[0], a.why[0]], hidden, age, after: b.tgt[0] }));"""
+        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertEqual(out['shown'], [1, 1, 0])        # a shown pin stays shown, whole, through the dead zone
+        self.assertEqual(out['hidden'], [0, 0, 0])       # a hidden one stays hidden and gains no clear images or time there
+        self.assertEqual(out['age'], 3.0)                # its time since the covered answer still runs
+        self.assertEqual(out['after'], 1)                # and one clear image past the dwell shows it
+
+    def test_soft_gate_text(self):
+        g = cut('  const PIN_GATE_SOFT_GLSL = ', '`;\n')
+        # on by default, ?pinsoft=0 the old gate; the old text kept whole for it
+        self.assertIn("const PIN_SOFT = !(typeof location !== 'undefined' && /[?&]pinsoft=0\\b/.test(location.search));", SRC)
+        self.assertIn("(vtex ? (PIN_SOFT ? PIN_GATE_SOFT_GLSL : PIN_GATE_GLSL)", SRC)
+        self.assertIn("PIN_GATE_GLSL.replace('float pinOccGate() {', 'float pinOccGateHard() {')", g)
+        # the tent over the 4 by 4 centres round the tip's exact point, a whole cover hidden at once, the blend, the ramp
+        self.assertIn('for (int j = -1; j <= 2; j++) for (int i = -1; i <= 2; i++) {', g)
+        self.assertIn('if (g <= 0.0) return 0.0;', g)
+        self.assertIn('g = uPinOccSoft.z < 0.5 ? 0.5 * (g + p) : min(g, 0.5 * (g + p));', g)
+        self.assertIn('return smoothstep(uPinOccSoft.x, uPinOccSoft.y, g);', g)
+        self.assertIn('else return pinOccGateHard();', g)   # a tip past the near image keeps the two-image rule
+        self.assertIn('soft: { value: new THREE.Vector4(0.02, 0.35, 0, 2) }', SRC)
+        self.assertIn("mat.customProgramCacheKey = () => 'pinAnchor:gate:' + (PIN_SOFT ? 'soft:' : '')", SRC)
+        # the image before: at most two frames older, from about the same eye
+        sync = cut('  function pinGateSync() {', '  function pinOccInstall(')
+        self.assertIn('n.frame - q.frame <= 2', sync)
+        # the CPU's answer and the dead zone
+        self.assertIn('pinOccJudge(st, i, x, y, z, pinZone(x, y, z, _pzm), fresh, captured, dt, PIN_OCC.soft ? pinOccAnswerSoft : pinOccAnswer);', SRC)
+        self.assertIn('const PIN_SOFT_CPU = { hide: 0.1, show: 0.6 };', SRC)
+
     def test_the_gate_text(self):
         g = cut('  const PIN_GATE_GLSL = `', '`;\n')
         # the need and the sky's clamp, the packing, the 3 by 3 neighbourhood, NEAREST reads at pixel centres

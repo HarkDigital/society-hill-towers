@@ -40326,13 +40326,14 @@ if (uOlLamp > 0.001) {
   // (240 pixels across 1.5 screens on a phone, a pixel about the width of a rowhouse front), drawn anew every frame while the
   // eye moves. Each image lays every roofline on a slightly different set of pixels, so a tip within a pixel of one (on a
   // rowhouse field seen at an angle, most ground pins) reads covered, clear, covered from frame to frame, and since the CPU's
-  // fade cannot follow a gate that flips each frame, the pin blinks whole. ?pinsoft=1 (off until Mike picks) makes the
-  // gate a measure, not a verdict: the share of a tent two image pixels each way round the tip's exact point that lies behind
+  // fade cannot follow a gate that flips each frame, the pin blinks whole. The soft gate (Round 263, on by default at Mike's
+  // pick, Nov 19: "Yes, make it default"; ?pinsoft=0 keeps Round 252's gate and its text) makes the gate a measure, not a
+  // verdict: the share of a tent two image pixels each way round the tip's exact point that lies behind
   // it (uPinOccSoft.w), averaged with the image before of the same kind when that one is a frame or two old (uPinOccPrev;
   // .z: 0 both ways, 1 only toward hiding, 2 no blend), eased through a ramp (.x foot, .y head) into the pin's size. A tip
   // covered across the whole tent of the newest image is hidden at once, as before; the tips past the near image keep the
-  // two-image rule. Every number is a uniform, so a tune compiles nothing; with the flag off the shader text is Round 252's
-  const PIN_SOFT = typeof location !== 'undefined' && /[?&]pinsoft=1\b/.test(location.search);
+  // two-image rule. Every number is a uniform, so a tune compiles nothing
+  const PIN_SOFT = !(typeof location !== 'undefined' && /[?&]pinsoft=0\b/.test(location.search));
   const PIN_GATE_GLSL = `
 uniform highp sampler2D uPinOccA, uPinOccB;
 uniform mat4 uPinOccViewA, uPinOccViewAInv, uPinOccProjA, uPinOccViewB, uPinOccProjB;
@@ -56846,7 +56847,7 @@ float pinOccGate() {
     _pov.set(x, y, z).applyMatrix4(N.view);
     return -_pov.z <= N.reach ? occImgAnswer(N, x, y, z) : occImgBoth(N, F, x, y, z);
   }
-  // Round 262 (?pinsoft=1): the CPU's state reads the gate's own measure (the tent's clear share eased through the same ramp,
+  // Round 262 (the soft gate; ?pinsoft=0 refuses it): the CPU's state reads the gate's own measure (the tent's clear share eased through the same ramp,
   // PIN_GATE.soft; the blend with the image before is the gate's alone) with a dead zone between its answers: covered (hidden
   // at once) only at or under PIN_SOFT_CPU.hide, clear at or over .show, and 2 between them, which changes nothing
   // (pinOccStep). A tip past the near image keeps the two-image rule
@@ -57062,7 +57063,7 @@ float pinOccGate() {
   function pinOccStep(st, i, raw, captured, dt) {
     if (raw === 0) { st.tgt[i] = 0; st.lin[i] = 0; st.why[i] = 2; st.okC[i] = 0; st.okT[i] = 0; st.age[i] = 0; return; }   // covered: hidden at once
     st.age[i] += dt;
-    if (raw === 2) return;   // Round 262 (?pinsoft=1): the soft answer's dead zone, which changes nothing
+    if (raw === 2) return;   // Round 262 (the soft gate): the soft answer's dead zone, which changes nothing
     if (raw < 0) { if (st.tgt[i]) st.why[i] = 0; st.tgt[i] = 0; st.lin[i] = 0; st.okC[i] = 0; st.okT[i] = 0; return; }   // unknown: hidden too
     if (st.tgt[i]) return;
     if (captured && st.okC[i] < 255) st.okC[i]++;

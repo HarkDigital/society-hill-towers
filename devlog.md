@@ -15061,3 +15061,15 @@ flying around?" Then, after the proposal: "Yes, build it".
 - For Mike: the side by side (an 8-second Old City flight, today over the soft gate) is the private page "Steadier Pins";
   on by default is his call, and it rides the next shader batch.
 
+## Round 263 — the soft pin gate on by default (Nov 19)
+
+Mike, after the side by side ("Steadier Pins"): "Yes, make it default". The soft gate is the default and `?pinsoft=0` keeps
+Round 252's gate with its shader text. Only the pins' vertex programs change text, so every device compiles those once
+more; he chose to ship it now rather than wait for the next shader batch.
+- `tests/test_pin_gate.py` gains the soft answer under Node (a wall's edge: the tent's share 0 deep in it, 0.1875 a pixel
+  inside, which the dead zone holds where the old rule said clear, 0.625 just past it), the dead zone in `pinOccStep` (a shown
+  pin stays whole, a hidden one gains nothing) and the soft gate's text. `tests/pin_gate_gpu.html` runs the soft checks
+  with no query (1,000 of 1,000 tips at the CPU's size, 168 part covered) and the old ones with `?pinsoft=0`.
+- A default load, phone path, headless: 19 flashes turning in place (105 with `?pinsoft=0`), 18 over Old City; no tip deep
+  behind a building shown (0 of 14,872 pin-frames).
+
