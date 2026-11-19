@@ -139,7 +139,7 @@ class Page(unittest.TestCase):
         self.assertNotRegex(sec, r"BufferAttribute\(new (Uint8|Int8)Array\([^)]*\), [13]\b")
         self.assertIn('freeShadingOnUpload(geo);', sec)
         self.assertIn('groupCity.add(m); rayTargets.push(m);', sec)
-        self.assertIn('artImage(artSrc(A.img, A.imgHalf))', sec)
+        self.assertIn('artInto(artSrc(A.img, A.imgHalf), mat.map)', sec)   # Round 260: or its ASTC twin
         self.assertIn("else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }", sec)
         self.assertIn('indhall: () => ({ on: IH_ON,', s)
         bk = cut(C.path('bake_indhall_art.py').read_text(), 'GUTTER = ', '\n')

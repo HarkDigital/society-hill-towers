@@ -149,7 +149,7 @@ class Wiring(unittest.TestCase):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("WATER_ART", text_of("water_art.json", "null"))', b)
         self.assertIn('"water_art.json"', b)
-        self.assertIn('artImage(artSrc(WATER_ART_M.pierdeck, WATER_ART_M.pierdeckHalf))', self.s)
+        self.assertIn('artPic(artSrc(WATER_ART_M.pierdeck, WATER_ART_M.pierdeckHalf))', self.s)
 
     def test_dam_takes_the_waters_clock(self):
         ww = (ROOT / 'rebuilds' / 'ww.js').read_text()

@@ -321,7 +321,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
         # Round 191: City Hall's atlas and mask (chLoadArt), its dials' two canvases, its courtyard's floor and its compass (fix2)
-        self.assertIn('CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);', cut(s, '  function chLoadArt() {', '  const _chE'))
+        self.assertIn('freeTexOnUpload(CH.map); freeTexOnUpload(CH.mask);', cut(s, '  function chLoadArt() {', '  const _chE'))
         self.assertIn('freeTexOnUpload(new THREE.CanvasTexture(dc)), glow = freeTexOnUpload(new THREE.CanvasTexture(gv));', cut(s, '  function chDials(Y0) {', '  function chHands('))
         # fix3: a phone paints the floor's two canvases on its first near frame, each freed at its upload
         self.assertIn('const t2 = new THREE.CanvasTexture(chFloorCanvas()); t2.encoding = THREE.sRGBEncoding; t2.anisotropy = anisoOf(8); freeTexOnUpload(t2);', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
@@ -342,19 +342,19 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function glassArtTex(im, srgb, aniso) {', '  function glassRoomsLoad() {'))   # Round 192: the glass's rooms
         self.assertIn('glassU.uGlassArr.value = freeTexOnUpload(t);', cut(s, "  step('Glazing the towers'", '  // the street floors (critic gap 4)'))   # and its frames' texture array
         # Round 199: A Man Full of Trouble's atlas, uploaded once when it lands (a phone's only after Enter)
-        self.assertIn('const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);', cut(s, '  function tavernMake(b) {', '  // ------------------------------------------------ museum ships'))
+        self.assertIn('freeTexOnUpload(mat.map);', cut(s, '  function tavernMake(b) {', '  // ------------------------------------------------ museum ships'))
         self.assertIn('if (isTouch) freeTexOnUpload(t);', cut(s, '  async function townLay(aniso, got) {', '  function townProbe() {'))   # Round 198: the own facades' atlas and mask
-        self.assertIn('tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))   # Round 195: the Society Hill Towers' concrete
+        self.assertIn('freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))   # Round 195: the Society Hill Towers' concrete
         self.assertIn('CMR_U.uCmrArt.value = freeTexOnUpload(t);', cut(s, '  function cmrArtLoad() {', '  // the Comcast Center\'s open crown'))   # Round 195: the Comcast towers' cladding array
         # Round 195: the venues' boards (the board's photograph makes a new texture when it lands, never redraws a freed one)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venScreenTex(boardIm) {', '  function venDigitsTex('))
         self.assertIn('venU.uVenScreen.value = venScreenTex(ims[4]); if (old) old.dispose();', cut(s, '  function venLoadArt() {', '  // ---- the geometry'))
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venDigitsTex() {', '  function venArtTex('))   # the Linc's yard numbers
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
-        self.assertIn('const td = new THREE.Texture(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);', cut(s, '  function brLoadArt() {', '  // a buffer'))   # Round 195: the bridges' art
+        self.assertIn('const td = picTex(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);', cut(s, '  function brLoadArt() {', '  // a buffer'))   # Round 195: the bridges' art
         self.assertIn('const t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, '  function brLatticeCanvas() {', '  // the program:'))   # and their lattice canvas
         self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 58)   # the definition and its uses (every round's, counted; Round 256: a front set's ASTC twin; Round 259: a tile's twin; Round 210: Independence Hall's atlas; Round 211: the Liberty Bell's canvas; Round 215: the Olympia's atlas and her railings; the realism round two: the blade signs' sheet; Round 227: the walkers' atlas, uploaded once under ?people=1)
-        self.assertIn('const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);', cut(s, '  function indhallMake(ob) {', '  // ---- the USS New Jersey'))
+        self.assertIn('freeTexOnUpload(mat.map);', cut(s, '  function indhallMake(ob) {', '  // ---- the USS New Jersey'))
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

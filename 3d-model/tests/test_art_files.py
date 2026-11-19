@@ -78,7 +78,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people|floors|astc-fronts|astc-ground|astc-tiles|astc-towers)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png|astc)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|indhall|towers|sht|liberty|comcast|stadiums|nj|moshulu|olympia|bridges|blades|people|floors|astc-[a-z]+)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png|astc)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
@@ -120,7 +120,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('const artSrc = (full, half) => (isTouch && half ? half : full);', s)
         self.assertIn('function artImage(src) {', s)
         for call in ('artImage(artSrc(full, half))', 'artPic(artSrc(T.img, T.imgHalf))', 'artImage(artSrc(rec.img, rec.imgHalf))',   # artPic: Round 259's twins or the picture
-                     'artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf))', 'artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))'):
+                     'artPic(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf))', 'artInto(artSrc(A.img, A.imgHalf), CH.map), artInto(artSrc(A.mask, A.maskHalf), CH.mask)'):
             self.assertIn(call, s)
         self.assertNotIn('im.src = rec.img', s)
 

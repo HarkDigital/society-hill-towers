@@ -376,7 +376,7 @@ class Wiring(unittest.TestCase):
         lib = cut('  const LIB_SPECS = [', '  // the rooms\' light by the ambient light')
         self.assertNotIn('gl_FragDepth', lib)
         self.assertNotIn('gl_FragDepth', BUILD)
-        self.assertIn('artImage(artSrc(A.img, A.imgHalf))', lib)
+        self.assertIn('artPic(artSrc(A.img, A.imgHalf))', lib)   # Round 260: or its ASTC twin
         self.assertEqual(lib.count('freeTexOnUpload(t);'), 2)
         self.assertIn('const LIB = { on: REAL && !TIER2 &&', lib)                     # the recovery tier: no near meshes, no art
         self.assertIn('LIB.base.visible = LIB.near && LIB.ready.base;', lib)          # shown once its picture has landed

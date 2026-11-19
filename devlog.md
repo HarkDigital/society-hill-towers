@@ -14976,3 +14976,30 @@ computer's), then a tail of landmarks.
 - In the app in the iOS Simulator (iPhone 18 Pro Max, tier 1): ready textures 129 MB against 165 on every tier 1 load before
   (the tiles and the town atlas load during the build); perf at the entry view `as=61.0.12`, textures 192 MB against 246 in
   Round 257's run there, 744 MB in all against 787 to 847 in Mike's tier 1 sessions.
+
+## Round 260 — the rest of the phone's direct art as 4x4 twins, and the tile masks' alpha back (Nov 19)
+
+Mike: "Yes, keep going". This round takes every other loader that puts a picture into a texture: the ground's lawn, meadow,
+yard and the streets' asphalt, concrete and bricks; the parks' macro, the alleys and the woods by season; the vehicles'
+atlases and masks; the streets' lane wear, concrete and lot; City Hall (atlas and mask), the New Jersey, the Olympia, the
+tavern, Independence Hall, the Towers' concrete, the Moshulu, the piers' deck and foam, the bridges and Liberty Place, and
+the stadiums' walls, seats, turf and clay (their board is drawn into the screens' canvas and stays a picture). 126 twins
+beside the fronts, 33.4 MB, in sixteen `astc-` kinds, every one carried in the app.
+- `artInto(src, tex)` fills a placeholder a site already holds (City Hall, the ships, the tavern, Independence Hall, the
+  Towers' concrete) from the twin or the picture; `artPic`/`picTex` take the rest; the board, the shopfronts (their
+  prefetched bytes and bitmaps), the Comcast strip and the glass frames (array textures), the trees and blade signs (drawn
+  into canvases), the snow picture, the land mask and the people stay pictures.
+- The ground's six pictures are measured by the page (`linMean`). A baked true mean moved the lawn's tone 4 to 6% (the
+  page has always taken its colour from a 32 pixel draw), so those six (`measured`) are decoded beside their twin once,
+  measured exactly as before and let go: every tone uniform reads the same on and off (uGrassTone, uGrassTone2, uGrassK,
+  uYardTone, uStM, uStBrick, the tufts' lawnLin).
+- The bake keeps alpha (Round 259 flattened every picture to RGB). The tower tiles' masks are RGBA, and the skins read
+  `tsMask.a` for a window's place in its storey on the folded kinds: Round 259's app (TestFlight 65) drew 27 of those masks
+  with the alpha opaque. This round's masks carry it again. The stadium walls and Liberty Place's base and glazing keep
+  theirs too.
+- Phone path (headless Chrome on the Mac's GPU, 956 by 440 at 1.6, five views: a Society Hill street at eye height and
+  from 40 m, City Hall, the Delaware waterfront, the sports complex): textures 272.1 MB against 173.2 with `?astc=1`, 108
+  twins, none failed, no console error; mean colours within 0.2 of 255, the per-pixel difference 1.0 to 1.8 (the
+  traffic and live flights).
+- In the app in the iOS Simulator (tier 1): ready textures 107 MB (129 in Round 259, 165 before Round 259); perf at the entry
+  view `as=90.0.26`, `an=0`, no stall, textures 151 MB (192, 246), 704 MB in all (744; Mike's tier 1 sessions 787 to 847).

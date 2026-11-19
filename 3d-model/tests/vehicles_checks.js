@@ -22,7 +22,7 @@ const ZREV={on:false},REAL=true,SNOW2_ON=true,wxSurfU={uSnowAcc:{value:0},uWet:{
 const isTouch=TOUCH,NEAR_R=804.67,SCORES={games:[]},SEPTA_STOPS=undefined;
 const inCore=()=>CORE_HW!==null,roadHalfW=()=>CORE_HW===null?4.5:CORE_HW,groundMeshLandY=()=>0,groundMeshY=()=>0,siteY=()=>0;
 const _sp=new V3(),_sq=new THREE.Quaternion(),_ss=new V3(),_sm=new THREE.Matrix4(),_sc=new THREE.Color();
-const flushInst=()=>{},anisoOf=n=>n,freeTexOnUpload=t=>t,artImage=()=>new Promise(()=>{}),artSrc=(a,b)=>a,lampLightPatch=()=>{throw new Error('a vehicle takes vehLampPatch, never lampLightPatch');};
+const flushInst=()=>{},anisoOf=n=>n,freeTexOnUpload=t=>t,artImage=()=>new Promise(()=>{}),artPic=()=>new Promise(()=>{}),picTex=(x)=>x,artSrc=(a,b)=>a,lampLightPatch=()=>{throw new Error('a vehicle takes vehLampPatch, never lampLightPatch');};
 const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4()}},sun={intensity:1.85},sunDir=new V3(0,1,0);
 const renderer={domElement:{height:800}},CORE_EXT={x0:-640,x1:770,z0:-520,z1:850};
 `;

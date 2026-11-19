@@ -177,7 +177,7 @@ class TheListIsArtSrc(unittest.TestCase):
         self.assertEqual(r['keepFull'], [])
         self.assertLessEqual(set(r['keepFull']), kinds)
         self.assertEqual(r['none'], {'carry': r['carry'], 'leave': r['leave'], 'twins': r['twins']})
-        self.assertEqual(r['keepAstc'], ['astc-fronts', 'astc-ground', 'astc-tiles', 'astc-towers'], 'Round 257: the house fronts at 4x4, Mike\'s pick; Round 259 the kinds artPic reads')
+        self.assertEqual(r['keepAstc'], sorted({p.split('/')[1] for p in self.named if p.split('/')[1].startswith('astc-')}), 'Rounds 257 to 260: every twin kind the bake writes rides in the app')
         self.assertEqual(r['fronts']['twins'], r['twins'])
         fronts = {f for f, h in self.pairs if h and kind(f) == 'fronts'}
         self.assertGreater(len(fronts), 16)
@@ -268,22 +268,24 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         cls.rebuilds = strip_comments(cls.rebuilds_raw)
 
     def test_artImage_is_asked_through_artSrc(self):
-        got = calls(self.s, 'artImage')
-        through = [a for a in got if a.startswith('artSrc(')]
+        # Rounds 259 and 260: three loaders take a path, artImage, artPic (an ASTC twin or the picture) and artInto (a
+        # placeholder filled from either); every one is handed an artSrc answer as its first argument, or one of the
+        # accounted names below, which are the same rule one step removed
+        got = [(n, args(a)[0]) for n in ('artImage', 'artPic', 'artInto') for a in calls(self.s, n)]
+        through = [a for _, a in got if a.startswith('artSrc(')]
         for a in through:
             inner = calls(a, 'artSrc')
             self.assertEqual(['artSrc(' + inner[0] + ')'], [a], a)
-        self.assertGreaterEqual(len(through), 40)   # 44 on Nov 10
-        # the rest, each accounted for below: the definition's own parameter; a prefetched blob's URL, then the same artSrc
-        # answer again if the blob did not decode (gloryLoad, sfArtLoad); and three direct loads of files with no half copy
-        direct = Counter(a for a in got if not a.startswith('artSrc('))
-        # Round 259: artPic's two (its parameter, the fallback and the twin's own path, every one an artSrc answer or T.mask: below)
-        pics = calls(self.s, 'artPic')
-        self.assertEqual(Counter(a for a in pics if not a.startswith('artSrc(')), Counter({'src': 1, 'T.mask': 1}), pics)
-        self.assertGreaterEqual(len(through) + sum(1 for a in pics if a.startswith('artSrc(')), 44)
-        self.assertEqual(direct, Counter({'src': 5, 'url || src': 2, 'T.mask': 1, 'GLASS_DATA.rooms.rooms': 1}),
+        self.assertGreaterEqual(len(through), 44)   # 44 on Nov 10
+        # the rest: each definition's own parameter and the two that call artImage(src) on (artPic's fallback twice, artInto's
+        # once); a prefetched blob's URL, then the same artSrc answer again if the blob did not decode (gloryLoad, sfArtLoad);
+        # and the direct loads of files with no half copy (the tiles' and the bases' masks, the glass rooms)
+        direct = Counter((n, a) for n, a in got if not a.startswith('artSrc('))
+        self.assertEqual(direct, Counter({('artImage', 'src'): 7, ('artImage', 'url || src'): 2, ('artPic', 'src'): 1, ('artPic', 'T.mask'): 1,
+                                          ('artInto', 'src'): 1, ('artImage', 'T.mask'): 1, ('artImage', 'GLASS_DATA.rooms.rooms'): 1}),
                          'an art request that does not go through artSrc: if its record has a half copy the app no longer carries the full file')
-        self.assertEqual(calls(self.rebuilds, 'artImage') + calls(self.rebuilds, 'artSrc'), [], 'the rebuilds load art through the page')
+        for n in ('artImage', 'artPic', 'artInto', 'artSrc'):
+            self.assertEqual(calls(self.rebuilds, n), [], 'the rebuilds load art through the page')
 
     def test_every_mention_is_a_call(self):
         # The tests beside this one read CALLS, the text 'artImage(' and 'artSrc('. The review of Round 225 walked round
@@ -336,7 +338,7 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
             if not own_half(a[0], a[1]):
                 passed[tuple(a)] += 1
         # the four that hand on their caller's pair, each caller checked below
-        stadium = '[A.wallsHalf, A.seatsHalf, A.grassHalf, A.clayHalf, A.boardHalf][i]'
+        stadium = '[A.wallsHalf, A.seatsHalf, A.grassHalf, A.clayHalf][i]'   # Round 260: the board apart, artImage(artSrc(A.board, A.boardHalf))
         self.assertEqual(passed, Counter({('full', 'half'): 2, ('f', 'h'): 1, ('full', stadium): 1}),
                          'artSrc handed something other than a record and its own half: the app carries a file by that pairing')
         # gloryLoad(tex, full, half, ...)
@@ -355,9 +357,9 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         ships = region(s, '    const load = (f, h, cb) => artImage(artSrc(f, h)).then((im) => {')
         loads = [args(a) for a in calls(ships, 'load')]
         self.assertEqual([a[:2] for a in loads], [['C.side', 'C.sideHalf'], ['C.end', 'C.endHalf']])
-        # the stadiums' five, the halves in the fulls' order
-        self.assertIn('Promise.all([A.walls, A.seats, A.grass, A.clay, A.board].map((full, i) => artImage(artSrc(full, ' + stadium + ')))).then((ims) => {', s)
-        self.assertEqual([x.strip() + 'Half' for x in 'A.walls, A.seats, A.grass, A.clay, A.board'.split(',')], [x.strip() for x in stadium[1:-4].split(',')])
+        # the stadiums' four as twins or pictures, the halves in the fulls' order, and the board apart (Round 260)
+        self.assertIn("Promise.all([A.walls, A.seats, A.grass, A.clay].map((full, i) => artPic(artSrc(full, [A.wallsHalf, A.seatsHalf, A.grassHalf, A.clayHalf][i]))).concat([artImage(artSrc(A.board, A.boardHalf))])).then((ims) => {", s)   # Round 260
+        self.assertEqual([x.strip() + 'Half' for x in 'A.walls, A.seats, A.grass, A.clay'.split(',')], [x.strip() for x in stadium[1:-4].split(',')])
 
     def test_the_direct_loads_name_files_with_no_half(self):
         s = self.s
@@ -392,7 +394,7 @@ class EveryRequestGoesThroughArtSrc(unittest.TestCase):
         # twin, a path astc_art.json names, which the app does not carry (art-touch.mjs leaves the twins out)
         self.assertEqual(s.count('fetch(src)'), 3)
         self.assertEqual(region(s, '  function artAstc(src, tex) {').count('fetch(src)'), 1)
-        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src', 'tw'])   # tw: artPic's twin (Round 259)
+        self.assertEqual(sorted(args(a)[0] for a in calls(s, 'artAstc')), ['rel', 'src', 'tw', 'tw', 'tw'])   # tw: artPic's twin, twice (Round 259; the measured pictures, Round 260), and artInto's
         self.assertIn("  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));\n", s)
         for a in calls(s, 'gloryBytes'):
             self.assertTrue(a.startswith('artSrc('), a)

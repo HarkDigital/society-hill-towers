@@ -218,7 +218,7 @@ class Remodel(unittest.TestCase):
         self.assertIn('SHT.near.userData.occStandIn = SHT.far;', b)
         self.assertIn('rayTargets.push(SHT.near);', b)
         self.assertIn('addColSeg(', b); self.assertIn('registerPoly(cor);', b)
-        self.assertIn('tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))
+        self.assertIn('freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))
         self.assertIn("const SHT_NEAR_R = isTouch ? 320 : 520, SHT_HYST = 40;", s)
 
     def test_art(self):

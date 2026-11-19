@@ -501,8 +501,10 @@ only with `?astc=1`, `?astc=0` refuses; a touch device with the extension on Web
   (`tests/test_app_art.py`, `tests/test_astc.py`). The house fronts (Round 257: two twins a set, the half picture and mask at
   4x4) and, since Round 259, the tower tiles, the street floors' pictures, the town atlas and the roofs' atlas, through
   `artPic(src)` (a twin keyed by the path the page asks for, `ASTC_ART.twins`, else the picture) and `picTex`. A site that
-  takes a twin never generates its mips, never reads its pixels and sets its own encoding; a site that measures a picture
-  (the ground's `linMean`) needs its means baked before it can take one.
+  takes a twin never generates its mips, never reads its pixels and sets its own encoding. Since Round 260 every other
+  direct loader too (`artInto(src, tex)` fills a placeholder a site holds); a picture the page measures (the ground's six,
+  `linMean`) is listed in `measured`, decoded beside its twin once and measured as it always was (a baked mean moved the
+  lawn 4 to 6%). The bake keeps alpha: the tile masks' `a` places a window in its storey.
 
 ## The Vine Street Expressway's cut (Round 228)
 

@@ -47,12 +47,18 @@ def half(a, srgb):
 
 
 def chain(im, srgb):
-    """The level images as uint8 RGB arrays, the base first, down to 1 by 1."""
-    a = np.asarray(im.convert('RGB'))   # unflipped: ImageIO writes the block rows bottom first, as GL reads them (the first try flipped here too and drew every atlas upside down)
-    f = _lut[a] if srgb else a.astype(np.float64) / 255
+    """The level images as uint8 RGB (or RGBA, Round 260: a picture with alpha keeps it, averaged as coded values) arrays,
+    the base first, down to 1 by 1."""
+    alpha = im.mode in ('RGBA', 'LA') or (im.mode == 'P' and 'transparency' in im.info)
+    a = np.asarray(im.convert('RGBA' if alpha else 'RGB'))   # unflipped: ImageIO writes the block rows bottom first, as GL reads them (the first try flipped here too and drew every atlas upside down)
+    f = a.astype(np.float64) / 255
+    if srgb:
+        f[..., :3] = _lut[a[..., :3]]
     out = []
     while True:
-        lv = to_srgb(f) if srgb else f
+        lv = f.copy()
+        if srgb:
+            lv[..., :3] = to_srgb(f[..., :3])
         out.append(np.clip(np.round(lv * 255), 0, 255).astype(np.uint8))
         if f.shape[0] == 1 and f.shape[1] == 1:
             return out
@@ -71,7 +77,7 @@ def twin(exe, tmp, path, block, srgb, kind, name):
     jobs = []
     for i, lv in enumerate(levels):
         p = os.path.join(tmp, '%s-%d.png' % (name, i))
-        Image.fromarray(lv, 'RGB').save(p)
+        Image.fromarray(lv, 'RGBA' if lv.shape[2] == 4 else 'RGB').save(p)
         jobs.append('%s\t%s\t%s' % (p, p[:-4] + '.astc', block))
     jf = os.path.join(tmp, name + '.tsv')
     open(jf, 'w').write('\n'.join(jobs) + '\n')
@@ -111,6 +117,30 @@ def sources():
     for b in F['bases'].values():
         out.append((b['imgHalf'], True))
     out += [(T['imgHalf'], True), (T['maskHalf'], False), (G['roofsHalf'], True)]
+    # Round 260 (Mike: "Yes, keep going"): the ground's six (`measured`: the page measures them, linMean, from the picture
+    # itself, so the colour stays exactly what it was; a baked true mean moved the lawn's tone 4 to 6 per cent), the parks'
+    # macro, the alleys and the woods by season, the vehicles' atlases and masks, the streets' three a phone draws, and the
+    # landmarks a phone loads on approach. The flag is each texture's own encoding (a venue's pictures and the bridges'
+    # detail are linear), which decides only how the mips are averaged.
+    out += [(G[k], True) for k in ('lawnHalf', 'meadowHalf', 'yardHalf', 'asphaltHalf', 'concreteHalf', 'bricksHalf')]
+    for k in ('parkmacro', 'alley', 'canopy_summer', 'canopy_autumn', 'canopy_winter'):
+        out.append((G['veg'][k]['imgHalf'], True))
+    V = json.load(open(os.path.join(HERE, 'vehicle_art.json')))
+    for r in V.values():
+        if isinstance(r, dict) and r.get('atlasHalf'):
+            out += [(r['atlasHalf'], True), (r['maskHalf'], False)]
+    S = json.load(open(os.path.join(HERE, 'street_art.json')))
+    out += [(S[k], True) for k in ('lanewearHalf', 'concreteHalf', 'lotHalf')]
+    J = lambda m: json.load(open(os.path.join(HERE, m)))
+    C = J('cityhall_art.json')
+    out += [(C['imgHalf'], True), (C['maskHalf'], False)]
+    out += [(J(m)['imgHalf'], True) for m in ('nj_art.json', 'olympia_art.json', 'tavern_art.json', 'indhall_art.json')]
+    out.append((J('sht_art.json')['concrete']['imgHalf'], True))
+    M = J('moshulu_art.json'); out += [(M['hullHalf'], True), (M['deckHalf'], True)]
+    W = J('water_art.json'); out += [(W['pierdeckHalf'], True), (W['foamHalf'], True)]
+    B = J('bridge_art.json'); out += [(B['detailHalf'], False), (B['elevHalf'], True)]
+    L = J('liberty_art.json'); out += [(L[k]['imgHalf'], True) for k in ('base', 'glazing')]
+    D = J('stadium_art.json'); out += [(D[k], False) for k in ('wallsHalf', 'seatsHalf', 'grassHalf', 'clayHalf')]
     seen, uniq = set(), []
     for p, srgb in out:
         if p not in seen:
@@ -121,7 +151,9 @@ def sources():
 
 def main():
     fronts = json.load(open(os.path.join(HERE, 'fronts.json')))
-    out = {'v': 2, 'fronts': {}, 'twins': {}}
+    out = {'v': 2, 'fronts': {}, 'twins': {}, 'measured': []}
+    G = json.load(open(os.path.join(HERE, 'ground_art.json')))
+    measured = {G[k] for k in ('lawnHalf', 'meadowHalf', 'yardHalf', 'asphaltHalf', 'concreteHalf', 'bricksHalf')}
     kind = 'astc-fronts'
     with tempfile.TemporaryDirectory() as tmp:
         exe = encoder(tmp)
@@ -131,6 +163,8 @@ def main():
             name = os.path.basename(path).split('.')[0]
             rel, w, h = twin(exe, tmp, path, '44', srgb, k, name)
             out['twins'][path] = rel
+            if path in measured:   # Round 260: the page measures these (linMean): it decodes the picture once to measure it
+                out['measured'].append(path)
             kinds.add(k)
             print('%-44s %4dx%-4d %8d bytes  %s' % (path, w, h, art_files.size(rel), rel))
         for name, S in fronts['sets'].items():
@@ -141,6 +175,7 @@ def main():
                 print('%-10s %s %4dx%-4d %8d bytes  %s' % (name, key, w, h, art_files.size(rel), rel))
             out['fronts'][name] = rec
     gone = art_files.prune(kind) + sum(art_files.prune(k) for k in sorted(kinds) if k != kind)
+    out['measured'].sort()
     json.dump(out, open(OUT, 'w'), indent=1, sort_keys=True)
     total = sum(art_files.size(p) for r in out['fronts'].values() for p in r.values())
     tw = sum(art_files.size(p) for p in out['twins'].values())

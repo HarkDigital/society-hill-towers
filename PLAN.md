@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 19, 2026, after Round 259 (more of the phone's art as ASTC twins).
+Last updated: Nov 19, 2026, after Round 260 (the rest of the phone's direct art as ASTC twins).
 
 ## The ask
 
@@ -153,6 +153,10 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Round 255** (Stage 4's probe): `ix` and `ax` on every phone's beacons (see Stage 4 below). JavaScript only.
 - **Round 256** (Stage 4): the house fronts as ASTC twins behind `?astc=h4|h8|f8`, phones only, off; Mike's side by side
   sent. See Stage 4 below.
+- **Round 260** (Mike: "Yes, keep going"): every other direct loader as a 4x4 twin (ground, vegetation, vehicles,
+  streets, City Hall, the ships, the stadiums and the other landmarks), the ground measured as before, the tile masks' alpha
+  back (Round 259 had flattened it): 272 to 173 MB of textures in five phone views. Still pictures: the shopfronts, the
+  Comcast strip and glass frames, the trees, signs, snow, land mask and people.
 - **Round 259** (Mike: "Next art kinds"): the tower tiles, street floors, City Hall's neighbours and the roofs' atlas as 4x4
   twins in the app (`artPic`): 255 to 193 MB of textures in three phone views. Next: the ground (means baked first), the
   vehicles, the shopfronts and the landmarks.

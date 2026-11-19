@@ -127,7 +127,7 @@ class Page(unittest.TestCase):
         self.assertIn("return tvMat(gl2, tavernU, TV_SW.length, TV_EL.length, 'tavern');", s)
         self.assertIn('freeShadingOnUpload(geo);', s)
         self.assertIn('groupCity.add(m); rayTargets.push(m);', s)
-        self.assertIn('artImage(artSrc(A.img, A.imgHalf))', s)
+        self.assertIn('artInto(artSrc(A.img, A.imgHalf), mat.map)', s)   # Round 260: or its ASTC twin
         self.assertIn("else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }", s)   # a phone decodes after Enter
         for p in ('glassOpticsPatch(sh,', 'occBind(sh);', "lampLightPatch(sh, 'tvWP', 'wall');", 'wxSurfacePatch(sh);', 'roomLight(tvRuv', 'roomDay(tvRuv'):
             self.assertIn(p, s)

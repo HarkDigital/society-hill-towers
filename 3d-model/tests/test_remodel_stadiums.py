@@ -52,7 +52,7 @@ const THREE = require(THREE_PATH), V3 = THREE.Vector3;
 const STADIUM_ART = MANIFEST;
 const REAL = true, isTouch = false, TIER2 = false, location = { search: '' };
 const nightUniform = { value: 0 }, PERF = { failed: [] };
-const architecturalBloom = (m) => m, anisoOf = (n) => n, freeTexOnUpload = (t) => t, artImage = () => Promise.resolve(null), artSrc = (a) => a;
+const architecturalBloom = (m) => m, anisoOf = (n) => n, freeTexOnUpload = (t) => t, artImage = () => Promise.resolve(null), artPic = () => Promise.resolve(null), picTex = (x) => x, artSrc = (a) => a;
 const ctx2d = new Proxy({}, { get: (_, k) => k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}, set: () => true });
 const document = { createElement: () => ({ getContext: () => ctx2d, width: 0, height: 0 }) };
 const groundMeshY = (x, z) => 3 + 0.002 * (x + 1900) + 0.001 * (z - 4600), siteY = () => 3;

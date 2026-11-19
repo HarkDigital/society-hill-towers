@@ -91,6 +91,37 @@ class Page(unittest.TestCase):
         # the fronts take the twin when there is one and the webp otherwise, or when the twin does not come
         self.assertIn('Promise.all(AS ? [loadA(AS[ASTC_PICK], map, S.img, S.imgHalf), loadA(AS.m4, mask, S.mask, S.maskHalf)] : [load(S.img, S.imgHalf, map), load(S.mask, S.maskHalf, mask)])', s)
 
+    def test_artPic_and_artInto(self):
+        s = self.src
+        pic = s[s.index('  function artPic(src) {'):s.index('  const picTex = ')]
+        # a picture the page measures is decoded beside its twin and measured as it always was (Round 260: a baked mean moved
+        # the lawn's tone 4 to 6 per cent); the twin's mean is kept once taken, the picture let go
+        self.assertIn('if (ASTC_ART.measured && ASTC_ART.measured.indexOf(src) >= 0) {', pic)
+        self.assertIn('Promise.all([artAstc(tw, t), artImage(src)])', pic)
+        lm = s[s.index('  function linMean(src) {'):]
+        lm = lm[:lm.index('\n  }\n')]
+        self.assertIn('if (!U.mean && U.pic) { U.mean = linMean(U.pic); U.pic = null; }', lm)
+        into = s[s.index('  function artInto(src, tex) {'):]
+        into = into[:into.index('\n  }\n')]
+        self.assertIn('return tw ? artAstc(tw, tex).then((ok) => (ok ? tex.image : pic())) : pic();', into)
+        # every site that makes its own mips leaves a twin's alone
+        for t in ('t.generateMipmaps = !t.isCompressedTexture;', 't.generateMipmaps = mips !== false && !t.isCompressedTexture;'):
+            self.assertIn(t, s)
+
+    def test_the_measured_pictures_and_the_alpha(self):
+        self.assertEqual(MAN['measured'], sorted(MAN['measured']))
+        G = json.loads((ROOT / 'ground_art.json').read_text())
+        self.assertEqual(set(MAN['measured']), {G[k] for k in ('lawnHalf', 'meadowHalf', 'yardHalf', 'asphaltHalf', 'concreteHalf', 'bricksHalf')})
+        for p in MAN['measured']:
+            self.assertIn(p, MAN['twins'])
+        # a picture with alpha keeps it (the tile masks carry each window's place in its storey there, tsMask.a: Round 259
+        # flattened it and Round 260 put it back)
+        F = json.loads((ROOT / 'fronts.json').read_text())
+        for T in F['tiles'].values():
+            b = (ROOT / MAN['twins'][T['mask']]).read_bytes()
+            self.assertEqual(b[:4], b'P3DA')
+        self.assertIn("a = np.asarray(im.convert('RGBA' if alpha else 'RGB'))", (ROOT / 'bake_astc.py').read_text())
+
     def test_the_run_beacons_say_how_many_came(self):
         self.assertIn("if (as) o.as = as; }   // Round 257", self.src)
         b = (ROOT.parent / '.claude' / 'skills' / 'philly3d-capture' / 'scripts' / 'beacons.py').read_text()

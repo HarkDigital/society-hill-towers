@@ -3982,14 +3982,14 @@
     uBallast: { value: null }, uBallastM: { value: 1 }, uBallastOn: { value: 0 }, uBallastLen: { value: 7.2 }, uBallastRails: { value: new THREE.Vector2(0.33, 0.65) },
     uLotTex: { value: null }, uLotM: { value: 1 }, uLotOn: { value: 0 } };
   const streetTex = (im, mirror) => {
-    const t = new THREE.Texture(im); t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+    const t = picTex(im);   // Round 260: or its ASTC twin t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
     t.anisotropy = anisoOf(8); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
     return freeTexOnUpload(t);
   };
   function loadStreetArt() {
     if (!REAL || typeof STREET_ART === 'undefined' || !STREET_ART || /[?&]streets=plain\b/.test(location.search)) return;
     const A = STREET_ART, U = streetArtU;
-    const one = (k, fn) => { if (A[k]) artImage(artSrc(A[k], A[k + 'Half'])).then((im) => { if (im) fn(im); }); };
+    const one = (k, fn) => { if (A[k]) artPic(artSrc(A[k], A[k + 'Half'])).then((im) => { if (im) fn(im); }); };
     one('lanewear', (im) => { laneU.uLaneWear.value = streetTex(im, false); laneU.uLaneWearM.value = A.lanewearMean || 0.17; laneU.uLaneWearLen.value = A.lanewearM || 14; laneU.uLaneWearOn.value = 1; });
     one('concrete', (im) => { U.uConcWall.value = streetTex(im, true); U.uConcWallM.value = A.concreteMean || 0.3; U.uConcWallOn.value = 1; });
     if (!isTouch) one('steel', (im) => { U.uElSteel.value = streetTex(im, true); U.uElSteelM.value = A.steelMean || 0.09; U.uElSteelOn.value = 1; });
@@ -7821,12 +7821,13 @@
     if (BR.art !== 'none' || !BR_ART_ON || !BR.u) return;
     BR.art = 'loading';
     const A = BRIDGE_ART;
-    Promise.all([artImage(artSrc(A.detail, A.detailHalf)), artImage(artSrc(A.elev, A.elevHalf))]).then(([det, el]) => {
+    Promise.all([artPic(artSrc(A.detail, A.detailHalf)), artPic(artSrc(A.elev, A.elevHalf))]).then(([det, el]) => {   // Round 260: or their ASTC twins
       if (!det || !el) { BR.art = 'failed'; return; }
-      const td = new THREE.Texture(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);
-      const te = new THREE.Texture(el); te.encoding = THREE.sRGBEncoding; te.anisotropy = anisoOf(8); te.needsUpdate = true; freeTexOnUpload(te);
+      const td = picTex(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);
+      const te = picTex(el); te.encoding = THREE.sRGBEncoding; te.anisotropy = anisoOf(8); te.needsUpdate = true; freeTexOnUpload(te);
       BR.u.tBrDet.value = td; BR.u.tBrElev.value = te;
-      BR.bytes = (det.width * det.height + el.width * el.height) * 4 * 4 / 3;
+      const px = (x) => (x.isTexture ? x.image : x);
+      BR.bytes = (px(det).width * px(det).height + px(el).width * px(el).height) * 4 * 4 / 3;
       BR.artOn.value = 1; BR.art = 'ready';
     });
   }
@@ -10756,14 +10757,14 @@ vec2 wRing(vec2 rc, float tt) {
   function waterArtLoad() {
     if (!REAL || !WATER_ART_M || waterArtLoad.started) return;
     waterArtLoad.started = true;
-    const mk = (im) => { const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = isTouch ? 4 : 8; t.needsUpdate = true; return t; };
-    artImage(artSrc(WATER_ART_M.pierdeck, WATER_ART_M.pierdeckHalf)).then((im) => {
+    const mk = (im) => { const t = picTex(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.anisotropy = isTouch ? 4 : 8; t.needsUpdate = true; return t; };   // Round 260: or its ASTC twin
+    artPic(artSrc(WATER_ART_M.pierdeck, WATER_ART_M.pierdeckHalf)).then((im) => {
       if (!im) return;
       waterArtU.tDeck.value = mk(im); waterArtU.uDeckOn.value = 1;
       const mn = WATER_ART_M.mean && WATER_ART_M.mean.pierdeck; if (mn) waterArtU.uDeckMean.value.set(mn[0], mn[1], mn[2]);
       waterArtU.uDeckM.value = Math.max(4, (WATER_ART_M.m && WATER_ART_M.m.pierdeck || 4.3) * 1.4);   // slabs of 3 m, a pier's, not a sidewalk's
     });
-    artImage(artSrc(WATER_ART_M.foam, WATER_ART_M.foamHalf)).then((im) => {
+    artPic(artSrc(WATER_ART_M.foam, WATER_ART_M.foamHalf)).then((im) => {
       if (!im) return;
       waterArtU.tFoam.value = mk(im); waterArtU.uFoamOn.value = 1; waterArtU.uFoamM.value = (WATER_ART_M.m && WATER_ART_M.m.foam) || 6;
     });
@@ -14155,9 +14156,9 @@ vec2 wRing(vec2 rc, float tt) {
     if (LIB.asked[k]) return;
     LIB.asked[k] = true;
     const A = LIBERTY_ART[k];
-    artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+    artPic(artSrc(A.img, A.imgHalf)).then((im) => {   // Round 260: or its ASTC twin
       if (!im) return;
-      const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8); t.needsUpdate = true;
+      const t = picTex(im); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8); t.needsUpdate = true;
       if (k === 'glazing') { t.wrapS = t.wrapT = THREE.RepeatWrapping; freeTexOnUpload(t); LIB.frameMat.map = t; LIB.glzTex.dispose(); LIB.glzTex = t; }
       else { t.premultiplyAlpha = false; freeTexOnUpload(t); LIB.baseMat.map = t; LIB.baseTex.dispose(); LIB.baseTex = t; }
       LIB.ready[k] = true; LIB.loaded++;
@@ -16776,7 +16777,19 @@ vec2 wRing(vec2 rc, float tt) {
     const tw = src && astcOn() && ASTC_ART.twins ? ASTC_ART.twins[src] : '';
     if (!tw) return artImage(src);
     const t = new THREE.Texture();
+    // Round 260: a picture the page measures (linMean: the lawn, the meadow, the yard, the streets' three) is decoded once
+    // beside its twin and measured as it always was, then let go; a mean baked in place of that moved the lawn 4 to 6%
+    if (ASTC_ART.measured && ASTC_ART.measured.indexOf(src) >= 0) {
+      return Promise.all([artAstc(tw, t), artImage(src)]).then(([ok, im]) => { if (!ok) return im; if (im) t.userData.pic = im; return t; });
+    }
     return artAstc(tw, t).then((ok) => (ok ? t : artImage(src)));
+  }
+  // Round 260: a placeholder Texture a site already holds (in its material or a uniform), filled from the twin in place or
+  // given the decoded picture; answers what the site may read a size from (the twin's image or the picture), or null
+  function artInto(src, tex) {
+    const tw = src && astcOn() && ASTC_ART.twins ? ASTC_ART.twins[src] : '';
+    const pic = () => artImage(src).then((im) => { if (im) { tex.image = im; tex.needsUpdate = true; } return im; });
+    return tw ? artAstc(tw, tex).then((ok) => (ok ? tex.image : pic())) : pic();
   }
   const picTex = (x) => (x && x.isTexture ? x : new THREE.Texture(x));
   // (a site that reads a picture's width reads it from the twin's image: (x.isTexture ? x.image : x).width)
@@ -19249,11 +19262,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     if (CH.art !== 'none') return;
     CH.art = 'loading';
     const A = CITYHALL_ART;
-    Promise.all([artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))]).then(([im, mk]) => {
+    Promise.all([artInto(artSrc(A.img, A.imgHalf), CH.map), artInto(artSrc(A.mask, A.maskHalf), CH.mask)]).then(([im, mk]) => {   // Round 260: or their ASTC twins
       if (!im || !mk) { CH.art = 'failed'; return; }
-      CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);
-      CH.mask.image = mk; CH.mask.needsUpdate = true; freeTexOnUpload(CH.mask);
-      CH.bytes = im.width * im.height * 4 * 4 / 3 + mk.width * mk.height * 4 * 4 / 3;
+      freeTexOnUpload(CH.map); freeTexOnUpload(CH.mask);
+      CH.bytes = im.width * im.height * (CH.map.isCompressedTexture ? 1 : 4) * 4 / 3 + mk.width * mk.height * (CH.mask.isCompressedTexture ? 1 : 4) * 4 / 3;
       CH.artOn.value = 1; CH.art = 'ready';
     });
   }
@@ -21545,11 +21557,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     groupCity.add(m); rayTargets.push(m);
     TAVERN.mesh = m; TAVERN.verts = geo.attributes.position.count; TAVERN.tris = TAVERN.verts / 3;
     m.userData.tavern = { state: TAVERN, u: tavernU };   // the probe's way in (__dbg.scene)
-    const go = () => artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+    const go = () => { mat.map.dispose(); return artInto(artSrc(A.img, A.imgHalf), mat.map).then((im) => {   // Round 260: or its ASTC twin
       if (!im) { TAVERN.err = 'atlas did not load'; return; }   // the faces keep their means
-      const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);
+      freeTexOnUpload(mat.map);
       U.uTvArt.value = 1; TAVERN.art = 1;
-    });
+    }); };
     if (!isTouch) go();
     else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
   }
@@ -22383,11 +22395,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     groupCity.add(m); rayTargets.push(m);
     IH.mesh = m; IH.verts = geo.attributes.position.count; IH.tris = IH.verts / 3;
     m.userData.indhall = { state: IH, u: ihU };
-    const go = () => artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+    const go = () => { mat.map.dispose(); return artInto(artSrc(A.img, A.imgHalf), mat.map).then((im) => {   // Round 260: or its ASTC twin
       if (!im) { IH.err = 'atlas did not load'; return; }   // the faces keep their means
-      const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);
+      freeTexOnUpload(mat.map);
       U.uTvArt.value = 1; IH.art = 1;
-    });
+    }); };
     if (!isTouch) go();
     else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
   }
@@ -23524,10 +23536,10 @@ if (uNjLamp > 0.001) {
   function njLoadArt() {
     if (NJ.art !== 'none' || !NJ_ART_ON) return;
     NJ.art = 'loading';
-    artImage(artSrc(NJ_ART.img, NJ_ART.imgHalf)).then((im) => {
+    artInto(artSrc(NJ_ART.img, NJ_ART.imgHalf), NJ.map).then((im) => {   // Round 260: or its ASTC twin
       if (!im) { NJ.art = 'failed'; return; }
-      NJ.map.image = im; NJ.map.needsUpdate = true; freeTexOnUpload(NJ.map);
-      NJ.bytes = im.width * im.height * 4 * 4 / 3;
+      freeTexOnUpload(NJ.map);
+      NJ.bytes = im.width * im.height * (NJ.map.isCompressedTexture ? 1 : 4) * 4 / 3;
       NJ.artOn.value = 1; NJ.art = 'ready';
     });
   }
@@ -24720,8 +24732,8 @@ if (uNjLamp > 0.001) {
   // the art, when the eye first comes within reach of her (a phone's halves; the relief a computer's alone)
   function moshuluArt() {
     if (typeof MOSHULU_ART === 'undefined' || !MOSHULU_ART) return;
-    const A = MOSHULU_ART, mk = (im) => { const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = anisoOf(8); t.needsUpdate = true; return freeTexOnUpload(t); };
-    Promise.all([artImage(artSrc(A.hull, A.hullHalf)), artImage(artSrc(A.deck, A.deckHalf))]).then(([h, d]) => {
+    const A = MOSHULU_ART, mk = (im) => { const t = picTex(im); t.encoding = THREE.sRGBEncoding; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = anisoOf(8); t.needsUpdate = true; return freeTexOnUpload(t); };
+    Promise.all([artPic(artSrc(A.hull, A.hullHalf)), artPic(artSrc(A.deck, A.deckHalf))]).then(([h, d]) => {   // Round 260: or their ASTC twins
       if (!h || !d) return;
       moU.uMoHull.value = mk(h); moU.uMoDeck.value = mk(d);
       moU.uMoHullMean.value.set(A.mean.hull[0], A.mean.hull[1], A.mean.hull[2]); moU.uMoDeckMean.value.set(A.mean.deck[0], A.mean.deck[1], A.mean.deck[2]);
@@ -25171,10 +25183,10 @@ if (uOlLamp > 0.001) {
   function olLoadArt() {
     if (OL.art !== 'none' || !OL_ART_ON) return;
     OL.art = 'loading';
-    artImage(artSrc(OLYMPIA_ART.img, OLYMPIA_ART.imgHalf)).then((im) => {
+    artInto(artSrc(OLYMPIA_ART.img, OLYMPIA_ART.imgHalf), OL.map).then((im) => {   // Round 260: or its ASTC twin
       if (!im) { OL.art = 'failed'; return; }
-      OL.map.image = im; OL.map.needsUpdate = true; freeTexOnUpload(OL.map);
-      OL.bytes = im.width * im.height * 4 * 4 / 3;
+      freeTexOnUpload(OL.map);
+      OL.bytes = im.width * im.height * (OL.map.isCompressedTexture ? 1 : 4) * 4 / 3;
       OL.artOn.value = 1; OL.art = 'ready';
     });
   }
@@ -25913,9 +25925,9 @@ if (uOlLamp > 0.001) {
     SHT.art = 'loading';
     const tex = new THREE.Texture();
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.encoding = THREE.sRGBEncoding; tex.anisotropy = anisoOf(8);
-    artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+    artInto(artSrc(A.img, A.imgHalf), tex).then((im) => {   // Round 260: or its ASTC twin
       if (!im) { SHT.art = 'failed'; return; }
-      tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);
+      freeTexOnUpload(tex);
       shtU.uShtTex.value = tex; shtU.uShtTexMean.value.fromArray(A.mean); shtU.uShtC.value.w = A.tileM || 4; shtU.uShtTexOn.value = 1;
       SHT.bytes = im.width * im.height * 4 * 4 / 3; SHT.art = 'ready';
     });
@@ -27033,7 +27045,7 @@ if (uOlLamp > 0.001) {
     return freeTexOnUpload(t);
   }
   function venArtTex(im, repeat) {
-    const t = new THREE.Texture(im);
+    const t = picTex(im);   // Round 260: or its ASTC twin
     t.wrapS = THREE.RepeatWrapping; t.wrapT = repeat ? THREE.RepeatWrapping : THREE.ClampToEdgeWrapping;
     t.anisotropy = anisoOf(isTouch ? 2 : 8);
     t.needsUpdate = true;
@@ -27045,14 +27057,14 @@ if (uOlLamp > 0.001) {
     if (VEN.art !== 'none' || !VEN_ART) return;
     VEN.art = 'loading';
     const A = VEN_ART;
-    Promise.all([A.walls, A.seats, A.grass, A.clay, A.board].map((full, i) => artImage(artSrc(full, [A.wallsHalf, A.seatsHalf, A.grassHalf, A.clayHalf, A.boardHalf][i])))).then((ims) => {
+    Promise.all([A.walls, A.seats, A.grass, A.clay].map((full, i) => artPic(artSrc(full, [A.wallsHalf, A.seatsHalf, A.grassHalf, A.clayHalf][i]))).concat([artImage(artSrc(A.board, A.boardHalf))])).then((ims) => {   // Round 260: the four as ASTC twins; the board is drawn into the screens' canvas
       if (ims.slice(0, 4).some((im) => !im)) { VEN.art = 'failed'; return; }
       venU.uVenWall.value = venArtTex(ims[0], false);
       venU.uVenSeat.value = venArtTex(ims[1], true);
       venU.uVenGrass.value = venArtTex(ims[2], true);
       venU.uVenClay.value = venArtTex(ims[3], true);
       if (ims[4]) { const old = venU.uVenScreen.value; venU.uVenScreen.value = venScreenTex(ims[4]); if (old) old.dispose(); }
-      VEN.bytes = Math.round(ims.reduce((n, im) => n + (im ? im.width * im.height * 4 * 4 / 3 : 0), 0));
+      VEN.bytes = Math.round(ims.reduce((n, im) => n + (im ? (im.isTexture ? im.image : im).width * (im.isTexture ? im.image : im).height * 4 * 4 / 3 : 0), 0));
       venU.uVenArt.value = 1; VEN.art = 'ready';
     });
   }
@@ -45124,15 +45136,15 @@ float pinOccGate() {
     const d = VART && VART[name];
     s = vartSets[name] = { d, ph: vartPh([255, 255, 255, 255], true), mask: { value: vartPh(name === 'cars' ? [255, 0, 0, 255] : [0, 0, 0, 255]) }, mats: [], ready: false };
     if (!d || !d.atlas) return s;
-    artImage(artSrc(d.atlas, d.atlasHalf)).then((im) => {
+    artPic(artSrc(d.atlas, d.atlasHalf)).then((im) => {
       if (!im) return;
-      const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = anisoOf(8); t.needsUpdate = true;
+      const t = picTex(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter; t.anisotropy = anisoOf(8); t.needsUpdate = true;
       freeTexOnUpload(t);
       s.tex = t; for (const m of s.mats) m.map = t; s.ready = true;
     });
-    artImage(artSrc(d.mask, d.maskHalf)).then((im) => {
+    artPic(artSrc(d.mask, d.maskHalf)).then((im) => {
       if (!im) return;
-      const t = new THREE.Texture(im); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true; freeTexOnUpload(t);
+      const t = picTex(im); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true; freeTexOnUpload(t);
       s.mask.value = t;
     });
     return s;
@@ -53380,6 +53392,11 @@ float pinOccGate() {
   // they take the painted tile's place, each toned to the painted tile's mean (its brightness matched, its colour pulled
   // halfway to the olive) so the scene's calibrated balance holds, and the verge comes through the lawn on an 83 m noise
   function linMean(src) {
+    if (src && src.isTexture) {   // Round 260: an ASTC twin, measured from its picture once (artPic), the answer kept
+      const U = src.userData;
+      if (!U.mean && U.pic) { U.mean = linMean(U.pic); U.pic = null; }
+      return (U.mean || [0.2, 0.2, 0.2]).slice();
+    }
     const c = document.createElement('canvas'); c.width = c.height = 32;
     const x = c.getContext('2d'); x.drawImage(src, 0, 0, 32, 32);
     const d = x.getImageData(0, 0, 32, 32).data, lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
@@ -53394,13 +53411,13 @@ float pinOccGate() {
     const P = linMean(painted), LP = 0.30 * P[0] + 0.59 * P[1] + 0.11 * P[2];
     vegU.LP = LP;
     // Round 184: files, and a phone's half (512) from the bake
-    Promise.all([artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf)), artImage(artSrc(GROUND_ART.meadow, GROUND_ART.meadowHalf))]).then(([a, b]) => {
+    Promise.all([artPic(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf)), artPic(artSrc(GROUND_ART.meadow, GROUND_ART.meadowHalf))]).then(([a, b]) => {
       if (!a || !b) return;
       const tex = (im) => {
         let pic = im;
-        if (isTouch && im.width > 512) { const cv = document.createElement('canvas'); cv.width = cv.height = 512; cv.getContext('2d').drawImage(im, 0, 0, 512, 512); pic = cv; }
-        const t = new THREE.Texture(pic); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
-        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+        if (isTouch && !im.isTexture && im.width > 512) { const cv = document.createElement('canvas'); cv.width = cv.height = 512; cv.getContext('2d').drawImage(im, 0, 0, 512, 512); pic = cv; }
+        const t = picTex(pic); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;   // Round 260: or its twin (512 already)
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.generateMipmaps = !t.isCompressedTexture; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
         return t;
       };
       const tone = (im, out) => {
@@ -53429,10 +53446,10 @@ float pinOccGate() {
       });
     }
     if (GROUND_ART.yard && REAL) {
-      artImage(artSrc(GROUND_ART.yard, GROUND_ART.yardHalf)).then((im) => {
+      artPic(artSrc(GROUND_ART.yard, GROUND_ART.yardHalf)).then((im) => {
         if (!im) return;
         const M = linMean(im), LM = 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2];
-        const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
+        const t = picTex(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
         // the realism pass: a concrete yard reads lighter than the grass beside it, not toned down to it
         texU.uYard.value = t; texU.uYardTone.value = Math.min(2.5, (VEG_ART ? 1.4 : 1) * LP / Math.max(1e-4, LM)); texU.uYardOn.value = 1;
@@ -53440,12 +53457,12 @@ float pinOccGate() {
     }
     // Round 184: the streets' three, apart from the lawn so neither waits on the other
     if (!GROUND_ART.asphalt || /[?&]streets=plain\b/.test(location.search)) return;
-    Promise.all(['asphalt', 'concrete', 'bricks'].map((k) => artImage(artSrc(GROUND_ART[k], GROUND_ART[k + 'Half'])))).then((ims) => {
+    Promise.all(['asphalt', 'concrete', 'bricks'].map((k) => artPic(artSrc(GROUND_ART[k], GROUND_ART[k + 'Half'])))).then((ims) => {
       if (ims.some((im) => !im)) return;
       const lumOf = (M) => 0.2126 * M[0] + 0.7152 * M[1] + 0.0722 * M[2];
       const M = ims.map(linMean);
       const tex = (im) => {
-        const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+        const t = picTex(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
         return freeTexOnUpload(t);
       };
@@ -53810,20 +53827,20 @@ float pinOccGate() {
   // ---- the realism pass: the ground's own textures and maps (see vegU). A texture comes up once and its source goes on a
   // phone (freeTexOnUpload); the woods' canopy is the model date's season's, swapped as the date crosses a change
   function vegTex(im, srgb, mips) {
-    const t = new THREE.Texture(im);
+    const t = picTex(im);   // Round 260: or its ASTC twin, which brings its own mips
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
     if (srgb) t.encoding = THREE.sRGBEncoding;
-    t.generateMipmaps = mips !== false; t.minFilter = mips !== false ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+    t.generateMipmaps = mips !== false && !t.isCompressedTexture; t.minFilter = mips !== false ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
     t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true;
     return freeTexOnUpload(t);
   }
   const vegMean = (m) => new THREE.Vector3(m[0], m[1], m[2]);
   function loadVegArt() {
-    if (VEG_ART && VEG_ART.parkmacro && !TIER2) artImage(artSrc(VEG_ART.parkmacro.img, VEG_ART.parkmacro.imgHalf)).then((im) => {
+    if (VEG_ART && VEG_ART.parkmacro && !TIER2) artPic(artSrc(VEG_ART.parkmacro.img, VEG_ART.parkmacro.imgHalf)).then((im) => {
       if (!im) return;
       vegU.uMacro.value = vegTex(im, true); vegU.uMacroMean.value = vegMean(VEG_ART.parkmacro.mean); vegU.uMacroOn.value = 1;
     });
-    if (VEG_ART && VEG_ART.alley && !TIER2) artImage(artSrc(VEG_ART.alley.img, VEG_ART.alley.imgHalf)).then((im) => {
+    if (VEG_ART && VEG_ART.alley && !TIER2) artPic(artSrc(VEG_ART.alley.img, VEG_ART.alley.imgHalf)).then((im) => {
       if (!im) return;
       // toned as the yards are: to the painted lawn's brightness, then lighter by as much (concrete is paler than grass)
       const M = VEG_ART.alley.mean;
@@ -53904,7 +53921,7 @@ float pinOccGate() {
     const want = canopySeasonOf(doy), rec = VEG_ART['canopy_' + want];
     if (!rec || vegU.season === want) return;
     vegU.season = want;
-    artImage(artSrc(rec.img, rec.imgHalf)).then((im) => {
+    artPic(artSrc(rec.img, rec.imgHalf)).then((im) => {
       if (!im) { if (vegU.season === want) vegU.season = ''; return; }   // not to be had now: the next pass asks again
       if (vegU.season !== want) return;
       const old = vegU.uCanopy.value;
@@ -57311,7 +57328,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { astc: () => ({ pick: ASTC_PICK, on: astcOn(), ...ASTC, ms: Math.round(ASTC.ms), sets: FRONTS.set ? Object.keys(FRONTS.set).filter((k) => FRONTS.set[k] && FRONTS.set[k].ready).length : 0, mapCompressed: Object.values(FRONTS.set || {}).filter((r) => r && r.map && r.map.isCompressedTexture).length }), probe4: () => ({ on: PROBE4_ON, ix: PROBE4.ix, ax: PROBE4.ax, db: !!PROBE4.db }), astcProbe, ixWrite, ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { astc: () => ({ pick: ASTC_PICK, on: astcOn(), ...ASTC, ms: Math.round(ASTC.ms), tones: { grass: texU.uGrassTone.value.toArray().map((v) => +v.toFixed(4)), grass2: texU.uGrassTone2.value.toArray().map((v) => +v.toFixed(4)), grassK: +texU.uGrassK.value.toFixed(3), yard: +texU.uYardTone.value.toFixed(4), stM: texU.uStM.value.toArray().map((v) => +v.toFixed(4)), stBrick: texU.uStBrick.value.toArray().map((v) => +v.toFixed(4)), lawnLin: (vegU.lawnLin || []).map((v) => +v.toFixed(4)) }, sets: FRONTS.set ? Object.keys(FRONTS.set).filter((k) => FRONTS.set[k] && FRONTS.set[k].ready).length : 0, mapCompressed: Object.values(FRONTS.set || {}).filter((r) => r && r.map && r.map.isCompressedTexture).length }), probe4: () => ({ on: PROBE4_ON, ix: PROBE4.ix, ax: PROBE4.ax, db: !!PROBE4.db }), astcProbe, ixWrite, ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
