@@ -33078,8 +33078,9 @@ if (uOlLamp > 0.001) {
   // again with clear glass onto a lit lobby (lobby1, lobby2, office1, office2) in place of the black ones
   // (street_floor_art.json, bake_street_floors.py). Clean is the default since Mike's "turn it on by default" (Nov 12,
   // Round 244): data only, the program's text as it was. Lit changes that text, so it waits behind its flag for the
-  // shader train; ?streetfloor=old keeps the speckled masks
-  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\b/.exec(location.search) || [])[1] || 'clean';
+  // shader train; ?streetfloor=old keeps the speckled masks. Round 265 (Mike, Nov 19: everything he was asked to review goes
+  // live in the app): lit is the default, ?streetfloor=clean the Round 244 floors
+  const STREET_FLOOR = (/[?&]streetfloor=(clean|lit|old)\b/.exec(location.search) || [])[1] || 'lit';
   function streetFloorBases(B) {
     const A = typeof STREET_FLOOR_ART !== 'undefined' && STREET_FLOOR_ART ? STREET_FLOOR_ART : null;
     if (!A || STREET_FLOOR === 'old') return B;
@@ -47754,7 +47755,7 @@ float pinOccGate() {
   // as a unit vector on the ground, figure index, step phase 0 to 1, fade 0 to 1) for the walkers within R of the eye and
   // returns how many; nothing when the eye is PEOPLE.eyeMax over the ground. It allocates nothing, keys nothing by a
   // string, and traces at most PEOPLE.traceMs of new faces a call. __dbg.people() reports, __dbg.people(false) stops it.
-  const PEOPLE_ON = /[?&]people=(?:1|sharp)\b/.test(location.search) && !TIER2;   // sharp: Round 227's twice-size atlas for a computer; since Round 242 the same as 1 (PEOPLE_SHARP)
+  const PEOPLE_ON = !/[?&]people=0\b/.test(location.search) && !TIER2;   // Round 265 (Mike, Nov 19: "Incorporate walkers"): on by default, ?people=0 refuses; ?people=1 and sharp (Round 227's twice-size atlas, since Round 242 the same) still read as on
   if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;   // nothing reads the walls: let the text go
   const PEOPLE_T0 = Date.UTC(2026, 0, 1);   // t counts real seconds from here, so the same instant gives the same street on any device
   const PEOPLE = { live: PEOPLE_ON, ready: false, r: isTouch ? 80 : 150, cap: isTouch ? 150 : 600, stride: 8, figures: 120,   // a walker's figure id, taken modulo the drawn wardrobe's count (120: every count up to 6, and 8, 10 and 12, evenly)

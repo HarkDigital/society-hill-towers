@@ -183,7 +183,7 @@ console.log(JSON.stringify(o));
 OFF = r'''
 const sum = (A) => { let s = 0, links = 0; for (const r of A.runs) { for (let j = 0; j < r.xs.length; j++) s += r.xs[j] * 3 + r.zs[j] * 5 + r.ys[j] * 7 + r.cum[j]; s += r.len + r.cls + r.mx + r.mz; links += r.conn[0].length + r.conn[1].length; } return [A.runs.length, s, links]; };
 const o = {};
-for (const [name, opt] of [['off', { search: '' }], ['other', { search: '?people=10&dev=1' }], ['tier2', { tier2: true }], ['on', { search: '?dev=1&people=1' }]]) {
+for (const [name, opt] of [['off', { search: '?people=0' }], ['other', { search: '?dev=1&people=0' }], ['tier2', { tier2: true }], ['on', { search: '?dev=1&people=1' }]]) {
   const A = make(opt); const text0 = A.walkB64() !== null; A.boot();
   const out = new Float32Array(4800), n = A.peopleFill(out, -1603, 2, -802), P = A.PEOPLE;
   o[name] = { on: A.PEOPLE_ON, live: P.live, ready: P.ready, textKept: text0, keys: Object.keys(A.runs[0]).join(), sum: sum(A), n, arrays: Object.keys(P).filter((k) => ArrayBuffer.isView(P[k])).join(), trails: P.trails.length, ways: P.ways, viewCalls: A.VIEW.calls, scratch: !!(A.next() || A.piece()), dbg: A.peopleDbg() };
@@ -217,8 +217,8 @@ class Text(unittest.TestCase):
         self.assertLess(s.index('  function updateParked(now) {'), s.index(BANNER))
         self.assertEqual(s[s.index(END):].split('\n', 2)[1], '  function trafficPrepareGraph(runs) {')
 
-    def test_off_by_default_and_never_on_tier_two(self):
-        self.assertIn("const PEOPLE_ON = /[?&]people=(?:1|sharp)\\b/.test(location.search) && !TIER2;", self.sec)
+    def test_on_by_default_refused_by_people_0_and_never_on_tier_two(self):   # Round 265: on by default
+        self.assertIn("const PEOPLE_ON = !/[?&]people=0\\b/.test(location.search) && !TIER2;", self.sec)
         self.assertIn("if (!PEOPLE_ON || !P.live) return 0;", self.sec)
         self.assertIn("if (!PEOPLE_ON && typeof PEOPLE_WALK_B64 !== 'undefined') PEOPLE_WALK_B64 = null;", self.sec)
 

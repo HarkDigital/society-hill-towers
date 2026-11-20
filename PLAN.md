@@ -50,8 +50,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 - **Two ledgers.** Every item carries its measured frame milliseconds (Mac and iPhone) and phone megabytes before it is
   on by default. The ASTC saving is spent once, on memory or on sharpness, as Mike picks.
 - **One vertex layout.** The roofs' new bits (Stage 2) and the walls' records (Stage 4) are laid out together.
-- **Every look change** ships behind a flag and goes to Mike as a private side by side (the entry orbit included, see
-  the capture skill's `references/poses.md`). Nothing is on by default until he says.
+- **Every look change** ships on by default, live on the site and in the app, with a flag that keeps the old look; Mike
+  reviews it in the app and says what to change (Nov 19, Round 265: "Stop making things live at another URL"). No
+  side-by-side pages, bench pages or review links.
 - **How a round is built** (this worked for Rounds 225 to 231): a git worktree outside Dropbox per item, an implementer,
   an adversarial reviewer, a fix, a second reviewer; then the lead merges, builds, runs the whole suite, compares
   captures against main himself (`render.mjs --png` and a pixel compare, traffic off; twice on Nov 10 this caught what
@@ -160,8 +161,13 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   three scripted flights, phone and computer; nothing deep behind a building shown; edge pins drawn smaller.
 - **Round 264** (Mike: "Start the walls"): the benchmark the plan asks for first, at philly3d.com/bench/walls.html. On the
   Mac the proposal's instanced 40-byte records fail (up to 69% slower in the depth pass); an indexed pull from a float
-  texture with no vertex stream passes (60 B a wall against 140, the same picture, faster lit, level in depth). Waiting on
-  Mike's run on the iPhone.
+  texture with no vertex stream passes (60 B a wall against 140, the same picture, faster lit, level in depth). Mike will
+  not run a separate page (Nov 19): the indexed pull is built straight into the app, phone first, with `?walls=quads`
+  keeping today's walls, and judged on the phone's own beacons.
+- **Round 265** (Mike, Nov 19: "Stop making things live at another URL. Make them live on the app and I will tell you
+  what to change. Incorporate walkers and all other changes you keep asking me for review on"): the walking people on
+  by default (`?people=0` off, still refused at tier 2) and the lit lobbies on the street floors (`?streetfloor=clean`
+  Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
 - **Round 261** (Mike: "The shopfronts"): the shopfronts' atlas and mask as 4x4 twins (14 MB to 3.5); Round 260's street
   textures mended on every device (a comment had swallowed their wrap and encoding). Still pictures: the Comcast strip and glass
   frames (array textures), the trees, signs, snow, land mask and people.
@@ -303,7 +309,7 @@ GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then mem
 
 ## The people (Rounds 227, 237, 242): where it stands and what is next
 
-Shipped, behind `?people=1` (`?people=sharp` is the same since Round 242), off by default, refused at tier 2:
+Shipped, on by default since Round 265 (Mike, Nov 19: "Incorporate walkers"), `?people=0` off, refused at tier 2:
 - Walkers are slots on their own block graph, placed by `people_walk.b64` (the centreline-to-wall distance per way
   side), about 83% of ordinary-street kerb length walkable; a card, the figure's own sun shadow and a contact blob; two
   new programs made only under the flag.
@@ -347,12 +353,12 @@ are invented; a layer switch; the wardrobe hand-overs (50 and 70 F today).
 
 ## What is waiting on Mike
 
-1. The people: his look at Round 242's thirty, then the list of decisions above.
+1. The people (on by default since Round 265): what to change, from the app.
 2. Three minutes of flying the site on his Mac, then once with `?dpr=1` (Stage 6 cannot be planned without it).
 3. May the beacon name the graphics chip on website computers (one sentence in the privacy policy)?
 4. The veil: a computer's veil shows the city rising since Round 234 (his pick). Still his: may it name the compile wait,
    may the bar stand for time, and should it be drawn from the first view's camera so the view does not jump at Ready?
-5. The side-by-side pages when they exist: roofs and the light by day; the night; the museum's wash.
+5. Any look shipped on by default since Round 265: what to change, from the app.
 6. May the model stage dated scenes (a game crowd, the holiday tree, fireworks)?
 7. Other people's weak GPUs: does "never resolution" bind strangers' machines? It holds one measured 4K Windows laptop
    at 20 fps.

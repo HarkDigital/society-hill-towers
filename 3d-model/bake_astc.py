@@ -143,6 +143,9 @@ def sources():
     D = J('stadium_art.json'); out += [(D[k], False) for k in ('wallsHalf', 'seatsHalf', 'grassHalf', 'clayHalf')]
     # Round 261 (Mike: "The shopfronts"): the shopfronts' atlas and mask (the names are a texture of the page's own)
     F2 = J('storefront_art.json'); out += [(F2['imgHalf'], True), (F2['maskHalf'], False)]
+    # Round 265 (lit street floors on by default): the four lobbies made again with clear glass, which streetFloorBases lays
+    # over the bases' pictures
+    out += [(r['imgHalf'], True) for r in J('street_floor_art.json')['lit'].values()]
     seen, uniq = set(), []
     for p, srgb in out:
         if p not in seen:

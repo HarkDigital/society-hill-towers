@@ -15092,3 +15092,23 @@ one-pixel readback, alternating blocks, and posts the medians to the beacon log 
   style): 57.3 MB (60 B a wall against 140), 62 draws, the picture identical to today's (0.00 levels), 22 to 28% faster
   lit and -3 to +4% in depth on the Mac. Within 5%: the way to build, if the iPhone agrees.
 Waiting on Mike's run on the iPhone (Safari, the page above, Run); the beacon log brings the numbers back.
+
+## Round 265 — the walkers and the lit lobbies on by default, and no more review pages (Nov 19)
+
+Mike: "Stop making things live at another URL. Make them live on the app and I will tell you what to change. Incorporate
+walkers and all other changes you keep asking me for review on." The rule the plan ran by since Nov 10 (every look behind a
+flag until his pick on a side-by-side page) is replaced: a look ships ON by default, on the site and in the TestFlight app,
+with a hatch that keeps the old one, and he says what to change from the app (CLAUDE.md, PLAN.md). What was still waiting
+on his review:
+- The walking people (Rounds 227, 237, 242): `PEOPLE_ON` is now `!?people=0 && !TIER2`; `?people=1` and `sharp` still
+  read as on. Measured headless at noon (Nov 20, cool wardrobe): computer 90 walkers drawn at Market Street, the atlas
+  50.1 MB; phone path 12.5 MB (the half), refused at tier 2 as before. Two new programs on every device that draws them.
+- The lit street floors (Round 243's `lit`: four big-building lobbies with clear glass onto a lit lobby, a shader variant):
+  the default, `?streetfloor=clean` Round 244's floors. The skin-base program compiles once more on every device. Their
+  four half pictures are 4x4 twins in `art/astc-floors/` (`bake_astc.py`, `KEEP_ASTC`), so the app draws them compressed.
+- Not turned on: the offices' lit floors (`?litfloors=1`; Mike kept the scattered rooms on Nov 13, a pick, not a pending
+  review) and the roofs' sheen toward the sun (he made no pick; it washed out South Philadelphia's roofs). The straighter
+  day toe and the buses' lamps were never built.
+The walls (Round 264): Mike will not run the bench page; the indexed pull is built straight into the app next, phone first,
+with `?walls=quads` keeping today's walls, judged on the phone's own beacons and the Simulator.
+Suite: 1,582 tests, OK (one skip, one expected failure).

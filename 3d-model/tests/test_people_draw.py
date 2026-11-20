@@ -224,7 +224,7 @@ class Text(unittest.TestCase):
         self.assertLess(s.index('  function trafficStep(now,dt) {'), s.index(BANNER))
         self.assertEqual(s[s.index(END):].split('\n', 3)[2], '  // ---------------------------------------------------------------- streetlights')
         # the core's own text still draws nothing (tests/test_people.py holds it); the flag reads 1 or sharp
-        self.assertIn("  const PEOPLE_ON = /[?&]people=(?:1|sharp)\\b/.test(location.search) && !TIER2;", s)
+        self.assertIn("  const PEOPLE_ON = !/[?&]people=0\\b/.test(location.search) && !TIER2;", s)
         self.assertIn("  const PEOPLE_SHARP = PEOPLE_ON && !isTouch && /[?&]people=sharp\\b/.test(location.search);", self.sec)
 
     def test_nothing_runs_without_the_flag(self):
