@@ -88,5 +88,19 @@ class Page(unittest.TestCase):
         self.assertIn('S.frustumCulled = false;', SRC)
 
 
+
+class BookbindersSign(unittest.TestCase):
+    """Round 268 (Mike, with a street photo: "I want the actual bookbinders vertical sign")"""
+    def test_the_blade(self):
+        self.assertIn("const BB_SIGN = { on: !/[?&]bbsign=0\\b/.test(location.search), mat: null, at: null };", SRC)
+        self.assertIn("step('Hanging the Bookbinders sign', () => {", SRC)
+        self.assertIn("const word = 'BOOKBINDERS'", SRC)
+        self.assertIn("m.emissiveIntensity = 0.1 + 0.85 * lampUniform.value;", SRC)
+        # the board on the old bar's front reads the restaurant's name
+        info = json.loads((ROOT / 'storefront_info.json').read_text())
+        self.assertEqual(info['names'][825], 'Old Original Bookbinders')
+        self.assertNotIn('The Olde Bar', info['names'])
+
+
 if __name__ == '__main__':
     unittest.main()

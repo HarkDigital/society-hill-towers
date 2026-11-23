@@ -15154,3 +15154,13 @@ the Bookbinders sign to this building? Remove 'The Olde Bar' signage. It has clo
 - The Olde Bar's storefront board (record 825, 125 Walnut) reads "Old Original Bookbinders": `storefront_info.json`'s name
   edited in place and `NAME_NOW` in `bake_storefronts.py` so a re-bake keeps it.
 Captures at 2nd and Market, Broad and Walnut and 2nd and Walnut, computer and phone paths. Suite: 1,594 tests, OK.
+
+## Round 268 — Bookbinders' blade sign (Nov 23)
+
+Mike, with a street photo of 125 Walnut: "I want the actual bookbinders vertical sign". 'Hanging the Bookbinders sign'
+hangs it on the east corner of the core's building 1514 by S Hancock Street, square to the facade over the sidewalk: a
+1.6 by 7.8 m white blade in a gold frame from 4.2 m up, BOOKBINDERS stacked down both faces in red with a dark outline, and
+the red lobster over its head, tail up and claws curling down (two canvas pictures, the lobster alpha-tested), on two wall
+brackets. Its emissive rises with the lamps (0.1 by day to 0.95 at night). `?bbsign=0` hangs none; Round 267's "Old
+Original Bookbinders" board on the shopfront stays. Captured from the photo's corner by day and at night, from the west and
+from the air.

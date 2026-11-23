@@ -52834,6 +52834,64 @@ float pinOccGate() {
     body += '<div class="vmeta">' + (rec.net === 'PATCO' ? 'Scheduled times from PATCO\'s timetable, not live' : 'Scheduled times from SEPTA\'s timetable, not live') + '</div>';
     vehinfoBody.innerHTML = tag + body;
   }
+  // ---- Bookbinders' blade sign (Round 268, Mike with a street photo: "I want the actual bookbinders vertical sign"): the
+  // white blade with its gold edge on the east corner of 125 Walnut (the core's building 1514, by S Hancock Street), the
+  // red letters stacked down it and the red lobster over its head, tail up and claws down; projecting square from the
+  // facade over the sidewalk, both faces lettered, lit after dark through its own emissive (lampUniform, like the lamps).
+  // The board on the old Olde Bar's front (Round 267) stays. ?bbsign=0 hangs none
+  const BB_SIGN = { on: !/[?&]bbsign=0\b/.test(location.search), mat: null, at: null };
+  function bbPanelTex() {
+    const W = 256, H = 1248, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+    const g = cv.getContext('2d');
+    g.fillStyle = '#c9a24a'; g.fillRect(0, 0, W, H);                       // the gold frame
+    g.fillStyle = '#f4f1e8'; g.fillRect(14, 14, W - 28, H - 28);           // the white face
+    g.strokeStyle = '#8a6d2c'; g.lineWidth = 3; g.strokeRect(20, 20, W - 40, H - 40);
+    const word = 'BOOKBINDERS', top = 70, step = (H - 140) / word.length;
+    g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '900 118px "Arial Black", Impact, Georgia, serif';
+    for (let i = 0; i < word.length; i++) {
+      const y = top + step * (i + 0.5);
+      g.lineWidth = 10; g.strokeStyle = '#6e0a0e'; g.strokeText(word[i], W / 2, y);
+      g.fillStyle = '#d0181f'; g.fillText(word[i], W / 2, y);
+    }
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
+    return freeTexOnUpload(t, true);
+  }
+  function bbLobsterTex() {   // tail fan up, the jointed tail, the shell, two great claws curling down and out
+    const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const g = cv.getContext('2d'), red = '#d0181f', dark = '#6e0a0e';
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    const fill = (f) => { g.beginPath(); f(); g.fillStyle = red; g.fill(); g.lineWidth = 7; g.strokeStyle = dark; g.stroke(); };
+    fill(() => { g.moveTo(256, 92); g.lineTo(196, 22); g.quadraticCurveTo(256, 6, 316, 22); g.closePath(); });          // the fan
+    for (let i = 0; i < 4; i++) fill(() => { const y = 88 + i * 34, w = 34 + i * 6; g.moveTo(256 - w, y); g.lineTo(256 + w, y); g.lineTo(256 + w + 4, y + 34); g.lineTo(256 - w - 4, y + 34); g.closePath(); });   // the tail's joints
+    fill(() => { g.ellipse(256, 290, 62, 76, 0, 0, Math.PI * 2); });        // the shell
+    for (const s of [-1, 1]) {
+      fill(() => { g.moveTo(256 + s * 40, 300); g.quadraticCurveTo(256 + s * 150, 250, 256 + s * 190, 360); g.lineTo(256 + s * 160, 376); g.quadraticCurveTo(256 + s * 130, 300, 256 + s * 50, 340); g.closePath(); });   // the arm
+      fill(() => { g.ellipse(256 + s * 178, 420, 46, 70, s * 0.25, 0, Math.PI * 2); });   // the claw
+      g.beginPath(); g.moveTo(256 + s * 160, 470); g.lineTo(256 + s * 178, 500); g.lineTo(256 + s * 196, 468); g.lineWidth = 6; g.strokeStyle = dark; g.stroke();   // its pincer's gap
+      for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(256 + s * 52, 270 + k * 22); g.lineTo(256 + s * (100 + k * 6), 300 + k * 30); g.lineWidth = 9; g.strokeStyle = red; g.stroke(); }   // the legs
+      g.beginPath(); g.moveTo(256 + s * 18, 364); g.quadraticCurveTo(256 + s * 60, 460, 256 + s * 24, 508); g.lineWidth = 5; g.strokeStyle = red; g.stroke();   // a feeler
+    }
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
+    return freeTexOnUpload(t, true);
+  }
+  step('Hanging the Bookbinders sign', () => {
+    if (!BB_SIGN.on || !REAL) return;
+    const E = [56.0, -155.9], Wc = [36.2, -159.3];   // the facade's east and west corners on Walnut (scene.json building 1514)
+    const fl = Math.hypot(E[0] - Wc[0], E[1] - Wc[1]), dx = (E[0] - Wc[0]) / fl, dz = (E[1] - Wc[1]) / fl, nx = -dz, nz = dx;   // along the facade, out to the street
+    const gy = siteY(E[0], E[1], 'ground'), PW = 1.6, PH = 7.8, Y0 = 4.2, OUT = 1.05, LW = 2.7;
+    const cx = E[0] - dx * 0.55 + nx * OUT, cz = E[1] - dz * 0.55 + nz * OUT;
+    const yaw = Math.atan2(-nz, nx);   // local +x out from the facade, local +z along it (the faces look along the street)
+    const grp = new THREE.Group(); grp.position.set(cx, gy, cz); grp.rotation.y = yaw;
+    const mat = (map, alpha) => new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: 0.1, alphaTest: alpha ? 0.5 : 0, transparent: false });
+    const pm = mat(bbPanelTex(), false), lm = mat(bbLobsterTex(), true);
+    const face = (m, w, h, y, sgn) => { const q = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); q.position.set(0, y, sgn * 0.17); if (sgn < 0) q.rotation.y = Math.PI; q.castShadow = true; q.receiveShadow = true; grp.add(q); };
+    for (const s of [1, -1]) { face(pm, PW, PH, Y0 + PH / 2, s); face(lm, LW, LW, Y0 + PH + LW / 2 - 0.25, s * 0.6); }
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(PW, PH, 0.32), new THREE.MeshLambertMaterial({ color: 0xc9a24a }));
+    edge.scale.set(1.0, 1.0, 0.99); edge.position.y = Y0 + PH / 2; edge.castShadow = true; edge.receiveShadow = true; grp.add(edge);
+    for (const y of [Y0 + 0.8, Y0 + PH - 0.8]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(OUT + 0.2, 0.12, 0.12), new THREE.MeshLambertMaterial({ color: 0x222222 })); arm.position.set(-(OUT + 0.2) / 2 - PW / 2 + 0.05, y, 0); grp.add(arm); }   // the brackets to the wall
+    groupCity.add(grp);
+    BB_SIGN.mat = [pm, lm]; BB_SIGN.at = [cx, gy + Y0 + PH / 2, cz];
+  });
   // ---- the live data
   const SEPTA_V2 = 'https://www3.septa.org/api/v2/';
   const v2Stops = new Map();
@@ -56005,6 +56063,7 @@ float pinOccGate() {
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.95;
     // (core glass night lighting lives in rylandGlassMat's panel shader, via uNight)
     if (outerGlassMat) outerGlassMat.emissiveIntensity = night * 0.55;
+    if (BB_SIGN.mat) for (const m of BB_SIGN.mat) m.emissiveIntensity = 0.1 + 0.85 * lampUniform.value;   // Round 268: Bookbinders' blade lit with the lamps
     return el;
   }
   // --- time panel
