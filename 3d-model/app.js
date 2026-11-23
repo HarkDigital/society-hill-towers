@@ -39410,6 +39410,7 @@ if (uOlLamp > 0.001) {
   SEPTA_GEO.mx = 111320 * Math.cos(SEPTA_GEO.lat0 * Math.PI / 180); SEPTA_GEO.mz = 110574;
   const SEPTA = { on: true, ok: false, fails: 0, hinted: false, busy: false, lastT: -1e9, filter: null, filterLabel: '' };   // filter: one route id on the map (a route search)
   const SEPTA_HOSTS = ['https://api.septa.org/api', 'https://www3.septa.org/api'];
+  const SEPTA_SNAP_TURN = 8, BUS_TURN_OLD = /[?&]busturn=old\b/.test(location.search);   // Round 266: septaSnapRoad's toll on a street across a bus's travel; ?busturn=old the nearest street whatever its way
   const SEPTA_POLL = isTouch ? 25000 : 15000;          // TransitViewAll is ~370 KB a pull
   // the VPS bakes TransitViewAll into a filtered, gzipped septa.json every 10 s
   // (ops/septa_bake.py): ~16 KB a pull instead of 343 KB, and one upstream
@@ -40140,9 +40141,15 @@ if (uOlLamp > 0.001) {
     if (i < 0 || j < 0 || i >= SRG.w || j >= SRG.h) { _srgR[0] = _srgR[1] = 0; return _srgR; }
     const c = j * SRG.w + i; _srgR[0] = SRG.off[c]; _srgR[1] = SRG.off[c + 1]; return _srgR;
   }
-  function septaSnapRoad(x, z, maxD) {
-    const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
-    let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false, bk = 0;
+  // Round 266 (Mike: buses "appear to turn and then get course corrected to going straight midway through the turn"): a bus
+  // passes (hx, hz), the way its fix is travelling, and a street across that way pays SEPTA_SNAP_TURN metres for it, as
+  // busRunSnap's runs do. Without it, a bus crossing a junction straight ahead was handed the cross street whenever its fix
+  // lay nearer that centreline (GPS scatter, or the bus a lane off its own), faced it for a few snaps and swung back. A
+  // real turn still turns: the fix's chord round a corner meets both streets at the same angle, so distance decides there.
+  // Every other caller passes no heading and is answered exactly as before (tests/test_septa_grid.py)
+  function septaSnapRoad(x, z, maxD, hx, hz) {
+    const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL), turn = hx !== undefined, m2 = maxD * maxD;
+    let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false, bk = 0, bs = Infinity;
     for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
       const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids;
       for (let q = q0; q < q1; q++) {
@@ -40153,7 +40160,11 @@ if (uOlLamp > 0.001) {
         tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
         const ex = ax + dx * tt - x, ez = az + dz * tt - z;
         const d2 = ex * ex + ez * ez;
-        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; bk = k; }
+        if (turn) {
+          if (d2 > m2) continue;
+          const sc = Math.sqrt(d2) + (1 - Math.abs((dx * hx + dz * hz) / Math.sqrt(L2))) * SEPTA_SNAP_TURN;
+          if (sc < bs) { bs = sc; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; bk = k; }
+        } else if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; bk = k; }
       }
     }
     if (!found) return null;
@@ -40595,7 +40606,11 @@ float pinOccGate() {
       if (!v.ug && (v.kind === 'bus' || v.kind === 'trolley')) {
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
-          const sn = septaSnapRoad(v.x, v.z, 20);
+          // Round 266: the way the fix is travelling (old fix to new; the feed's heading while it stands), so a junction's
+          // cross street never takes the heading of a bus driving straight through it
+          const tdx = v.tx - v.fx, tdz = v.tz - v.fz, tdl = Math.hypot(tdx, tdz);
+          v.thx = tdl > 6 ? tdx / tdl : Math.cos(v.yawT); v.thz = tdl > 6 ? tdz / tdl : -Math.sin(v.yawT);
+          const sn = BUS_TURN_OLD ? septaSnapRoad(v.x, v.z, 20) : septaSnapRoad(v.x, v.z, 20, v.thx, v.thz);
           v.rnx = null;
           if (sn) {
             v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.lane = Math.min(CAR_OFFW[sn[5]], Math.max(0, sn[4] - SEPTA_KIND[v.kind].w / 2 - 0.1)); v.off = !insideLimit(v.x, v.z);
@@ -49013,7 +49028,7 @@ float pinOccGate() {
   // the snap and the lane for a bus near the eye, from its drawn street's snap sn (septaSnapRoad's answer); false (and v
   // left on sn) where no run agrees with the drawn street
   function busLaneSnap(v, sn, G = PARKED_HIT) {
-    const hx = Math.cos(v.yawT), hz = -Math.sin(v.yawT), dS = Math.hypot(v.x - sn[0], v.z - sn[1]);
+    const hx = !BUS_TURN_OLD && v.thx !== undefined ? v.thx : Math.cos(v.yawT), hz = !BUS_TURN_OLD && v.thx !== undefined ? v.thz : -Math.sin(v.yawT), dS = Math.hypot(v.x - sn[0], v.z - sn[1]);   // Round 266: the fix's travel
     const b = busRunSnap(v.x, v.z, Math.min(20, dS + BUS_RUN_AGREE), hx, hz, sn[5] === 0);
     if (!b) { BUSRUN.falls++; v.lri = -1; return false; }
     const r = trafficRuns[b.ri], bdir = Math.abs(wrapPi(Math.atan2(-b.uz, b.ux) - v.yawT)) <= Math.PI / 2 ? 1 : -1;

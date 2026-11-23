@@ -15112,3 +15112,20 @@ on his review:
 The walls (Round 264): Mike will not run the bench page; the indexed pull is built straight into the app next, phone first,
 with `?walls=quads` keeping today's walls, judged on the phone's own beacons and the Simulator.
 Suite: 1,582 tests, OK (one skip, one expected failure).
+
+## Round 266 — SEPTA buses no longer start a turn they do not take (Nov 23)
+
+Mike: buses "appear to turn and then get course corrected to going straight midway through the turn. Can we delay the
+septa feeds by a second or 2". A delay would not have helped: a bus is already drawn a whole poll behind the feed (it
+slides from its last fix to the newest over 15 s on a computer, 25 s on a phone, plus 1.5 s). The swing came from its
+heading: each snap faces the bus along the NEAREST street centreline, and a bus driving straight through a junction a few
+metres off its own centreline (a lane off it, or GPS scatter) was nearer the cross street for the junction's width, swung
+toward it at 2.6 rad/s and swung back. Near the eye busLaneSnap made it worse, its search radius capped at that cross
+street's distance plus 3 m, which shut its own street out.
+- `septaSnapRoad(x, z, maxD, hx, hz)`: with a heading (the fix's travel, old fix to new, or the feed's heading while it
+  stands), a street across it pays `SEPTA_SNAP_TURN` 8 m, busRunSnap's own toll. Every other caller passes none and is
+  answered exactly as before (`tests/test_septa_grid.py`). busLaneSnap takes the same travel heading. `?busturn=old` keeps
+  the nearest-street rule.
+- `tests/test_bus_turn.py` drives the page's grid and heading rule through a junction: straight through 1 to 6 m off the
+  centreline, the old rule swung 79.5 degrees with 16 reversals, the new 0 and none; a real corner still turns once.
+Suite: 1,587 tests, OK.
