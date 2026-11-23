@@ -52839,7 +52839,7 @@ float pinOccGate() {
   // red letters stacked down it and the red lobster over its head, tail up and claws down; projecting square from the
   // facade over the sidewalk, both faces lettered, lit after dark through its own emissive (lampUniform, like the lamps).
   // The board on the old Olde Bar's front (Round 267) stays. ?bbsign=0 hangs none
-  const BB_SIGN = { on: !/[?&]bbsign=0\b/.test(location.search), mat: null, at: null };
+  const BB_SIGN = { on: !/[?&]bbsign=0\b/.test(location.search), mat: null, lob: null, at: null };
   function bbPanelTex() {
     const W = 256, H = 1248, cv = document.createElement('canvas'); cv.width = W; cv.height = H;
     const g = cv.getContext('2d');
@@ -52856,41 +52856,67 @@ float pinOccGate() {
     const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
     return freeTexOnUpload(t, true);
   }
-  function bbLobsterTex() {   // tail fan up, the jointed tail, the shell, two great claws curling down and out
-    const S = 512, cv = document.createElement('canvas'); cv.width = cv.height = S;
-    const g = cv.getContext('2d'), red = '#d0181f', dark = '#6e0a0e';
-    g.lineJoin = 'round'; g.lineCap = 'round';
-    const fill = (f) => { g.beginPath(); f(); g.fillStyle = red; g.fill(); g.lineWidth = 7; g.strokeStyle = dark; g.stroke(); };
-    fill(() => { g.moveTo(256, 92); g.lineTo(196, 22); g.quadraticCurveTo(256, 6, 316, 22); g.closePath(); });          // the fan
-    for (let i = 0; i < 4; i++) fill(() => { const y = 88 + i * 34, w = 34 + i * 6; g.moveTo(256 - w, y); g.lineTo(256 + w, y); g.lineTo(256 + w + 4, y + 34); g.lineTo(256 - w - 4, y + 34); g.closePath(); });   // the tail's joints
-    fill(() => { g.ellipse(256, 290, 62, 76, 0, 0, Math.PI * 2); });        // the shell
+  function bbLobsterGeom() {   // Round 269 (Mike: "Make the lobster 3D"): the sign's lobster modelled, tail up and claws down, in the
+    // blade's plane: x across the blade, y up from its head, z through it. A shell, six tail plates under a five-blade fan, two
+    // arms bent up and down into the crusher claws that hang either side of the blade's head, four legs a side, eyes, feelers
+    const red = [], dark = [];
+    const ell = (to, x, y, z, rx, ry, rz, rot) => { const g = new THREE.SphereGeometry(1, 18, 12); g.scale(rx, ry, rz); if (rot) g.rotateZ(rot); g.translate(x, y, z); to.push(g); };
+    const limb = (to, a, b, r0, r1, seg) => {
+      const A = new THREE.Vector3(a[0], a[1], a[2] || 0), B = new THREE.Vector3(b[0], b[1], b[2] || 0), d = B.clone().sub(A), L = d.length();
+      const g = new THREE.CylinderGeometry(r1, r0, L, seg || 10, 1);
+      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize()));
+      g.translate((A.x + B.x) / 2, (A.y + B.y) / 2, (A.z + B.z) / 2); to.push(g);
+      ell(to, B.x, B.y, B.z, r1, r1, r1);   // a knuckle at the joint
+    };
+    ell(red, 0, 0.78, 0, 0.27, 0.46, 0.25);                                  // the shell
+    ell(red, 0, 0.36, 0, 0.12, 0.16, 0.12);                                  // the head
+    limb(red, [0, 0.3], [0, 0.12], 0.07, 0.015, 8);                          // the rostrum, pointing down
+    for (let i = 0; i < 6; i++) ell(red, 0, 1.2 + i * 0.185, -0.01 * i * i, 0.25 - i * 0.014, 0.12, 0.21 - i * 0.012);   // the tail's plates, shingled up the back
+    ell(red, 0, 2.36, -0.36, 0.09, 0.24, 0.035);                             // the fan: the telson
     for (const s of [-1, 1]) {
-      fill(() => { g.moveTo(256 + s * 40, 300); g.quadraticCurveTo(256 + s * 150, 250, 256 + s * 190, 360); g.lineTo(256 + s * 160, 376); g.quadraticCurveTo(256 + s * 130, 300, 256 + s * 50, 340); g.closePath(); });   // the arm
-      fill(() => { g.ellipse(256 + s * 178, 420, 46, 70, s * 0.25, 0, Math.PI * 2); });   // the claw
-      g.beginPath(); g.moveTo(256 + s * 160, 470); g.lineTo(256 + s * 178, 500); g.lineTo(256 + s * 196, 468); g.lineWidth = 6; g.strokeStyle = dark; g.stroke();   // its pincer's gap
-      for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(256 + s * 52, 270 + k * 22); g.lineTo(256 + s * (100 + k * 6), 300 + k * 30); g.lineWidth = 9; g.strokeStyle = red; g.stroke(); }   // the legs
-      g.beginPath(); g.moveTo(256 + s * 18, 364); g.quadraticCurveTo(256 + s * 60, 460, 256 + s * 24, 508); g.lineWidth = 5; g.strokeStyle = red; g.stroke();   // a feeler
+      ell(red, s * 0.17, 2.32, -0.36, 0.085, 0.23, 0.035, s * 0.38);
+      ell(red, s * 0.31, 2.24, -0.35, 0.08, 0.21, 0.035, s * 0.78);
+      ell(dark, s * 0.09, 0.3, 0.07, 0.045, 0.045, 0.045);                   // the eyes
+      ell(dark, s * 0.09, 0.3, -0.07, 0.045, 0.045, 0.045);
+      // the arm: up and out from the shoulder, the wrist, down into the claw
+      limb(red, [s * 0.2, 0.55], [s * 0.55, 0.82], 0.1, 0.085);
+      limb(red, [s * 0.55, 0.82], [s * 0.82, 0.42], 0.085, 0.1);
+      ell(red, s * 0.86, 0.06, 0, 0.19, 0.4, 0.15, -s * 0.1);                 // the crusher
+      limb(red, [s * 0.95, -0.24], [s * 1.0, -0.66], 0.075, 0.02, 8);         // its fixed finger
+      limb(red, [s * 0.76, -0.22], [s * 0.82, -0.62], 0.07, 0.02, 8);         // the dactyl, a gap from it
+      for (let k = 0; k < 4; k++) {                                           // the walking legs, out and down
+        const y = 0.62 + k * 0.12;
+        limb(red, [s * 0.22, y], [s * 0.46, y + 0.1 - k * 0.02, 0.06 - k * 0.04], 0.032, 0.026, 6);
+        limb(red, [s * 0.46, y + 0.1 - k * 0.02, 0.06 - k * 0.04], [s * 0.54, y - 0.22, 0.08 - k * 0.05], 0.026, 0.012, 6);
+      }
+      const feel = new THREE.CatmullRomCurve3([[0.05, 0.24, 0.08], [0.3, 0.1, 0.17], [0.62, 0.12, 0.2], [0.92, 0.42, 0.18], [1.02, 0.86, 0.12]].map(([x, y, z]) => new THREE.Vector3(s * x, y, z)));
+      red.push(new THREE.TubeGeometry(feel, 28, 0.02, 5, false));             // a feeler, round the outside of the arm
     }
-    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
-    return freeTexOnUpload(t, true);
+    const out = (list) => mergeGeoms(list.map((g) => { const n = g.index ? g.toNonIndexed() : g; if (n !== g) g.dispose(); n.deleteAttribute('uv'); return n; }));
+    return [out(red), out(dark)];
   }
   step('Hanging the Bookbinders sign', () => {
     if (!BB_SIGN.on || !REAL) return;
     const E = [56.0, -155.9], Wc = [36.2, -159.3];   // the facade's east and west corners on Walnut (scene.json building 1514)
     const fl = Math.hypot(E[0] - Wc[0], E[1] - Wc[1]), dx = (E[0] - Wc[0]) / fl, dz = (E[1] - Wc[1]) / fl, nx = -dz, nz = dx;   // along the facade, out to the street
-    const gy = siteY(E[0], E[1], 'ground'), PW = 1.6, PH = 7.8, Y0 = 4.2, OUT = 1.05, LW = 2.7;
+    const gy = siteY(E[0], E[1], 'ground'), PW = 1.6, PH = 7.8, Y0 = 4.2, OUT = 1.05;
     const cx = E[0] - dx * 0.55 + nx * OUT, cz = E[1] - dz * 0.55 + nz * OUT;
     const yaw = Math.atan2(-nz, nx);   // local +x out from the facade, local +z along it (the faces look along the street)
     const grp = new THREE.Group(); grp.position.set(cx, gy, cz); grp.rotation.y = yaw;
     const mat = (map, alpha) => new THREE.MeshLambertMaterial({ map, emissiveMap: map, emissive: 0xffffff, emissiveIntensity: 0.1, alphaTest: alpha ? 0.5 : 0, transparent: false });
-    const pm = mat(bbPanelTex(), false), lm = mat(bbLobsterTex(), true);
+    const pm = mat(bbPanelTex(), false);
     const face = (m, w, h, y, sgn) => { const q = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); q.position.set(0, y, sgn * 0.17); if (sgn < 0) q.rotation.y = Math.PI; q.castShadow = true; q.receiveShadow = true; grp.add(q); };
-    for (const s of [1, -1]) { face(pm, PW, PH, Y0 + PH / 2, s); face(lm, LW, LW, Y0 + PH + LW / 2 - 0.25, s * 0.6); }
+    for (const s of [1, -1]) face(pm, PW, PH, Y0 + PH / 2, s);
+    const [lg, dg] = bbLobsterGeom(), lm = new THREE.MeshLambertMaterial({ color: 0xc8141c, emissive: 0xc8141c, emissiveIntensity: 0.05 });
+    for (const [g, m] of [[lg, lm], [dg, new THREE.MeshLambertMaterial({ color: 0x140606 })]]) {
+      const q = new THREE.Mesh(g, m); q.position.set(0.08, Y0 + PH, 0); q.castShadow = true; q.receiveShadow = true; grp.add(q);   // nudged off the wall side
+    }
+    BB_SIGN.lob = lm;
     const edge = new THREE.Mesh(new THREE.BoxGeometry(PW, PH, 0.32), new THREE.MeshLambertMaterial({ color: 0xc9a24a }));
     edge.scale.set(1.0, 1.0, 0.99); edge.position.y = Y0 + PH / 2; edge.castShadow = true; edge.receiveShadow = true; grp.add(edge);
     for (const y of [Y0 + 0.8, Y0 + PH - 0.8]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(OUT + 0.2, 0.12, 0.12), new THREE.MeshLambertMaterial({ color: 0x222222 })); arm.position.set(-(OUT + 0.2) / 2 - PW / 2 + 0.05, y, 0); grp.add(arm); }   // the brackets to the wall
     groupCity.add(grp);
-    BB_SIGN.mat = [pm, lm]; BB_SIGN.at = [cx, gy + Y0 + PH / 2, cz];
+    BB_SIGN.mat = [pm]; BB_SIGN.at = [cx, gy + Y0 + PH / 2, cz];
   });
   // ---- the live data
   const SEPTA_V2 = 'https://www3.septa.org/api/v2/';
@@ -56064,6 +56090,7 @@ float pinOccGate() {
     // (core glass night lighting lives in rylandGlassMat's panel shader, via uNight)
     if (outerGlassMat) outerGlassMat.emissiveIntensity = night * 0.55;
     if (BB_SIGN.mat) for (const m of BB_SIGN.mat) m.emissiveIntensity = 0.1 + 0.85 * lampUniform.value;   // Round 268: Bookbinders' blade lit with the lamps
+    if (BB_SIGN.lob) BB_SIGN.lob.emissiveIntensity = 0.05 + 0.5 * lampUniform.value;   // Round 269: its lobster, lit below the blade so its shell still reads
     return el;
   }
   // --- time panel

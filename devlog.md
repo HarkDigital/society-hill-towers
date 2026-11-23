@@ -15164,3 +15164,14 @@ the red lobster over its head, tail up and claws curling down (two canvas pictur
 brackets. Its emissive rises with the lamps (0.1 by day to 0.95 at night). `?bbsign=0` hangs none; Round 267's "Old
 Original Bookbinders" board on the shopfront stays. Captured from the photo's corner by day and at night, from the west and
 from the air.
+
+## Round 269 — the Bookbinders lobster in 3D (Nov 23)
+
+Mike: "Make the lobster 3D". `bbLobsterGeom` models it in place of Round 268's alpha-tested picture, in the blade's plane
+over its head: an ellipsoid shell and head with a downward rostrum, six tail plates shingled up the back under a five-blade
+fan, two arms bent up and down into crusher claws that hang either side of the blade's head with a fixed finger and a
+dactyl apart, four walking legs a side, black eyes and a feeler round the outside of each arm. Two merged meshes on plain
+Lambert materials (the red and the eyes; programs the edge box already links, no shader text), nudged 0.08 m off the wall
+side so no claw or feeler reaches the facade, casting and taking shadows. Its red glows with the lamps at 0.05 + 0.5 of
+the lamp term, under the blade's 0.85, so the shell's shading still reads at night. Captured close from either side along
+Walnut, from the street, at night and from the photo's corner.
