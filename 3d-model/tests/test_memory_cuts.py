@@ -353,7 +353,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
         self.assertIn('const td = picTex(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);', cut(s, '  function brLoadArt() {', '  // a buffer'))   # Round 195: the bridges' art
         self.assertIn('const t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, '  function brLatticeCanvas() {', '  // the program:'))   # and their lattice canvas
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 58)   # the definition and its uses (every round's, counted; Round 256: a front set's ASTC twin; Round 259: a tile's twin; Round 210: Independence Hall's atlas; Round 211: the Liberty Bell's canvas; Round 215: the Olympia's atlas and her railings; the realism round two: the blade signs' sheet; Round 227: the walkers' atlas, uploaded once under ?people=1)
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 59)   # the definition and its uses (every round's, counted; Round 256: a front set's ASTC twin; Round 259: a tile's twin; Round 210: Independence Hall's atlas; Round 211: the Liberty Bell's canvas; Round 215: the Olympia's atlas and her railings; the realism round two: the blade signs' sheet; Round 227: the walkers' atlas, uploaded once under ?people=1)
         self.assertIn('freeTexOnUpload(mat.map);', cut(s, '  function indhallMake(ob) {', '  // ---- the USS New Jersey'))
 
     def test_venue_screens_share_textures(self):

@@ -532,6 +532,11 @@ def cut_name(s):
     return trim_tail(heads[-1]) if heads else s[:NAME_MAX].rstrip()
 
 
+# Round 267 (Mike, Nov 23): The Olde Bar at 125 Walnut has closed and the building carries Bookbinders' own sign again;
+# OSM still names the bar, so the board takes the sign. Only the drawn name changes: the records and the hours stay
+NAME_NOW = {'The Olde Bar': 'Old Original Bookbinders'}
+
+
 DAYS = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su')
 
 
@@ -630,6 +635,7 @@ n_named = n_hours = n_hours_str = 0
 for r, e in zip(rows, extra):
     t = biz[e['shop']]['tags']
     nm = clean_name(t, r['name'])
+    nm = NAME_NOW.get(nm, nm)   # Round 267: a sign the street carries today in place of a closed business's OSM name
     names.append(nm)
     n_named += bool(nm)
     fams.append(family(r['kind'], t, r['x'], r['z'], nm))

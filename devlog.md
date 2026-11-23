@@ -15129,3 +15129,28 @@ street's distance plus 3 m, which shut its own street out.
 - `tests/test_bus_turn.py` drives the page's grid and heading rule through a junction: straight through 1 to 6 m off the
   centreline, the old rule swung 79.5 degrees with 16 reversals, the new 0 and none; a real corner still turns once.
 Suite: 1,587 tests, OK.
+
+## Round 267 — the underground stations, and Bookbinders' sign (Nov 23)
+
+Mike, from 2nd and Market (`#p=103.0,4.0,-487.8`): "The train station is missing from 2nd and market. I would like all
+underground Market Frankford line, Broad Street Line, Patco stations to be included." Then, from 2nd and Walnut: "Can we add
+the Bookbinders sign to this building? Remove 'The Olde Bar' signage. It has closed."
+- `fetch_subway.py` (one Overpass request: OSM's subway entrances and stations) and `bake_subway.py` write `subway.json`
+  (`SUBWAY`, 80 KB): 36 underground stations (the L's Market Street subway from 2nd to 34th, 11th Street included though no
+  L1 trip stops there in SEPTA's current timetable; every B station but Fern Rock, the Spur's Chinatown; PATCO's five in
+  Philadelphia and Camden's City Hall), each GTFS stop given to its nearest OSM station (8th Street and 8th & Market, 25 m
+  apart in OSM, one station), 133 entrances to the nearest station within 260 m (Olney, Hunting Park, Erie, Oregon and
+  Chinatown, which OSM maps none for, one on each sidewalk), and each station's departures for a weekday, a Saturday and a
+  Sunday by route and headsign, a trip's last stop left out.
+- 'Opening the subway stations': every entrance is a stair well on the sidewalk at every distance (a dark granite curb,
+  near-black railings, twelve steps darkening as they go down, a sign post at the deep end with a disc for each line: L
+  blue, B orange, P red). It lies along its nearest street, the deep end toward the station, at the offset nearest OSM's
+  point whose corners all fall on a sidewalk or walk and on no street (89 of them; 2nd and Market's north-east corner was on
+  the lawn), never inside a building's collision column. One InstancedMesh for the wells and one a line for the signs.
+- Every station is a pin on the Rail Stations layer (Z) in its line's colour; its card lists the next six trains by the
+  model clock with the first two each way kept, "in N min" under an hour, an elevator out from SEPTA's feed, and
+  "Scheduled times from SEPTA's timetable, not live". Search finds them as Subway Station. `?subway=0` builds none of it;
+  `__dbg.subway()`, `__dbg.subway(name)` (the card), `__dbg.subway([x, z, r])` (the entrances placed near a point).
+- The Olde Bar's storefront board (record 825, 125 Walnut) reads "Old Original Bookbinders": `storefront_info.json`'s name
+  edited in place and `NAME_NOW` in `bake_storefronts.py` so a re-bake keeps it.
+Captures at 2nd and Market, Broad and Walnut and 2nd and Walnut, computer and phone paths. Suite: 1,594 tests, OK.

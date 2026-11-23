@@ -39144,7 +39144,7 @@ if (uOlLamp > 0.001) {
   function syncStationsBtn() { syncLayerBtn(document.getElementById('btnStations'), STOPS.stations); }
   function syncCivicBtn() { syncLayerBtn(document.getElementById('btnCivic'), CIVIC.on); }
   function toggleStops() { STOPS.on = !STOPS.on; syncStopsBtn(); STOPS.reconAt = 0; if (!STOPS.on && pickedStop && pickedStop.rec.kind === 'bus') { pickedStop = null; vehinfoEl.hidden = true; } }
-  function toggleStations() { STOPS.stations = !STOPS.stations; syncStationsBtn(); STOPS.reconAt = 0; if (!STOPS.stations && pickedStop && pickedStop.rec.kind === 'rail') { pickedStop = null; vehinfoEl.hidden = true; } }
+  function toggleStations() { STOPS.stations = !STOPS.stations; syncStationsBtn(); STOPS.reconAt = 0; if (!STOPS.stations && pickedStop && (pickedStop.rec.kind === 'rail' || pickedStop.rec.kind === 'subway')) { pickedStop = null; vehinfoEl.hidden = true; } }
   function toggleCivic() { CIVIC.on = !CIVIC.on; syncCivicBtn(); if (typeof civicRecon === 'function') civicRecon(); }
   { const bS = document.getElementById('btnStops'), bR = document.getElementById('btnStations'), bC = document.getElementById('btnCivic'); if (bS) bS.addEventListener('click', toggleStops); if (bR) bR.addEventListener('click', toggleStations); if (bC) bC.addEventListener('click', toggleCivic); }
   // the historical markers and the public art (Round 83): the flags and toggles live here with the
@@ -39870,7 +39870,7 @@ if (uOlLamp > 0.001) {
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
     if (pAct) { for (const m of [patcoCar, patcoPin]) if (m.count) targets.push(m); }
     if (yAct) targets.push(FERRY.mesh, FERRY.pin);
-    if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); }   // Round 133
+    if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); for (const m of subwayPins) if (m.count) targets.push(m); }   // Round 133; Round 267 the subway's
     if (CIVIC_S.ready) { if (libPin.count) targets.push(libPin); if (recPin.count) targets.push(recPin); }   // Round 134
     const hits = septaRay.intersectObjects(targets, false);
     const h = pickSceneHit(hits, pickOccluded);
@@ -39879,6 +39879,10 @@ if (uOlLamp > 0.001) {
       if (h.object.userData.libPin || h.object.userData.recPin) {
         const rec = (h.object.userData.libPin ? libPick : recPick)[h.instanceId];
         if (rec) { openCivicCard(rec); return; }
+      }
+      if (h.object.userData.subwayPin) {   // Round 267
+        const rec = subwayPick[h.object.userData.subwayLine][h.instanceId];
+        if (rec) { openStopCard(rec); return; }
       }
       if (h.object.userData.busStopPin || h.object.userData.railStationPin) {
         const rec = (h.object.userData.busStopPin ? busStopPick : railStationPick)[h.instanceId];
@@ -41734,7 +41738,7 @@ float pinOccGate() {
   const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, bar: 2, building: 4, street: 5 };   // Round 191: a bar the page knows by name (Glory) before the churches that share its first word
   const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
     school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
-    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', bar: 'Bar', building: 'Building', street: 'Street' };
+    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', subway: 'Subway Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', bar: 'Bar', building: 'Building', street: 'Street' };
   let rockySite = null;   // built landmark anchor; search follows the relocated statue
   // the city basemap's named places (LANDMARKS, Round 78): cls in landmarks.json indexes this
   const LM_KIND = ['school', 'college', 'worship', 'hospital', 'park', 'rec', 'cemetery', 'museum', 'site', 'venue', 'civic', 'station', 'bridge', 'building', 'nature'];
@@ -41756,6 +41760,7 @@ float pinOccGate() {
     for (const r of markerRecs) add(r.name, r.x, r.z, 'marker', r);
     for (const r of artRecs) add(r.title, r.x, r.z, 'art', r);
     for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);
+    for (const r of SUB.st) add(r.n.replace(/\s+Station$/i, '') + (/Center|Camden/.test(r.n) ? '' : ' Station'), r.x, r.z, 'subway', r);   // Round 267
     for (const r of CIVIC_S.lib) add(r.n, r.x, r.z, 'library', r);   // Round 134
     for (const r of CIVIC_S.rec) add(r.n, r.x, r.z, 'rec', r);   // Regional Rail stations open their departure board (Round 133)
     if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);   // Round 191: Glory, at its door, arriving with its card
@@ -41815,7 +41820,7 @@ float pinOccGate() {
       else { pickedArt = e.ref; artCard(e.ref); }
       vehinfoEl.hidden = false;
     }
-    if (e.kind === 'rail' && e.ref) openStopCard(e.ref);   // a station arrives with its departure board (Round 133)
+    if ((e.kind === 'rail' || e.kind === 'subway') && e.ref) openStopCard(e.ref);   // Round 267: a subway station too   // a station arrives with its departure board (Round 133)
     if ((e.kind === 'library' || e.kind === 'rec') && e.ref && e.ref.kind) openCivicCard(e.ref);   // a branch or a center arrives with its card (Round 134)
     if (isTouch) toggleSearch(false);
   }
@@ -52641,6 +52646,11 @@ float pinOccGate() {
   });
   function updateStopsNear(now) {
     if (!STOPS.ready) return;
+    if (window.__dbg && !window.__dbg.subway) window.__dbg.subway = (name) => {   // Round 267: the counts, or one station's card
+      if (typeof name === 'string') { const r = SUB.st.find((q) => q.n === name); if (!r) return false; openStopCard(r); return vehinfoBody.innerHTML; }
+      if (name === undefined) {} else if (Array.isArray(name)) return SUB.ents.filter((e) => Math.hypot(e.cx - name[0], e.cz - name[1]) < (name[2] || 200)).map((e) => ({ x: +e.cx.toFixed(1), z: +e.cz.toFixed(1), gy: +e.gy.toFixed(2), th: +e.th.toFixed(3), st: SUB.st[e.si].n }));
+      return { on: SUBWAY_ON, stations: SUB.st.length, entrances: SUB.ents.length, synth: SUB.synth, skipped: SUB.skipped, paved: SUB.paved, signs: SUB.signs.map((m) => m.count), pins: subwayPins.map((m) => m.count) };
+    };
     if (now >= STOPS.reconAt || camera.position.distanceToSquared(stopLastCam) > 220 * 220) {
       STOPS.reconAt = now + 900; stopLastCam.copy(camera.position);
       const cx = camera.position.x, cz = camera.position.z, cellR = Math.ceil(NEAR_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400), near = [];
@@ -52652,16 +52662,177 @@ float pinOccGate() {
     }
     _tq.copy(camera.quaternion);
     let nb = 0, nr = 0;
+    const ns = [0, 0, 0];   // Round 267: the subway stations' pins, a mesh a line
     for (const rec of STOPS.near) {
       _tp.set(rec.x, rec.gy + (rec.kind === 'bus' ? 2.8 : 4.5), rec.z);
       if (!pinNear(_tp.x, _tp.y, _tp.z)) continue;   // Round 204
       const sc = pinScaleAt(camera.position.distanceTo(_tp), 14) * pinRise(rec, now) * (rec.kind === 'bus' ? 0.85 : 1.15);
       _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
       if (rec.kind === 'bus') { if (nb < 900) { busStopPin.setMatrixAt(nb, _tm); busStopPick[nb++] = rec; } }
+      else if (rec.kind === 'subway') { const li = rec.li; if (subwayPins[li] && ns[li] < 40) { subwayPins[li].setMatrixAt(ns[li], _tm); subwayPick[li][ns[li]++] = rec; } }
       else if (nr < 80) { railStationPin.setMatrixAt(nr, _tm); railStationPick[nr++] = rec; }
     }
-    busStopPin.count = nb; railStationPin.count = nr; STOPS.drawn = nb + nr;
+    busStopPin.count = nb; railStationPin.count = nr; STOPS.drawn = nb + nr + ns[0] + ns[1] + ns[2];
     flushInst(busStopPin, -1); flushInst(railStationPin, -1);
+    subwayPins.forEach((m, li) => { m.count = ns[li]; flushInst(m, -1); });
+  }
+  // ---------------------------------------------------------------- the subway stations (Round 267)
+  // Mike: "The train station is missing from 2nd and market. I would like all underground Market Frankford line, Broad
+  // Street Line, Patco stations to be included." subway.json (bake_subway.py): the 36 underground stations of the L (the
+  // Market Street subway, 2nd to 34th), the B (Broad Street and the Broad-Ridge Spur) and PATCO, 133 street entrances from
+  // OSM (a station OSM gives none has one on each sidewalk of its street), and each station's scheduled departures for a
+  // weekday, a Saturday and a Sunday. Every entrance is drawn at every distance (a stair well in the sidewalk: a granite
+  // curb, a dark railing, the steps going down into the dark, and a sign post with a disc for each line it serves); every
+  // station is a pin on the Rail Stations layer (Z) whose card lists the next trains from the timetable, by the MODEL clock
+  // like PATCO's trains, never called live. ?subway=0 builds none of it
+  const SUBWAY_ON = !/[?&]subway=0\b/.test(location.search) && typeof SUBWAY !== 'undefined' && !!SUBWAY && Array.isArray(SUBWAY.st);
+  const SUB_LINES = { L: { c: '#1679c4', name: 'Market-Frankford Line' }, B: { c: '#f2772b', name: 'Broad Street Line' }, P: { c: '#c8102e', name: 'PATCO' } };
+  const SUB_LI = ['L', 'B', 'P'];
+  const SUB_L = 6.4, SUB_W = 1.8, SUB_T = 0.22;   // the well's length along the street, its clear width, its curb's thickness
+  const SUB = { st: [], ents: [], drawn: 0, skipped: 0, synth: 0, paved: 0, body: null, signs: [] };
+  let subwayPins = [];
+  const subwayPick = [[], [], []];
+  function subwayBodyGeom() {   // the open end at u = 0, the deep end at u = SUB_L, symmetric across the well
+    const parts = [], box = (sx, sy, sz, cx, cy, cz, c) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), c[0], c[1], c[2]));
+    const L = SUB_L, W = SUB_W, t = SUB_T, sv = W / 2 + t / 2, stone = [0.2, 0.2, 0.19], iron = [0.05, 0.07, 0.06];   // a dark granite curb, the railings painted near black
+    for (const s of [-1, 1]) {
+      box(L + t, 0.85, t, (L + t) / 2, 0.025, s * sv, stone);                     // the curb walls, 0.45 m over the sidewalk
+      box(L + t, 0.06, 0.06, (L + t) / 2, 1.08, s * sv, iron);                    // the railing's top rail
+      box(L + t, 0.04, 0.04, (L + t) / 2, 0.78, s * sv, iron);                    // and its middle rail
+      for (let u = 0.03; u <= L + t; u += (L + t - 0.06) / 5) box(0.06, 0.66, 0.06, u, 0.78, s * sv, iron);   // the posts
+    }
+    box(t, 0.85, W + 2 * t, L + t / 2, 0.025, 0, stone);                          // the deep end's wall
+    box(0.06, 0.06, W + 2 * t, L + t / 2, 1.08, 0, iron);
+    box(0.04, 0.04, W + 2 * t, L + t / 2, 0.78, 0, iron);
+    const N = 12, step = L / N;                                                   // the steps, darker as they go down
+    for (let i = 0; i < N; i++) {
+      const k = Math.pow(1 - i / N, 1.6), c = 0.03 + 0.42 * k;
+      box(step * 0.78, 0.02, W, i * step + step * 0.39, 0.37, 0, [c, c, c * 0.97]);
+      box(step * 0.22, 0.02, W, i * step + step * 0.89, 0.37, 0, [c * 0.45, c * 0.45, c * 0.44]);
+    }
+    box(0.1, 3.4, 0.1, L + t + 0.3, 1.3, 0, [0.12, 0.13, 0.14]);                // the sign post beyond the deep end
+    return septaMerge(parts);
+  }
+  function subwaySignTex(li) {   // a line's disc on the SEPTA navy panel, both faces of one quad pair
+    const cv = document.createElement('canvas'); cv.width = cv.height = 128;
+    const g = cv.getContext('2d'), L = SUB_LI[li];
+    g.fillStyle = '#16233a'; g.fillRect(0, 0, 128, 128);
+    g.fillStyle = SUB_LINES[L].c; g.beginPath(); g.arc(64, 64, 50, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffffff'; g.font = 'bold 64px Montserrat, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(L, 64, 68);
+    const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = anisoOf(4);
+    return freeTexOnUpload(tex, true);
+  }
+  function subwaySignGeom() {   // 0.8 m square, facing along the street both ways, the letter reading right on each face
+    const a = new THREE.PlaneGeometry(0.8, 0.8).rotateY(Math.PI / 2).translate(0.06, 0, 0);
+    const b = new THREE.PlaneGeometry(0.8, 0.8).rotateY(-Math.PI / 2).translate(-0.06, 0, 0);
+    const g = new THREE.BufferGeometry();
+    const pa = a.toNonIndexed(), pb = b.toNonIndexed();
+    const cat = (k, n) => { const o = new Float32Array((pa.attributes[k].count + pb.attributes[k].count) * n); o.set(pa.attributes[k].array, 0); o.set(pb.attributes[k].array, pa.attributes[k].array.length); return new THREE.BufferAttribute(o, n); };
+    g.setAttribute('position', cat('position', 3)); g.setAttribute('normal', cat('normal', 3)); g.setAttribute('uv', cat('uv', 2));
+    return g;
+  }
+  // one entrance: on its own sidewalk (a node in the roadway, or on a facade, moves to SUB_KERB past the kerb), its well
+  // along the nearest street, the deep end toward the station; both = one on each sidewalk at the station's own point
+  const SUB_KERB = 1.75;
+  function subwayPlace(x, z, si, both) {
+    const out = [], st = SUB.st[si], sn = septaSnapRoad(x, z, 40);
+    let ax = 1, az = 0, bx = x, bz = z, lat = 0, hw = 5;
+    if (sn) { ax = sn[2]; az = sn[3]; bx = sn[0]; bz = sn[1]; hw = sn[4] > 0 ? sn[4] : 5; lat = (x - bx) * -az + (z - bz) * ax; }
+    // a well wholly on paving: the offset from the centreline nearest the node's own whose four corners and middle are
+    // on a sidewalk or a walk and on no street (2nd and Market's north-east corner put it on the lawn behind a 3 m walk)
+    const paved = (px, pz) => (walkAt(px, pz, 0) || sidewalkAt(px, pz)) && !streetInside(px, pz, 0);
+    const fits = (off, sd) => {
+      const cx = bx - az * sd * off, cz = bz + ax * sd * off, h = SUB_L / 2 + SUB_T, w = SUB_W / 2 + SUB_T;
+      for (const [a, b] of [[0, 0], [h, w], [h, -w], [-h, w], [-h, -w]]) if (!paved(cx + ax * a - az * b, cz + az * a + ax * b)) return false;
+      return true;
+    };
+    for (const sd of both ? [1, -1] : [lat >= 0 ? 1 : -1]) {
+      let off = both || !sn ? hw + SUB_KERB : clamp(Math.abs(lat), hw + SUB_KERB, hw + 3.2);
+      if (sn) { let best = Infinity, bo = -1; for (let o = hw + 1.3; o <= hw + 6; o += 0.25) if (Math.abs(o - off) < best && fits(o, sd)) { best = Math.abs(o - off); bo = o; } if (bo > 0) { off = bo; SUB.paved++; } }
+      let px = sn ? bx - az * sd * off : x, pz = sn ? bz + ax * sd * off : z, gy = siteY(px, pz, 'ground');
+      if (HIT_ON && hitTop(Math.floor(px / HIT_CELL), Math.floor(pz / HIT_CELL)) > gy + 3) {   // against a building: the kerb side
+        off = hw + SUB_KERB; px = bx - az * sd * off; pz = bz + ax * sd * off; gy = siteY(px, pz, 'ground');
+        if (hitTop(Math.floor(px / HIT_CELL), Math.floor(pz / HIT_CELL)) > gy + 3) { SUB.skipped++; continue; }
+      }
+      const dir = (st.x - px) * ax + (st.z - pz) * az >= 0 ? 1 : -1, dx = ax * dir, dz = az * dir;
+      out.push({ x: px - dx * SUB_L / 2, z: pz - dz * SUB_L / 2, cx: px, cz: pz, gy, th: Math.atan2(-dz, dx), si });
+    }
+    return out;
+  }
+  const glyphLetter = (L) => (g) => {
+    g.fillStyle = '#fdfbf6'; g.beginPath(); g.arc(128, 108, 72, 0, Math.PI * 2); g.fill();
+    g.fillStyle = SUB_LINES[L].c; g.font = 'bold 104px Montserrat, Helvetica, Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(L, 128, 114);
+  };
+  step('Opening the subway stations', () => {
+    if (!SUBWAY_ON) return;
+    for (const s of SUBWAY.st) {
+      const gy = siteY(s.x, s.z, 'ground');
+      const rec = { kind: 'subway', n: s.n, x: s.x, z: s.z, gy, net: s.net, ln: s.ln, li: SUB_LI.indexOf(s.ln[0]), d: s.d };
+      SUB.st.push(rec);
+      const k = Math.floor(rec.x / 400) + ':' + Math.floor(rec.z / 400);
+      let a = STOPS.cells.get(k); if (!a) { a = []; STOPS.cells.set(k, a); } a.push(rec);
+    }
+    for (const e of SUBWAY.en) { if (e[3]) SUB.synth++; for (const p of subwayPlace(e[0], e[1], e[2], !!e[3])) SUB.ents.push(p); }
+    const n = SUB.ents.length, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0);
+    const body = new THREE.InstancedMesh(subwayBodyGeom(), new THREE.MeshLambertMaterial({ vertexColors: true }), Math.max(1, n));
+    body.castShadow = true; body.receiveShadow = true; body.frustumCulled = false; body.userData.subwayEntrance = true;   // r149 culls an InstancedMesh by its one geometry's sphere
+    const signGeom = subwaySignGeom(), per = [0, 0, 0];
+    for (const p of SUB.ents) for (const L of SUB.st[p.si].ln) per[SUB_LI.indexOf(L)]++;
+    const signs = SUB_LI.map((L, li) => { const m = new THREE.InstancedMesh(signGeom, new THREE.MeshBasicMaterial({ map: subwaySignTex(li), toneMapped: true }), Math.max(1, per[li])); m.count = 0; return m; });
+    SUB.ents.forEach((p, i) => {
+      q.setFromAxisAngle(up, p.th);
+      body.setMatrixAt(i, m4.compose(v.set(p.x, p.gy, p.z), q, one));
+      const lines = SUB.st[p.si].ln, ca = Math.cos(p.th), sa = -Math.sin(p.th), u = SUB_L + SUB_T + 0.3;
+      lines.forEach((L, k) => {
+        const S = signs[SUB_LI.indexOf(L)];
+        S.setMatrixAt(S.count++, m4.compose(v.set(p.x + ca * u, p.gy + 2.75 - k * 0.88, p.z + sa * u), q, one));
+      });
+    });
+    body.count = n; SUB.drawn = n; SUB.body = body; SUB.signs = signs;
+    groupCity.add(body);
+    for (const S of signs) { S.castShadow = false; S.frustumCulled = false; groupCity.add(S); }
+    subwayPins = SUB_LI.map((L) => pinMesh(pinTexture(SUB_LINES[L].c, '#fdfbf6', glyphLetter(L)), 40, 'subwayPin'));
+    subwayPins.forEach((m, li) => { m.userData.subwayLine = li; });
+    const cR = document.getElementById('stationsCount');
+    if (cR) cR.textContent = String(STOPS.rail.length + SUB.st.length);
+  });
+  // the next trains from a station by the model clock: today's list from now on, and yesterday's past midnight (GTFS
+  // counts a trip after midnight as the service day before's 24:30)
+  function subwayDay(y, m, d) { const w = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); return w === 0 ? 'su' : w === 6 ? 'sa' : 'wk'; }
+  function subwayNext(rec, nowMin, today, yest, max) {
+    const out = [];
+    for (const [route, head, byday] of rec.d) {
+      const un = (a) => { const o = []; let t = 0; for (let i = 0; i < a.length; i++) { t += a[i]; o.push(t); } return o; };
+      for (const t of un(byday[yest] || [])) if (t >= 1440 && t - 1440 >= nowMin) out.push({ t: t - 1440, route, head });
+      for (const t of un(byday[today] || [])) if (t >= nowMin) out.push({ t, route, head });
+    }
+    out.sort((a, b) => a.t - b.t);
+    // the first trains each way before the rest, so a busy direction cannot crowd the other off the card
+    const seen = new Map(), first = [], rest = [];
+    for (const r of out) { const k = r.route + '|' + r.head, c = seen.get(k) || 0; seen.set(k, c + 1); (c < 2 ? first : rest).push(r); }
+    return first.concat(rest).slice(0, max).sort((a, b) => a.t - b.t);
+  }
+  const subClock = (t) => { t = ((Math.round(t) % 1440) + 1440) % 1440; const h = Math.floor(t / 60), mm = t % 60; return (h % 12 || 12) + ':' + String(mm).padStart(2, '0') + (h < 12 ? ' AM' : ' PM'); };
+  function subwayRows(rec) {
+    const prev = new Date(Date.UTC(clock.y, clock.m - 1, clock.d - 1));
+    const nowMin = clock.live ? clock.minutes + ((Date.now() / 1000) % 60) / 60 : clock.minutes;
+    return subwayNext(rec, Math.floor(nowMin), subwayDay(clock.y, clock.m, clock.d), subwayDay(prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate()), 6)
+      .map((r) => ({ ...r, in: Math.max(0, Math.round(r.t - nowMin)) }));
+  }
+  function subwayCard(st) {
+    const rec = st.rec;
+    let tag = '';
+    for (const L of rec.ln) tag += '<span class="vroute" style="background:' + SUB_LINES[L].c + '">' + septaEsc(SUB_LINES[L].name) + '</span> ';
+    let body = '<span class="vdest">' + septaEsc(rec.n) + '</span>';
+    body += '<div class="vmeta">Underground station</div>';
+    if (!rec.d.length) body += '<div class="vmeta">' + septaEsc('No trains stop here in ' + (rec.net === 'PATCO' ? 'PATCO' : 'SEPTA') + '\'s current timetable') + '</div>';
+    else if (!st.rows.length) body += '<div class="vmeta">No more trains today</div>';
+    else for (const r of st.rows) body += '<div class="vmeta">' + septaEsc(subClock(r.t) + ', ' + (r.route === 'PATCO' ? 'PATCO' : r.route) + ' to ' + r.head + (r.in <= 0 ? ', due' : r.in < 60 ? ', in ' + r.in + ' min' : '')) + '</div>';
+    for (const e of st.elev || []) body += '<div class="vmeta">' + septaEsc('Elevator out: ' + (e.elevator_name || 'an elevator')) + '</div>';
+    body += '<div class="vmeta">' + (rec.net === 'PATCO' ? 'Scheduled times from PATCO\'s timetable, not live' : 'Scheduled times from SEPTA\'s timetable, not live') + '</div>';
+    vehinfoBody.innerHTML = tag + body;
   }
   // ---- the live data
   const SEPTA_V2 = 'https://www3.septa.org/api/v2/';
@@ -52713,6 +52884,7 @@ float pinOccGate() {
   }
   const railClock = (t) => { const m = /(\d{2}):(\d{2})/.exec(String(t || '').split(' ')[1] || ''); if (!m) return ''; const h = +m[1]; return (h % 12 || 12) + ':' + m[2] + (h < 12 ? ' AM' : ' PM'); };
   function stopCard(st) {
+    if (st.rec.kind === 'subway') { subwayCard(st); return; }   // Round 267
     const rec = st.rec, bus = rec.kind === 'bus';
     const tag = bus ? '<span class="vroute" style="background:#1f4fa3">Bus Stop</span>' : '<span class="vroute" style="background:#45637a">Regional Rail</span>';
     let body = '<span class="vdest">' + septaEsc(rec.n) + '</span>';
@@ -52742,6 +52914,11 @@ float pinOccGate() {
     st.next = performance.now() + 30000;
     const done = (rows, elev) => { if (pickedStop !== st || oldPick()) return; st.loading = false; st.rows = rows; if (elev) st.elev = elev; stopCard(st); };
     if (st.rec.kind === 'bus') busComing(st.rec).then((rows) => done(rows)).catch(() => done(null));
+    else if (st.rec.kind === 'subway') {   // Round 267: the timetable at once, any elevator out after
+      st.next = performance.now() + 15000; st.loading = false; st.rows = subwayRows(st.rec); stopCard(st);
+      const key = normSt(st.rec.n.replace(/\s*\(.*\)$/, ''));
+      if (st.rec.net === 'SEPTA') elevatorsOut().then((el) => done(st.rows, (el || []).filter((e) => e.is_out && normSt(e.station_name) === key)));
+    }
     else Promise.all([railDepartures(st.rec), elevatorsOut()]).then(([rows, el]) => {
       const key = normSt(st.rec.n), key2 = normSt(st.rec.board);
       done(rows, (el || []).filter((e) => { if (!e.is_out) return false; const k = normSt(e.station_name); return k === key || k === key2 || (key.length > 5 && k.includes(key)); }));
