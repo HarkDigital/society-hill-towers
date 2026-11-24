@@ -60,7 +60,7 @@ const pick = (S) => ({ tier: S.TIER, lite: S.LITE, t2: S.TIER2, r: S.LITE_R, why
 const clean = (S) => { if (S.TIER >= 1) LS.setItem('philly3d.tierok', JSON.stringify({ tier: S.TIER, t: Date.now() })); S.unload(); };
 const days = (n) => Date.now() - n * 864e5;
 const resetRaw = () => { store.clear(); sess.clear(); };   // a device this build has never seen (the migration runs)
-const reset = () => { resetRaw(); store.set('philly3d.tierv', '2'); };   // a device already on Round 168's rules
+const reset = () => { resetRaw(); store.set('philly3d.tierv', '3'); };   // a device already on Round 271's rules
 const out = {};
 BODY
 console.log(JSON.stringify(out));
@@ -269,11 +269,31 @@ resetRaw(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 2, t: days(1) }))
         self.assertEqual((o['first']['tier'], o['first']['why']), (0, ''))
         self.assertIsNone(o['firstSaved']['tier'])
         self.assertIsNone(o['firstSaved']['lite'])
-        self.assertEqual(o['firstSaved']['v'], '2')
+        self.assertEqual(o['firstSaved']['v'], '3')
         self.assertEqual((o['death']['tier'], o['death']['stick']), (1, True))
         self.assertEqual((o['after']['tier'], o['after']['why']), (1, 'ts'), 'a build death after the migration is kept a fortnight')
         self.assertEqual(o['afterSaved']['tier']['tier'], 1)
-        self.assertEqual((o['desk']['tier'], o['deskSaved']['tier'], o['deskSaved']['v']), (0, None, '2'))
+        self.assertEqual((o['desk']['tier'], o['deskSaved']['tier'], o['deskSaved']['v']), (0, None, '3'))
+
+    def test_round_271_forgets_every_tier_saved_before_the_pulled_walls(self):
+        # Mike's iPhone after Round 270's deploy: a saved tier, the fortnight flag and a soft tier (lr 'tsr') built tier 2.
+        # The first load on version 3 forgets them all, the run log and the clean mark too, and builds the full city
+        o = self.loads(r'''
+const all = () => { resetRaw(); store.set('philly3d.tierv', '2');
+  LS.setItem('philly3d.tier', JSON.stringify({ tier: 2, t: days(3) })); LS.setItem('philly3d.lite', String(days(3)));
+  LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 2, t: days(2) })); LS.setItem('philly3d.tierrun', JSON.stringify({ 0: days(3), 1: days(2) }));
+  LS.setItem('philly3d.tierok', JSON.stringify({ tier: 2, t: days(1) })); };
+all(); let S = load(); out.first = pick(S); out.firstSaved = saved(); S.unload();
+S = load(); out.second = pick(S); S.unload();
+// a death this side of the update still counts: the crumb is the last load's own, never a saved tier
+all(); crumb('Sowing the grass', 5); S = load(); out.death = pick(S); out.deathSaved = saved();
+''')
+        self.assertEqual((o['first']['tier'], o['first']['why'], o['first']['gate']), (0, '', False))
+        f = o['firstSaved']
+        self.assertEqual((f['tier'], f['lite'], f['soft'], f['run'], f['ok'], f['v']), (None, None, None, None, None, '3'))
+        self.assertEqual(o['second']['tier'], 0)
+        self.assertEqual((o['death']['tier'], o['death']['died'], o['death']['gate']), (1, True, True))
+        self.assertEqual(o['deathSaved']['tier']['tier'], 1, 'a build death after the reset is kept a fortnight again')
 
     def test_the_context_loss_crumb(self):
         o = self.loads(r'''

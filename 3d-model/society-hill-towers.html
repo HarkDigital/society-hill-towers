@@ -7822,11 +7822,14 @@ RB.add({
   // Under the rules below that death would have cost one lighter load, not two weeks, so the first load of this build
   // forgets what the old rules saved (the tier and the fortnight flag) and records the rules' version. A build death the
   // old rules saved is forgotten with it: if the full build still dies mid-load, that death is saved again
+  // Round 271 (Mike: "Yes, do it", Nov 24): version 3 forgets every saved crash tier once more, the soft tier, the run log and
+  // the clean mark too, because Round 270's pulled walls took about 100 MB off the full city a phone builds and every death
+  // saved before it was a death of the heavier city (his iPhone's one session after the deploy still built tier 2, lr 'tsr').
+  // The last load's own crumb (BOOT_KEY) is kept: a death this side of the update still counts, and the gate still meets it
   try {
-    if ((+localStorage.getItem(TIER_VER_KEY) || 0) < 2) {
-      localStorage.removeItem(TIER_KEY);
-      localStorage.removeItem(LITE_KEY);
-      localStorage.setItem(TIER_VER_KEY, '2');
+    if ((+localStorage.getItem(TIER_VER_KEY) || 0) < 3) {
+      for (const k of [TIER_KEY, LITE_KEY, TIER_SOFT_KEY, TIER_RUN_KEY, TIER_OK_KEY]) localStorage.removeItem(k);
+      localStorage.setItem(TIER_VER_KEY, '3');
     }
   } catch (e) { /* private mode: nothing was saved */ }
   function tierForget() {   // Sharper: every saved crash tier goes (the fortnight's tier and flag, a running death's tier, this tab's)

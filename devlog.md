@@ -15220,3 +15220,27 @@ Rules it leaves: an attribute the facade's vertex stage reads must be made by `w
 facade's declarations move); a wall written into a cityMat chunk goes through `ch.wr`; an override that draws the city
 takes `wallPullOvU` and `WALL_PULL_OV`; no outer mesh is disposed (the index is shared). Next is Mike's phone: its `gb`
 and `gbs` against the last tier 0 and tier 1 sessions, and whether tier 0 now lives.
+
+## Round 271 — the phone tries the full city again (Nov 24)
+
+Mike, after "what is next in the plan?" and the answer (the tier reset Stage 4 named): "Yes, do it".
+
+What the beacons showed: his iPhone's one session after Round 270's deploy (the app, Nov 24, 02:07 local) built tier 2 with
+`lr` 'tsr': a saved tier, the fortnight flag and a soft tier, all written by deaths before Round 270. It stood fine (623 MB
+after its first minute, `wp` 40.2: 40,000 walls, 2 MB of records), but the pulled walls were never tried on the city they
+were built for.
+
+The change: the tier rules' version (`TIER_VER_KEY`, 'philly3d.tierv') goes from 2 to 3, and the first load at 3 removes
+every saved crash tier: the tier, the fortnight flag, the soft tier, the run log and the clean mark (Round 168's version 2
+removed only the first two). The last load's own crumb (`BOOT_KEY`) is kept, so a death on this side of the update still
+meets the gate and is saved again as before; if the full city still dies on the phone, the rules take it back down as they
+always did. Nothing drawn changes and no shader text moves.
+
+Tests: `test_recovery.py`'s device "already on the current rules" is at version 3, and
+`test_round_271_forgets_every_tier_saved_before_the_pulled_walls` loads Mike's state (version 2, tier 2 saved, fortnight
+flag, soft tier 2, run log, clean mark) into the real boot code: the full city, every key gone, version 3; a second load
+stays on the full city; a build death after the reset is gated, built at tier 1 and kept a fortnight. Suite 1,604 OK.
+
+Next: his phone's next sessions say whether tier 0 lives with the pulled walls (`tier` 0, `gb`, `wp` on the perf beacon,
+and no crumb death on the launch after).
+
