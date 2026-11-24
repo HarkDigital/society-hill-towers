@@ -208,7 +208,7 @@ class Build(unittest.TestCase):
         clip = SRC[SRC.index('  function elPortalClipGround(g) {'):]
         self.assertIn('GROUND_CUTS.map(p=>({poly:p.ring', clip[:1200])
         self.assertIn('.concat(GROUND_CUTS.map((c) => c.ring));', SRC)                  # the river's sheet
-        self.assertIn('GROUND_CUTS.length ? elPortalClipGround(mergeColored(lotSheetParts))', SRC)   # the complex's district sheet
+        self.assertIn('GROUND_CUTS.length ? elPortalClipGround(g0) : g0', SRC)   # the complex's district sheet
         self.assertIn("const CBP_ON = VENUES_ON && !/[?&]cbp=0\\b/.test(location.search);", SECTION)
 
     def test_linc_classes(self):

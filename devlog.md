@@ -15244,3 +15244,41 @@ stays on the full city; a build death after the reset is gated, built at tier 1 
 Next: his phone's next sessions say whether tier 0 lives with the pulled walls (`tier` 0, `gb`, `wp` on the perf beacon,
 and no crumb death on the launch after).
 
+## Round 272 — the flats welded (Nov 24)
+
+Mike, after the plan's next item was named (masks in the channels they use, the merged flats indexed): "Yes, start it".
+
+The masks: dropped. Since Rounds 257 to 261 the app draws the tile and street-floor masks from 4x4 ASTC twins, a byte a
+pixel whatever the channels; a two-channel RG8 copy would be two bytes a pixel, more than the twin. The plan's 4.3 was
+written before ASTC shipped and only a website phone without `?astc=1` would gain from it.
+
+The flats: `weldGeometry(g, label, keep, nrmBytes)`, after mergeColored. conformDrape writes three fresh vertices a triangle
+and mergeColored un-indexes every part, so every park, plaza, lot, yard, water sheet and deck reached the GPU as a soup.
+The weld keeps one copy of each vertex whose every attribute is identical to the bit (floats compared as their 32 bits),
+an open-addressed hash over typed arrays, and draws the same triangles in the same order through an index (Uint16 where
+the vertices allow, tileGeometry narrowing per tile). No value moves, so nothing on screen can. It is opt in per caller
+(chFloorFar and a few others walk a merged mesh as triples) and keeps the soup where the index would not pay (keep 0.8).
+The decks' normals come from computeVertexNormals on a soup and not one pair is equal to the bit, so their weld keys the
+normal on packNormals' own bytes (`nrmBytes`): every device packs them before the GPU sees them, the copy kept packs to
+the bytes every copy dropped would have, and a normal outside packGeometry's range refuses the weld.
+
+Welded (headless phone path, tier 0, pre-pack bytes): the yards 404k vertices to 98k, the lots 326k to 108k, the far
+ring's areas 356k to 93k, the water sheets 302k to 79k, the outer districts' areas 102k to 29k, the sports complex's
+sheets 50k to 11k, the decks 1.09 M to 0.53 M: 104 MB to 49 MB of arrays, in about 0.3 s of build on this Mac
+(`__dbg.PERF.weld`, by label). GPU bytes after the first frames 827 to 786 MB (41 MB), at Ready 807 to 778; the decks'
+positions, kept on the heap for raycasts, about 5 MB lighter; `PERF.failed` empty. The heap's peak reads 471 MB at the far
+ring's upload on both builds (a sampling moment, Round 272's first run read 280 against 449 and the repeat 471 against 471).
+
+Parity, 11 poses (Round 270's six, I-95's decks by day and night, the Vine's decks, the sports complex's lots, the
+Schuylkill), lossless, phone and computer: every pose within its noise. The one that read high, I-95 at night on the
+phone (0.094% of pixels over 24 levels), is the river's lamp streaks: main against main read 0.17% there on a rerun and
+main against the build 0.010 and 0.014.
+
+`tests/test_weld.py`: every triangle read back through the index carries the soup's values bit for bit (-0 kept apart),
+the lots' four-byte streams and interleaved colour kept, the decks' packed normals equal to the packed soup's, the
+refusals, the index width, the wiring. `test_pack_resident.py` and `test_remodel_stadiums.py` follow the two lines that
+changed. `measure.mjs` prints `PERF.weld`. Suite 1,613 OK.
+
+Left of Stage 4: sidewalks back on tiers 1 and 2, building shadows on a phone. Mike's phone's next beacons decide how
+much headroom tier 0 has (Round 271's reset).
+

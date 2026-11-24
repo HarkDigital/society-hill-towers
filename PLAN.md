@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 24, 2026, after Round 271 (the phone's saved crash tiers forgotten, so it tries the full city).
+Last updated: Nov 24, 2026, after Round 272 (the flats welded: 41 MB less on the phone path).
 
 ## The ask
 
@@ -170,6 +170,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
 - **Rounds 266 to 269** (Mike's asks, outside the stages): SEPTA buses no longer start a turn they do not take; every
   underground L, B and PATCO station with its entrances, pins and timetable card; Bookbinders' blade sign and its lobster.
+- **Round 272** (Stage 4, Mike: "Yes, start it"): the lots, yards, parks, plazas, water sheets and decks welded
+  (`weldGeometry`): one copy of each shared vertex through an index, nothing on screen moved; the phone path's GPU after the
+  first frames 827 to 786 MB. The masks' item dropped: the app's ASTC twins already hold them at a byte a pixel.
 - **Round 271** (Stage 4, Mike: "Yes, do it"): the tier rules' version 3 forgets every crash tier saved before the pulled
   walls (his iPhone's one session after Round 270 still built tier 2, `lr` 'tsr'), so the next launch tries the full city;
   a death after it is saved as before. Judged on his phone's next beacons (`tier` 0, `gb`, `wp`).
@@ -309,7 +312,7 @@ GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then mem
   program list, or three build-time substitutions to the inlined copy, which is the reopened three.js rule and goes to
   Mike with the probe's numbers). A Windows first visit from about 100 s toward 40 to 60 s. The least-checked large
   number in the plan.
-- **4, the phone holds the whole city:** masks in the channels they use, merged flats indexed, the walls pulled from a
+- **4, the phone holds the whole city:** the merged flats welded (Round 272; the masks' item dropped, ASTC holds them), the walls pulled from a
   float texture (Round 270, shipped on phones: 48 B a wall against 140; the 40-byte instance records were refused by
   Round 264's benchmark), ASTC art in the app, the tier reset (Round 271),
   sidewalks back on tiers 1 and 2, building shadows on a phone from the collision columns.

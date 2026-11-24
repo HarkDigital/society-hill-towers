@@ -53,7 +53,7 @@ await ev("document.getElementById('btnEnter').click(); for (let i = 0; i < 6; i+
 const afterFrames = { live: await live(), gpu: await gpu() };
 await ev("for (const y of [0, 1.57, 3.14, -1.57]) { __dbg.goFly(0, 300, 0, y, -0.2); for (let i = 0; i < 2; i++) __dbg.frameOnce(); } 1");
 const afterLook = { live: await live(), gpu: await gpu() };
-const extra = await ev("({ terr: __dbg.PERF.terrainPatches, mis: window.__gpu && __gpu.mis, failed: __dbg.PERF.failed, boot: __dbg.PERF.boot || null, pack: __dbg.PERF.pack || null, programs: __dbg.renderer.info.programs.length, tris: __dbg.renderer.info.render.triangles })");
+const extra = await ev("({ weld: __dbg.PERF.weld || null, terr: __dbg.PERF.terrainPatches, mis: window.__gpu && __gpu.mis, failed: __dbg.PERF.failed, boot: __dbg.PERF.boot || null, pack: __dbg.PERF.pack || null, programs: __dbg.renderer.info.programs.length, tris: __dbg.renderer.info.render.triangles })");
 const out = { label, ready, secs: Math.round((Date.now() - t0) / 1000), peakLive, peakAt, atReady, afterFrames, afterLook, extra, steps };
 writeFileSync(path.join(DIR, 'meas-' + label + '.json'), JSON.stringify(out, null, 1));
 console.log(JSON.stringify({ label, ready, secs: out.secs, peakLive, peakAt, atReady, afterFrames, afterLook, extra }, null, 1));

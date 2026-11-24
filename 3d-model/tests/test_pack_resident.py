@@ -215,9 +215,9 @@ console.log(JSON.stringify(Array.from(g.attributes.normal.array)));''')
         b = cut(s, '  async function build() {', '\n  }\n')
         self.assertLess(b.index('for (const s of buildSteps)'), b.index('packResident(groupCity);'))
         self.assertLess(b.index('packResident(groupCity);'), b.index("bootMark('ready')"))
-        self.assertIn('const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);\n      freeShadingOnUpload(mesh.geometry);', s)
+        self.assertIn("const mesh = new THREE.Mesh(weldGeometry(mergeColored(parts), 'decks', 0.8, true), ovpMat);   // Round 272: Mesh.raycast reads the index the weld leaves\n      freeShadingOnUpload(mesh.geometry);", s)
         # Round 167: the decks go in as tiles (addTiles), each tile a raycast target keeping its positions
-        self.assertIn("for (const t of addTiles(mesh, 'decks')) rayTargets.push(t);", cut(s, 'const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);', 'if (collarParts.length)'))
+        self.assertIn("for (const t of addTiles(mesh, 'decks')) rayTargets.push(t);", cut(s, "const mesh = new THREE.Mesh(weldGeometry(mergeColored(parts), 'decks', 0.8, true), ovpMat);", 'if (collarParts.length)'))
         self.assertIsNotNone(re.search(r"o === themeSheet", cut(s, '  function packResident(root) {', '\n  }\n')))
         # packNormals' callers (the two ring road loops) still hand the packed geometry to freeOnUpload
         self.assertEqual(s.count('packNormals(g);\n'), 2)

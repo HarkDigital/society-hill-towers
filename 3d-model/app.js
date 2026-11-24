@@ -3057,6 +3057,100 @@
     return out;
   }
 
+  // ---- the welded flats (Round 272, Stage 4's merged flats). conformDrape writes three fresh vertices a triangle and
+  // mergeColored un-indexes every part, so a park or a lot reached the GPU as a soup: a grid node a sheet shares six ways was
+  // six copies of one vertex. weldGeometry keeps one copy of every vertex whose EVERY attribute is identical to the bit (a
+  // float compared as its 32 bits, so -0 and 0 stay apart) and draws the same triangles, in the same order and winding,
+  // through an index: nothing on screen can change, because no value moves. A vertex two cells compute a hair apart is
+  // simply kept twice. Opt in per caller (a few walk a merged mesh as consecutive triples: chFloorFar's apron), only on a
+  // geometry with no index, groups, morphs or instancing yet, before freeOnUpload; it keeps the soup when the index would
+  // not pay for itself (keep: the welded bytes must come under that share of the soup's). An index is Uint16 when every
+  // vertex allows it (WebGL 2's restart at 0xFFFF), else Uint32, which tileGeometry and packIndex narrow per tile.
+  // nrmBytes: a geometry packResident will pack (every device; its normals go to bytes, packNormals) is keyed on the normal's
+  // bytes, not its floats, so two triangles of one plane whose computeVertexNormals came out an ulp apart share a vertex: the
+  // copy kept rounds to the very bytes every copy dropped would have, and the GPU draws what it did. Refused where a normal
+  // lies outside packGeometry's range, which would leave the floats drawn (the decks: 1.1 M vertices, not one of them equal
+  // to the bit)
+  // __dbg.PERF.weld: per label, the vertices before and after, the bytes and the milliseconds. tests/test_weld.py
+  const WELD = { geoms: 0, kept: 0, from: 0, to: 0, ms: 0, by: {} };
+  function weldGeometry(g, label, keep = 0.8, nrmBytes = false) {
+    if (typeof PERF !== 'undefined') PERF.weld = WELD;   // __dbg.PERF.weld (set here: the tests cut this block apart from PERF's)
+    const t0 = performance.now(), A = g.attributes, pos = A.position;
+    if (!pos || g.index || g.isInstancedBufferGeometry || g.groups.length || Object.keys(g.morphAttributes).length) return g;
+    const n = pos.count;
+    if (n < 6) return g;
+    const blocks = [], seen = new Set();
+    let bpv = 0;
+    for (const k in A) {
+      const a = A[k];
+      if (a.isInstancedBufferAttribute || (a.isInterleavedBufferAttribute && a.data.isInstancedInterleavedBuffer)) return g;
+      const d = a.isInterleavedBufferAttribute ? a.data : a;
+      if (seen.has(d)) continue;
+      seen.add(d);
+      const arr = d.array, st = a.isInterleavedBufferAttribute ? d.stride : a.itemSize;
+      if (!arr || arr.length !== n * st || arr instanceof Float64Array) return g;
+      let iv = arr instanceof Float32Array ? new Uint32Array(arr.buffer, arr.byteOffset, arr.length) : arr;
+      if (nrmBytes && k === 'normal' && !a.isInterleavedBufferAttribute && arr instanceof Float32Array && st === 3) {
+        if (!packInRange(arr, -1.001, 1.001)) return g;   // packGeometry would leave these floats on the GPU
+        iv = new Int8Array(arr.length);
+        for (let i = 0; i < arr.length; i++) { const q = Math.round(arr[i] * 127); iv[i] = q > 127 ? 127 : q < -127 ? -127 : q; }   // packNormals' own rounding
+      }
+      blocks.push({ d, arr, iv, st });
+      bpv += st * arr.BYTES_PER_ELEMENT;
+    }
+    let size = 1;
+    while (size < n * 2) size *= 2;
+    const mask = size - 1, table = new Int32Array(size).fill(-1), remap = new Uint32Array(n), rep = new Int32Array(n);
+    let u = 0;
+    for (let v = 0; v < n; v++) {
+      let h = 0x811c9dc5;
+      for (let b = 0; b < blocks.length; b++) { const B = blocks[b], iv = B.iv, o = v * B.st; for (let k = 0; k < B.st; k++) h = Math.imul(h ^ iv[o + k], 16777619); }
+      for (let s = (h ^ (h >>> 15)) & mask; ; s = (s + 1) & mask) {
+        const w = table[s];
+        if (w < 0) { table[s] = u; rep[u] = v; remap[v] = u++; break; }
+        const r = rep[w];
+        let same = true;
+        for (let b = 0; same && b < blocks.length; b++) { const B = blocks[b], iv = B.iv, ra = r * B.st, va = v * B.st; for (let k = 0; k < B.st; k++) if (iv[ra + k] !== iv[va + k]) { same = false; break; } }
+        if (same) { remap[v] = w; break; }
+      }
+    }
+    const ib = u <= 65535 ? 2 : 4, soupB = n * bpv, weldB = u * bpv + n * ib;
+    const L = WELD.by[label] || (WELD.by[label] = { geoms: 0, kept: 0, from: 0, to: 0, vFrom: 0, vTo: 0, ms: 0 });
+    if (weldB >= soupB * keep) {
+      WELD.kept++; L.kept++; L.from += soupB; L.to += soupB; L.vFrom += n; L.vTo += n;
+      const ms = performance.now() - t0; WELD.ms += ms; L.ms += ms;
+      return g;
+    }
+    const hand = (from, to) => { if (Object.prototype.hasOwnProperty.call(from, 'onUploadCallback')) to.onUploadCallback = from.onUploadCallback; };
+    const made = new Map();
+    for (const B of blocks) {
+      const C = B.arr.constructor, st = B.st, src = B.arr, out = new C(u * st);
+      for (let w = 0; w < u; w++) { const so = rep[w] * st, dO = w * st; for (let k = 0; k < st; k++) out[dO + k] = src[so + k]; }
+      made.set(B.d, out);
+    }
+    const ibufs = new Map();
+    for (const k of Object.keys(A)) {
+      const a = A[k];
+      let na;
+      if (a.isInterleavedBufferAttribute) {
+        let nb = ibufs.get(a.data);
+        if (!nb) { nb = new THREE.InterleavedBuffer(made.get(a.data), a.data.stride); nb.setUsage(a.data.usage); hand(a.data, nb); ibufs.set(a.data, nb); }
+        na = new THREE.InterleavedBufferAttribute(nb, a.itemSize, a.offset, a.normalized);
+      } else {
+        na = new THREE.BufferAttribute(made.get(a), a.itemSize, a.normalized);
+        na.setUsage(a.usage); hand(a, na);
+      }
+      na.name = a.name;
+      g.setAttribute(k, na);
+    }
+    g.setIndex(new THREE.BufferAttribute(ib === 2 ? new Uint16Array(remap) : remap, 1));
+    g.boundingSphere = null; g.boundingBox = null;
+    WELD.geoms++; WELD.from += soupB; WELD.to += weldB;
+    L.geoms++; L.from += soupB; L.to += weldB; L.vFrom += n; L.vTo += u;
+    const ms = performance.now() - t0; WELD.ms += ms; L.ms += ms;
+    return g;
+  }
+
   function box(w, h, d, x, y, z, ry) {
     const g = new THREE.BoxGeometry(w, h, d);
     if (ry) g.rotateY(ry);
@@ -31478,13 +31572,13 @@ if (uOlLamp > 0.001) {
       for (const {poly,pa,i} of parkPolys) areaParts.push({ geom: conformDrape(poly, LAYER.park + 0.03 * (1 - Math.min(1, pa / 20000)), 20), color: new THREE.Color(COLORS.park).multiplyScalar(lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(i))), style: 3 });
       parkPolys.length=0;
       drapeLog('the outer districts');
-      if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
+      if (areaParts.length) { const g = weldGeometry(mergeColored(areaParts), 'wide areas'); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
       if (lotSheetParts.length) {   // the realism pass: the sports complex's lots, the photographed lot asphalt on the street grid
-        const g = GROUND_CUTS.length ? elPortalClipGround(mergeColored(lotSheetParts)) : mergeColored(lotSheetParts); freeOnUpload(g);   // (Round 217: the district sheet, the lots' hull, ran over the ballpark's sunk bowl)
+        const g0 = weldGeometry(mergeColored(lotSheetParts), 'lot sheets'), g = GROUND_CUTS.length ? elPortalClipGround(g0) : g0; freeOnUpload(g);   // (Round 217: the district sheet, the lots' hull, ran over the ballpark's sunk bowl)
         groupCity.add(new THREE.Mesh(g, lotSheetMat()));
       }
     });
-    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
+    if (waterAreaParts.length) { const g = weldGeometry(mergeWater(waterAreaParts), 'water'); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
     raisedFlush();   // realism, water: the basins, reservoirs, piers and jets the loop gathered
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
@@ -33792,8 +33886,8 @@ if (uOlLamp > 0.001) {
     }
     M.roads = Math.round(performance.now() - tUR);
     const areaParts = ringAreaParts(R);
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); occFlatTiles(addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas')); }   // Round 168: flat for the pins' capture
-    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
+    if (areaParts.length) { const g = weldGeometry(mergeColored(areaParts), 'ring areas'); freeOnUpload(g); occFlatTiles(addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas')); }   // Round 168: flat for the pins' capture
+    if (waterAreaParts.length) { const g = weldGeometry(mergeWater(waterAreaParts), 'water'); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
   }
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
@@ -34207,6 +34301,7 @@ if (uOlLamp > 0.001) {
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 4, true));
     out.setAttribute('color', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(col, 4), 3, 0, true));
     out.setAttribute('aLot', new THREE.BufferAttribute(lot, 4, true));
+    weldGeometry(out, 'lots');   // Round 272: one copy of each shared vertex
     out.computeBoundingSphere();
     return out;
   }
@@ -34291,7 +34386,7 @@ if (uOlLamp > 0.001) {
       counts[kind]++;
     }
     if (parts.length) {
-      const g = mergeColored(parts);
+      const g = weldGeometry(mergeColored(parts), 'yards');
       freeOnUpload(g);
       const m = new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }));
       m.receiveShadow = true;
@@ -36772,7 +36867,7 @@ if (uOlLamp > 0.001) {
     if (parts.length) {
       const ovpMat = roadMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
       if (REAL) deckConcrete(ovpMat);   // the realism pass: the photographed concrete on every side, pier and parapet face, the soffits in shade
-      const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
+      const mesh = new THREE.Mesh(weldGeometry(mergeColored(parts), 'decks', 0.8, true), ovpMat);   // Round 272: Mesh.raycast reads the index the weld leaves
       freeShadingOnUpload(mesh.geometry);   // 1.1 M vertices at ready on the phone path: a raycast target keeps its positions, the rest goes once uploaded
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
       mesh.receiveShadow = true;
