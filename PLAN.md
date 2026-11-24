@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 19, 2026, after Round 264 (the walls' benchmark).
+Last updated: Nov 23, 2026, after Round 270 (the walls pulled from a texture on phones).
 
 ## The ask
 
@@ -168,6 +168,13 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   what to change. Incorporate walkers and all other changes you keep asking me for review on"): the walking people on
   by default (`?people=0` off, still refused at tier 2) and the lit lobbies on the street floors (`?streetfloor=clean`
   Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
+- **Rounds 266 to 269** (Mike's asks, outside the stages): SEPTA buses no longer start a turn they do not take; every
+  underground L, B and PATCO station with its entrances, pins and timetable card; Bookbinders' blade sign and its lobster.
+- **Round 270** (Stage 4, Mike: "Start the walls"): the walls of the outer districts, far ring and towns as 48-byte
+  records in a float texture, drawn by one shared index with no vertex stream, on by default on a touch device with WebGL 2
+  (`?walls=quads` today's walls, `?walls=pull` on a computer). Headless phone path: 158.5 MB of wall buffers to 55.9 MB,
+  the GPU total 996 to 893 MB, the picture the same bit for bit at the vertex, pins and the main render's CPU as before.
+  `wp` on the run beacons. Judged next on Mike's phone (tier 0's memory and whether it lives).
 - **Round 261** (Mike: "The shopfronts"): the shopfronts' atlas and mask as 4x4 twins (14 MB to 3.5); Round 260's street
   textures mended on every device (a comment had swallowed their wrap and encoding). Still pictures: the Comcast strip and glass
   frames (array textures), the trees, signs, snow, land mask and people.
@@ -299,8 +306,9 @@ GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then mem
   program list, or three build-time substitutions to the inlined copy, which is the reopened three.js rule and goes to
   Mike with the probe's numbers). A Windows first visit from about 100 s toward 40 to 60 s. The least-checked large
   number in the plan.
-- **4, the phone holds the whole city:** masks in the channels they use, merged flats indexed, walls as 40-byte
-  instance records (tier 0 from 871 MB toward 680 at Ready; gate: pins through buildings stays 0), ASTC art in the app,
+- **4, the phone holds the whole city:** masks in the channels they use, merged flats indexed, the walls pulled from a
+  float texture (Round 270, shipped on phones: 48 B a wall against 140; the 40-byte instance records were refused by
+  Round 264's benchmark), ASTC art in the app,
   sidewalks back on tiers 1 and 2, building shadows on a phone from the collision columns.
 - **5, repeat launches and entering sooner:** the street lettering's fit trimmed and then kept on the device; Ready on
   the near city on computers, with far buildings arriving after, nearest first (his side by side of the interim look).

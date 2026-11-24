@@ -92,7 +92,7 @@ PROBE_STATE = {1: 'whole', 2: 'stopped-early', 3: 'nothing-to-probe-with', 4: 'a
 CAPS = {'a': 'ASTC', 'b': 'BPTC', 's': 'S3TC', 'r': 'RGTC', 'e': 'ETC2', '1': 'ETC1', 'p': 'PVRTC', 'k': 'parallel-compile', 't': 'gpu-timer'}
 READY2 = ('cold', 'cs', 'lk', 'l5', 'pp', 'ppk', 'tu', 'fll', 'gw', 'gi', 'gy', 'gf', 'hd', 'hn', 'bl', 'cap', 'db', 'gbs', 'gbf', 'on', 'an', 'wn', 'ws', 'fs', 'rs', 'ix')
 ENTER2 = ('cold', 'f1', 'f1p', 'f1k', 'f1t', 'f15', 'lit', 'eb', 'tap')
-RUN2 = ('stl', 'prg', 'db', 'gbs', 'gbf', 'pl', 'pt', 'eh', 'js', 'fgl', 'trm', 'an', 'ax', 'as')
+RUN2 = ('stl', 'prg', 'db', 'gbs', 'gbf', 'pl', 'pt', 'eh', 'js', 'fgl', 'trm', 'an', 'ax', 'wp', 'as')
 
 
 def num(v):

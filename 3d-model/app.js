@@ -1190,6 +1190,7 @@
       };
       for (const k in g.attributes) { const a = g.attributes[k]; add(a.isInterleavedBufferAttribute ? a.data : a); }
       add(g.index);
+      if (sum && o.userData && o.userData.wallB) out[fam] += o.userData.wallB;   // Round 270: a pulled wall mesh's records, a texture, in its chunk's family
       if (o.isInstancedMesh) { add(o.instanceMatrix); add(o.instanceColor); }
     });
     MEAS.famMs += performance.now() - t0;
@@ -1351,6 +1352,7 @@
         fgl: [M.fg[1] ? t(M.fg[0] / M.fg[1]) : 0, M.fg[1], M.fg[3] ? t(M.fg[2] / M.fg[3]) : 0, M.fg[3]].join('.'), trm: Math.round(M.traf * 10) / 10, an: M.artNull };
       { const ax = f(() => PROBE4.ax); if (ax) o.ax = ax; }   // Round 255: the ASTC probe's answer, on the run beacons once it has one
       { const as = f(() => (ASTC.loads || ASTC.fails ? ASTC.loads + '.' + ASTC.fails + '.' + Math.round(ASTC.bytes / 1048576) : '')); if (as) o.as = as; }   // Round 257: the ASTC twins loaded, failed, and their MB
+      if (typeof WALLS !== 'undefined' && WALLS.on) o.wp = Math.round(WALLS.walls / 1000) + '.' + Math.round(WALLS.texB / 1048576);   // Round 270: the pulled walls, thousands and their records' MB (absent: today's quads)
       return o;
     }
     return {};
@@ -5814,7 +5816,7 @@
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
       if (!m || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
       if (outer.has(o)) {
-        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = !FARSH.wide; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }
+        if (desk && (m === cityMat || m === outerGlassMat || (m && m === WALLS.mat))) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = !FARSH.wide; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }
         return;
       }
       if (o.userData.treeCard) { if (desk) { recv(o); SHROLE.cards++; } return; }
@@ -5846,7 +5848,7 @@
       const bs = o.geometry && o.geometry.boundingSphere, at = bs ? [Math.round(bs.center.x), Math.round(bs.center.z), Math.round(bs.radius)] : null;
       const who = () => ({ name: o.name, at, parent: o.parent ? o.parent.name || o.parent.type : '', key: m.customProgramCacheKey ? String(m.customProgramCacheKey()).slice(0, 48) : '', ud: Object.keys(o.userData || {}), tile: !!o.userData.tileSet });
       if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push(who());
-      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push(who());
+      if (outer.has(o) && (m === cityMat || m === outerGlassMat || (m && m === WALLS.mat)) && !o.castShadow) out.buildings.push(who());
     });
     out.flats = out.flats.slice(0, 40); out.buildings = out.buildings.slice(0, 40);
     return out;
@@ -5860,13 +5862,13 @@
     const W = window.innerWidth, H = window.innerHeight, list = Array.isArray(px) ? px : [[px, py]];
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: true, stencilBuffer: !ZREV.on, depthTexture: zrevDT(1, 1) });
     const objs = [];
-    const mat = new THREE.ShaderMaterial({ uniforms: { uId: { value: 0 } },
-      vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nflat varying float vInst; varying float vVZ;\nvoid main(){\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\nvVZ = -mvPosition.z;\n#ifdef USE_INSTANCING\nvInst = float(gl_InstanceID);\n#else\nvInst = -1.0;\n#endif\n}',
+    const mat = new THREE.ShaderMaterial({ uniforms: wallPullOvU({ uId: { value: 0 } }),
+      vertexShader: (WALLS.on ? WALL_PULL_OV : (v) => v)('#include <common>\n#include <logdepthbuf_pars_vertex>\nflat varying float vInst; varying float vVZ;\nvoid main(){\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\nvVZ = -mvPosition.z;\n#ifdef USE_INSTANCING\nvInst = float(gl_InstanceID);\n#else\nvInst = -1.0;\n#endif\n}'),
       fragmentShader: '#include <common>\n#include <logdepthbuf_pars_fragment>\nuniform float uId; flat varying float vInst; varying float vVZ;\nvoid main(){\n#include <logdepthbuf_fragment>\ngl_FragColor = vec4(uId, vInst, vVZ, 1.0); }' });
     mat.onBeforeRender = (r, sc, c, g, o) => { objs.push(o); const om = Array.isArray(o.material) ? o.material[0] : o.material; mat.side = om ? om.side : THREE.FrontSide; mat.uniforms.uId.value = objs.length; mat.uniformsNeedUpdate = true; };
     const saved = [], hid = [];
     scene.traverse((o) => {
-      if (Object.prototype.hasOwnProperty.call(o, 'onBeforeRender')) { saved.push([o, o.onBeforeRender]); o.onBeforeRender = () => {}; }
+      if (Object.prototype.hasOwnProperty.call(o, 'onBeforeRender') && !o.userData.wallPull) { saved.push([o, o.onBeforeRender]); o.onBeforeRender = () => {}; }   // a pulled wall keeps its own (Round 270)
       if ((o.isSprite || o.isPoints || o.isLine) && o.visible) { hid.push(o); o.visible = false; }
     });
     const up = renderer.shadowMap.autoUpdate, need = renderer.shadowMap.needsUpdate, prevRT = renderer.getRenderTarget(), ov = scene.overrideMaterial;
@@ -11856,7 +11858,7 @@ vec2 wRing(vec2 rc, float tt) {
   }
   const _sftI8 = new Int8Array(1), _sftU8 = new Uint8Array(_sftI8.buffer);   // VBuf.push: an Int8 store read back as its byte
   class VBuf {
-    constructor(cap) { this.n = 0; this.cap = 0; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
+    constructor(cap) { this.n = 0; this.cap = 0; this.wr = null; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
     // Round 158 (the phones' memory, measured in WebKit's own ANGLE): the Metal backend copies every vertex attribute
     // whose stride or offset is not a multiple of 4 bytes into a padded buffer and keeps that copy as long as the
     // buffer lives (kVertexAttribBufferStrideAlignment, VertexArrayMtl::syncDirtyAttrib, on every Safari from 17 to 26).
@@ -11912,6 +11914,240 @@ vec2 wRing(vec2 rc, float tt) {
       this.pos = this.nor = this.col = this.sft = this.bas = this.fac = this.idx = null;
       return g;
     }
+  }
+  // ---- the pulled walls (Round 270, Stage 4: Mike, "Start the walls"). A wall of the outer districts, the far ring and the
+  // towns was four 32-byte vertices and six Uint16 indices, 140 B: on a phone the pile at Ready (871 MB at tier 0, vertex
+  // buffers more than textures). Here it is one 48-byte record in a float texture beside its chunk, three texels (the ends;
+  // the foot, the eave, the base and the eave's colour; the foot's colour, the style, floor and tint bytes, the length and
+  // the height in decimetres with the normal's bytes and the winding), drawn by ONE shared index of six a wall and no
+  // vertex stream at all: an indexed draw's gl_VertexID is the index, so the wall is gl_VertexID / 4 and the corner
+  // gl_VertexID % 4 (no 1-byte corner stream for WebKit to pad, Round 158). The vertex shader rebuilds every attribute the
+  // facade program read from the vertices, from the same bytes the vertices held (each stored through the same typed array
+  // the VBuf wrote it with), so the fragment stage and the picture are today's. Round 264's benchmark (bench/walls.html) on
+  // the Mac: 22 to 28% faster lit, -3 to +4% in depth, the picture identical; an instanced 40-byte record was 54 to 69%
+  // slower in depth and was refused. Phone first (WALLS.want: a touch device on WebGL 2; `?walls=pull` on a computer,
+  // `?walls=quads` today's walls anywhere). Each wall mesh binds its own texture through the one uniform object every
+  // program that draws it shares (WALLS.U), set in the mesh's onBeforeRender, which also makes three re-upload that program's
+  // uniforms (state.useProgram(null): r149 uploads a material's uniforms only when its program or material changes, and
+  // consecutive wall meshes share both). An override material (the pins' and the tap's depth image, pickAt) carries
+  // uPullOn, set for the wall's draw and cleared after it. The shadow pass calls no object hook: a computer's wall mesh
+  // casts through a depth material of its own (wallDepthMat). __dbg.wallPull(), tests/test_wall_pull.py
+  const WALL_PER = 16383, WALL_TW = 1024;   // walls a mesh (four corners each under 65,535, WebGL 2's primitive restart in a Uint16 index, which would drop a full mesh's last triangle); texels a row of its texture (WALLS: with the material)
+  const _wU8 = new Uint8Array(1), _wI8 = new Int8Array(1);
+  const WALL_CHECK = typeof location !== 'undefined' && /[?&]wallcheck=1\b/.test(location.search);
+  // the vertex stage's pull: every name the facade program reads from a vertex, made from the wall's record. The integers
+  // unpack exactly (every divisor a power of two). The bytes become floats through two tables, never a division: the facade
+  // hashes its inputs into per-building variety (the tint's seed among them), so a value one float step off GL's own
+  // normalized conversion dealt a different look to a building (the review's GPU check, __dbg.wallPullCheck, found a
+  // shader's c / 255.0 one step off on a third of the bytes). uWpUn holds each byte's c / 255 and uWpSn its signed
+  // max(c / 127, -1), as Math.fround makes them, which is what the GPU's vertex fetch made of the same byte
+  const WALL_PULL_GLSL = [
+    'uniform highp sampler2D uWallRec;',
+    'vec3 wpPos;',
+    'vec4 wpRec(int i) { return texelFetch(uWallRec, ivec2(i & 1023, i >> 10), 0); }',
+    'vec4 wpT0, wpT1, wpT2; int wpK; bool wpU, wpV;',
+    'void wallPullPos() {',
+    '  int w = gl_VertexID >> 2, k = gl_VertexID & 3;',
+    '  wpT0 = wpRec(w * 3); wpT1 = wpRec(w * 3 + 1); wpT2 = wpRec(w * 3 + 2);',
+    '  if (wpT2.z >= 8388608.0 && (k & 1) == 1) k = 4 - k;',   // the other winding: corners 1 and 3 change places in the shared index
+    '  wpK = k; wpU = k == 1 || k == 2; wpV = k >= 2;',
+    '  wpPos = vec3(wpU ? wpT0.z : wpT0.x, wpV ? wpT1.y : wpT1.x, wpU ? wpT0.w : wpT0.y);',
+    '}',
+  ].join('\n') + '\n';
+  const WALL_PULL_LIT = [
+    'uniform vec4 uWpUn[64]; uniform vec4 uWpSn[64];',
+    'vec3 wpNor; vec3 wpCol; vec4 wpSFT; float wpBase; vec2 wpFac;',
+    'float wpUn(float c) { int i = int(c); return uWpUn[i >> 2][i & 3]; }',
+    'float wpSn(float c) { int i = int(c); return uWpSn[i >> 2][i & 3]; }',
+    'vec3 wpRgb(float c) { float g = floor(c / 256.0), b = floor(c / 65536.0); return vec3(wpUn(c - g * 256.0), wpUn(g - b * 256.0), wpUn(b)); }',
+    'void wallPull() {',
+    '  wallPullPos();',
+    '  float lz = wpT2.z >= 8388608.0 ? wpT2.z - 8388608.0 : wpT2.z;',
+    '  float nxb = floor(lz / 32768.0), nzb = floor(wpT2.w / 32768.0), Ld = lz - nxb * 32768.0, Hd = wpT2.w - nzb * 32768.0;',
+    '  wpNor = vec3(wpSn(nxb), 0.0, wpSn(nzb));',
+    '  wpCol = wpRgb(wpV ? wpT1.w : wpT2.x);',
+    '  wpSFT = vec4(wpRgb(wpT2.y), 1.0);',
+    '  wpBase = wpT1.z;',
+    '  wpFac = vec2(wpU ? Ld : -Ld, Hd);',
+    '}',
+  ].join('\n') + '\n';
+  const WALL_UN = new Float32Array(256), WALL_SN = new Float32Array(256);
+  for (let c = 0; c < 256; c++) { WALL_UN[c] = c / 255; WALL_SN[c] = Math.max((c > 127 ? c - 256 : c) / 127, -1); }
+  // a vertex program over the pulled walls: the pull first in main(), position (and for a lit program normal and colour)
+  // read from it under the old names; the facade's own aSFT, aBase and aFacade attributes become the pull's globals
+  function wallPullText(vs, lit) {
+    let out = vs;
+    if (lit) {
+      // the core's float wall attributes (mergeColored's) are never a chunk's: unbound, they read whatever the context's generic
+      // value at their slot is, which depends on the slots the driver hands out, and the pull moves them (the review found a
+      // far wall's bays widened by it). In the pulled program they are the 0 the chunks always meant
+      out = out.replace('attribute vec4 aSFT;', '').replace('attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase; attribute vec2 aFacade;', '');
+      if (out.indexOf('attribute vec4 aSFT;') >= 0 || out.indexOf('attribute vec2 aFacade;') >= 0 || out.indexOf('attribute float aWallU;') >= 0) throw new Error('wallPullText: the facade attributes moved');
+    }
+    const head = WALL_PULL_GLSL + (lit ? WALL_PULL_LIT : '') + '#define position wpPos\n' + (lit ? '#define normal wpNor\n#define color wpCol\n#define aSFT wpSFT\n#define aBase wpBase\n#define aFacade wpFac\n#define aWallU 0.0\n#define aWallL 0.0\n#define aWallH 0.0\n' : '');
+    if (out.indexOf('void main() {') < 0) throw new Error('wallPullText: no main');
+    return head + out.replace('void main() {', lit ? 'void main() {\n\twallPull();' : 'void main() {\n\twallPullPos();');
+  }
+  // the override programs (a ShaderMaterial on begin_vertex): the pull only for a wall's draw
+  const WALL_PULL_OV = (vs) => WALL_PULL_GLSL + 'uniform float uPullOn;\n' + vs.replace('#include <begin_vertex>', '#include <begin_vertex>\nif (uPullOn > 0.5) { wallPullPos(); transformed = wpPos; }');
+  function wallPullOvU(u) { if (WALLS.on) { u.uWallRec = WALLS.U.uWallRec; u.uPullOn = { value: 0 }; } return u; }
+  // a wall mesh's own texture for its draw. r149 uploads a material's uniforms only when its program or material changes, and
+  // consecutive wall meshes share both, so: an override (a ShaderMaterial: the pins' and the tap's depth image, pickAt) takes
+  // its switch and the texture through uniformsNeedUpdate, set again after the draw for the mesh after it; the lit program
+  // has the texture bound straight onto the unit three gave its sampler (read once a program from its uniform list, through
+  // three's own state so its cache stays true), and only before that is known, or before the texture is up, is the whole
+  // program's set uploaded again (state.useProgram(null), 0.5 to 0.8 ms a frame over every wall mesh on the Mac: measured)
+  function wallBefore(r, sc, cam, geo, mat) {
+    const U = WALLS.U.uWallRec, tex = this.userData.wallTex;
+    U.value = tex;
+    WALLS.binds++;
+    if (mat.isShaderMaterial) { const ov = mat.uniforms.uPullOn; if (ov) { ov.value = 1; mat.uniformsNeedUpdate = true; } return; }
+    const P = r.properties.get(mat), T = r.properties.get(tex).__webglTexture;
+    if (P.wpProg !== P.currentProgram) { P.wpProg = P.currentProgram; P.wpUnit = -1; }
+    if (P.wpUnit < 0 && P.uniformsList) for (const e of P.uniformsList) if (e.id === 'uWallRec' && e.cache.length) P.wpUnit = e.cache[0];
+    if (P.wpUnit >= 0 && T) { const gl = r.getContext(); r.state.bindTexture(gl.TEXTURE_2D, T, gl.TEXTURE0 + P.wpUnit); }
+    else { r.state.useProgram(null); WALLS.full++; }
+  }
+  function wallAfter(r, sc, cam, geo, mat) {
+    const ov = mat.isShaderMaterial && mat.uniforms.uPullOn;
+    if (ov) { ov.value = 0; mat.uniformsNeedUpdate = true; }   // the next mesh drawn in the override is not a wall
+  }
+  function wallDepthMat(tex) {   // a computer's shadow pass (no object hook runs there): one per wall mesh, one program
+    const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }), u = { value: tex };
+    m.onBeforeCompile = (sh) => { sh.uniforms.uWallRec = u; sh.vertexShader = wallPullText(sh.vertexShader, false); };
+    m.customProgramCacheKey = () => 'wallpull-depth';
+    return m;
+  }
+  function wallIndex() {   // six corners a wall, shared by every wall mesh (never freed: a later mesh binds it again)
+    if (WALLS.idx) return WALLS.idx;
+    const a = new Uint16Array(WALL_PER * 6);
+    for (let w = 0; w < WALL_PER; w++) { const o = w * 6, v = w * 4; a[o] = v; a[o + 1] = v + 1; a[o + 2] = v + 2; a[o + 3] = v; a[o + 4] = v + 2; a[o + 5] = v + 3; }
+    return (WALLS.idx = new THREE.BufferAttribute(a, 1));
+  }
+  // a chunk's walls as records; a VBuf carries one (vbuf.wr) where the walls are pulled, and seals it as it seals itself
+  class WallRecs {
+    constructor() { this.n = 0; this.cap = 0; this.f = null; this.grow(256); }
+    grow(cap) { const f = new Float32Array(cap * 12); if (this.n) f.set(this.f.subarray(0, this.n * 12)); this.f = f; this.cap = cap; }
+    // the arguments VBuf.push took for the wall's four corners: the ends, foot and eave, the normal, the foot's and the eave's
+    // colours, style, base, floor height, tint, the length and the height; flip the other winding
+    add(ax, az, qx, qz, y0, y1, nx, nz, r0, g0, b0, r, g, b, st, base, fh, tint, L, H, flip) {
+      if (this.n === WALL_PER) this.seal();
+      if (this.n === this.cap) this.grow(Math.min(WALL_PER, this.cap * 2));
+      const f = this.f, o = this.n * 12;
+      f[o] = ax; f[o + 1] = az; f[o + 2] = qx; f[o + 3] = qz;
+      f[o + 4] = y0; f[o + 5] = y1; f[o + 6] = base;
+      _wU8[0] = r * 255; let c = _wU8[0]; _wU8[0] = g * 255; c += _wU8[0] * 256; _wU8[0] = b * 255; f[o + 7] = c + _wU8[0] * 65536;
+      _wU8[0] = r0 * 255; c = _wU8[0]; _wU8[0] = g0 * 255; c += _wU8[0] * 256; _wU8[0] = b0 * 255; f[o + 8] = c + _wU8[0] * 65536;
+      _sftI8[0] = st; c = _sftU8[0]; _sftI8[0] = fh ? Math.round(fh * 10) : 0; c += _sftU8[0] * 256; _wU8[0] = tint ? tint * 255 : 0; f[o + 9] = c + _wU8[0] * 65536;
+      _wI8[0] = nx * 127; const nxb = _wI8[0] & 255; _wI8[0] = nz * 127; const nzb = _wI8[0] & 255;
+      f[o + 10] = Math.min(32767, Math.max(0, Math.round((L || 0) * 10))) + nxb * 32768 + (flip ? 8388608 : 0);
+      f[o + 11] = Math.min(32767, Math.max(0, Math.round((H || 0) * 10))) + nzb * 32768;
+      this.n++;
+    }
+    seal() {
+      const n = this.n;
+      if (!n) return null;
+      const rows = Math.ceil(n * 3 / WALL_TW), data = new Float32Array(rows * WALL_TW * 4), f = this.f;
+      data.set(f.subarray(0, n * 12));
+      const tex = new THREE.DataTexture(data, WALL_TW, rows, THREE.RGBAFormat, THREE.FloatType);
+      tex.needsUpdate = true;
+      tex.onUpdate = () => { tex.image = { data: null, width: WALL_TW, height: rows }; };   // the GPU has the copy
+      // the bounding sphere three's computeBoundingSphere would take from the corners, and the vertex depth's measure
+      // (vdepthMeasure's: the longest edge, the diagonal; each triangle's first corner is the foot at a, its top the eave)
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (let o = 0; o < n * 12; o += 12) {
+        const ax = f[o], az = f[o + 1], qx = f[o + 2], qz = f[o + 3];
+        if (ax < x0) x0 = ax; if (ax > x1) x1 = ax; if (qx < x0) x0 = qx; if (qx > x1) x1 = qx;
+        if (az < z0) z0 = az; if (az > z1) z1 = az; if (qz < z0) z0 = qz; if (qz > z1) z1 = qz;
+        if (f[o + 4] < y0) y0 = f[o + 4]; if (f[o + 5] > y1) y1 = f[o + 5];
+      }
+      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2;
+      let r2 = 0, span = 0;
+      for (let o = 0; o < n * 12; o += 12) {
+        const ya = (f[o + 4] - cy) ** 2, yb = (f[o + 5] - cy) ** 2, ea = (f[o] - cx) ** 2 + (f[o + 1] - cz) ** 2, eq = (f[o + 2] - cx) ** 2 + (f[o + 3] - cz) ** 2;
+        const m = Math.max(ea, eq) + Math.max(ya, yb); if (m > r2) r2 = m;
+        const d = (f[o + 2] - f[o]) ** 2 + (f[o + 3] - f[o + 1]) ** 2 + (f[o + 5] - f[o + 4]) ** 2; if (d > span) span = d;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setIndex(wallIndex());
+      g.setDrawRange(0, n * 6);
+      g.boundingSphere = new THREE.Sphere(new THREE.Vector3(cx, cy, cz), Math.sqrt(r2));
+      let vd = null;
+      if (VDEPTH_WANT) {
+        const C = VDEPTH_CELL, bs = g.boundingSphere, gx0 = Math.floor((bs.center.x - bs.radius) / C), gz0 = Math.floor((bs.center.z - bs.radius) / C);
+        const nx = Math.floor((bs.center.x + bs.radius) / C) - gx0 + 1, nz = Math.floor((bs.center.z + bs.radius) / C) - gz0 + 1, top = new Float32Array(nx * nz).fill(-Infinity);
+        for (let o = 0; o < n * 12; o += 12) {
+          const ox = Math.floor(f[o] / C) - gx0, oz = Math.floor(f[o + 1] / C) - gz0, y = Math.max(f[o + 4], f[o + 5]);
+          if (ox >= 0 && oz >= 0 && ox < nx && oz < nz && y > top[oz * nx + ox]) top[oz * nx + ox] = y;
+        }
+        vd = { span: Math.sqrt(span), cells: { gx0, gz0, nx, nz, top } };
+      }
+      const mesh = addChunkMesh(g, WALLS.mat);
+      g.userData.vd = vd;   // after addChunkMesh, whose own measure finds no positions
+      mesh.userData.wallTex = tex; mesh.userData.wallB = data.byteLength; mesh.userData.wallPull = true;
+      if (WALL_CHECK) mesh.userData.wallRecs = f.slice(0, n * 12);   // ?wallcheck=1: the records kept for __dbg.wallPullCheck
+      mesh.onBeforeRender = wallBefore; mesh.onAfterRender = wallAfter;
+      if (!isTouch) mesh.customDepthMaterial = wallDepthMat(tex);
+      WALLS.meshes++; WALLS.walls += n; WALLS.texB += data.byteLength; WALLS.quadB += n * 140;
+      this.n = 0;
+      if (this.cap > 1024) { this.f = null; this.cap = 0; this.grow(256); }   // a sealed chunk's staging goes with it
+      return mesh;
+    }
+  }
+
+  // ?dev&wallcheck=1: __dbg.wallPullCheck(i): wall mesh i drawn alone, pulled, and its records drawn alone as today's quads
+  // (a VBuf from the same arguments), each through the real material and through an override writing the attributes; the
+  // pixels that differ, of each
+  function wallPullCheck(i = 0, what = 'attr') {
+    const pulled = outerMeshes.filter((m) => m.userData.wallPull && m.userData.wallRecs);
+    const pm = pulled[i];
+    if (!pm) return { meshes: pulled.length };
+    const f = pm.userData.wallRecs, n = f.length / 12, vb = new VBuf(n * 4 + 4), rgb = (c) => [c % 256, Math.floor(c / 256) % 256, Math.floor(c / 65536)];
+    for (let w = 0; w < n; w++) {
+      const o = w * 12, flip = f[o + 10] >= 8388608, lz = f[o + 10] - (flip ? 8388608 : 0), nxb = Math.floor(lz / 32768), nzb = Math.floor(f[o + 11] / 32768);
+      const L = (lz - nxb * 32768) / 10, H = (f[o + 11] - nzb * 32768) / 10, s8 = (b) => (b > 127 ? b - 256 : b) / 127;
+      const nx = s8(nxb) + 0.5 / 127 * Math.sign(s8(nxb)), nz = s8(nzb) + 0.5 / 127 * Math.sign(s8(nzb));
+      const top = rgb(f[o + 7]).map((v) => (v + 0.5) / 255), low = rgb(f[o + 8]).map((v) => (v + 0.5) / 255), sf = rgb(f[o + 9]);
+      const st = sf[0] > 127 ? sf[0] - 256 : sf[0], fhb = sf[1] > 127 ? sf[1] - 256 : sf[1], tint = sf[2] ? (sf[2] + 0.5) / 255 : 0, base = f[o + 6];
+      const ax = f[o], az = f[o + 1], qx = f[o + 2], qz = f[o + 3], y0 = f[o + 4], y1 = f[o + 5], Lq = (L - 0.04);
+      const i0 = vb.push(ax, y0, az, nx, 0, nz, low[0], low[1], low[2], st, base, fhb / 10, tint, 0, Lq, H - 0.04);
+      const i1 = vb.push(qx, y0, qz, nx, 0, nz, low[0], low[1], low[2], st, base, fhb / 10, tint, Lq, Lq, H - 0.04);
+      const i2 = vb.push(qx, y1, qz, nx, 0, nz, top[0], top[1], top[2], st, base, fhb / 10, tint, Lq, Lq, H - 0.04);
+      const i3 = vb.push(ax, y1, az, nx, 0, nz, top[0], top[1], top[2], st, base, fhb / 10, tint, 0, Lq, H - 0.04);
+      if (!flip) vb.idx.push(i0, i1, i2, i0, i2, i3); else vb.idx.push(i0, i2, i1, i0, i3, i2);
+    }
+    const qg = vb.geometry(true), qm = new THREE.Mesh(qg, cityMat);
+    qm.matrixAutoUpdate = false; qm.frustumCulled = false;
+    const W = 512, H = 320, rt = new THREE.WebGLRenderTarget(W, H, { type: THREE.FloatType, depthBuffer: true, depthTexture: zrevDT(W, H) });
+    const dbg = new THREE.ShaderMaterial({ vertexColors: true, uniforms: Object.assign(wallPullOvU({ uOut: { value: 0 } }), { uWpUn: WALLS.U.uWpUn, uWpSn: WALLS.U.uWpSn }),
+      vertexShader: WALL_PULL_GLSL + WALL_PULL_LIT + 'uniform float uPullOn; uniform float uOut; attribute vec4 aSFT; attribute float aBase; attribute vec2 aFacade; varying vec4 vO;\n' +
+        'void main() { vec3 p = position; vec4 s = aSFT; float b = aBase; vec2 fc = aFacade; vec3 c = color; vec3 nn = normal;\n' +
+        ' if (uPullOn > 0.5) { wallPull(); p = wpPos; s = wpSFT; b = wpBase; fc = wpFac; c = wpCol; nn = wpNor; }\n' +
+        ' vO = uOut < 0.5 ? vec4(s.xyz, fc.y) : uOut < 1.5 ? vec4(c, b) : vec4(nn, fc.x);\n' +
+        ' gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }',
+      fragmentShader: 'varying vec4 vO; void main() { gl_FragColor = vO; }' });
+    const hid = [];
+    scene.traverse((o) => { if (o !== scene && o.visible && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) { o.visible = false; hid.push(o); } });
+    groupCity.add(qm);
+    const prevRT = renderer.getRenderTarget(), up = renderer.shadowMap.autoUpdate, ov = scene.overrideMaterial, bg = scene.background;
+    renderer.shadowMap.autoUpdate = false; scene.background = null;
+    const shot = (mesh, mat, out) => {
+      for (const m of [pm, qm]) m.visible = m === mesh;
+      scene.overrideMaterial = mat; if (mat === dbg) dbg.uniforms.uOut.value = out;
+      renderer.setRenderTarget(rt); renderer.setClearColor(0x000000, 0); renderer.clear(); renderer.render(scene, camera);
+      const b = new Float32Array(W * H * 4); renderer.readRenderTargetPixels(rt, 0, 0, W, H, b); return b;
+    };
+    const res = {};
+    try {
+      const cmp = (a, b) => { let d = 0, cov = 0, first = null; for (let k = 0; k < a.length; k += 4) { if (a[k + 3] || b[k + 3]) cov++; if (a[k] !== b[k] || a[k + 1] !== b[k + 1] || a[k + 2] !== b[k + 2] || a[k + 3] !== b[k + 3]) { d++; if (!first) first = { px: (k / 4) % W, py: Math.floor(k / 4 / W), pull: Array.from(a.subarray(k, k + 4)), quad: Array.from(b.subarray(k, k + 4)) }; } } return { cov, diff: d, first }; };
+      for (const out of [0, 1, 2]) res['attr' + out] = cmp(shot(pm, dbg, out), shot(qm, dbg, out));
+      res.lit = cmp(shot(pm, null), shot(qm, null));
+    } finally {
+      scene.overrideMaterial = ov; scene.background = bg; renderer.shadowMap.autoUpdate = up; renderer.setRenderTarget(prevRT);
+      pm.visible = true; groupCity.remove(qm); qg.dispose(); rt.dispose(); dbg.dispose();
+      for (const o of hid) o.visible = true;
+    }
+    return { mesh: i, of: pulled.length, walls: n, ...res };
   }
 
   const groupCity = new THREE.Group();
@@ -16519,6 +16755,21 @@ vec2 wRing(vec2 rc, float tt) {
     if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
     coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);
     coreMat.customProgramCacheKey = () => 'fabric';   // Round 252: one program with the outer city's, its gains its own uniforms
+  }
+  const WALLS_Q = /[?&]walls=(quads|pull)\b/.exec(location.search);
+  const WALLS = { want: WALLS_Q ? WALLS_Q[1] === 'pull' : isTouch, on: false, mat: null, idx: null, U: { uWallRec: { value: null }, uWpUn: { value: WALL_UN }, uWpSn: { value: WALL_SN } },
+    meshes: 0, walls: 0, texB: 0, quadB: 0, binds: 0, full: 0 };   // Round 270: the pulled walls (WallRecs), phone first
+  // Round 270: the pulled walls' material, cityMat's twin. Its hook is cityMat's own called at compile time (the weather laid
+  // over it is in it, as the vertex depth's twin takes it), then the pull; the key is cityMat's plus '|pull'
+  WALLS.on = WALLS.want && !!renderer.capabilities.isWebGL2 && renderer.capabilities.maxVertexTextures > 0;
+  if (WALLS.on) {
+    const ud = cityMat.userData;
+    cityMat.userData = {};
+    try { WALLS.mat = cityMat.clone(); } finally { cityMat.userData = ud; }
+    WALLS.mat.userData.vdepth = true;
+    WALLS.mat.onBeforeCompile = (sh, r) => { cityMat.onBeforeCompile(sh, r); Object.assign(sh.uniforms, WALLS.U); sh.vertexShader = wallPullText(sh.vertexShader, true); };
+    WALLS.mat.customProgramCacheKey = () => cityMat.customProgramCacheKey() + '|pull';
+    if (VDEPTH_WANT) vdepthTwin(WALLS.mat);   // beside its original in the draw order
   }
   // the realism pass: the walls' and the pitched roofs' atlases as they decode (wallArtU), the snow the first time it lies
   function wallArtTex(im, aniso) {
@@ -28735,11 +28986,12 @@ if (uOlLamp > 0.001) {
     const chunks = new Map(), glassChunks = new Map();
     // building chunks seal and upload as they pass 60k vertices (Uint16
     // indices, bounded staging); the few glass chunks wait for their material
+    const wallRecs = new Map();   // Round 270: each cell's pulled walls (WallRecs), past the VBufs it seals
     const chunkIn = (map, seal) => (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let c = map.get(key);
       if (c && seal && c.n > 60000) { addChunkMesh(c.geometry(true), cityMat); c = null; }
-      if (!c) { c = new VBuf(2048); map.set(key, c); }
+      if (!c) { c = new VBuf(2048); map.set(key, c); if (seal && WALLS.on) { let w = wallRecs.get(key); if (!w) wallRecs.set(key, (w = new WallRecs())); c.wr = w; } }
       return c;
     };
     const getChunk = chunkIn(chunks, true), getGlassChunk = chunkIn(glassChunks, false);
@@ -28833,6 +29085,7 @@ if (uOlLamp > 0.001) {
         if (L < 0.05) continue;
         const nx = (dz / L) * sg, nz = (-dx / L) * sg;
         if (SF_HOST_ON && (st & 31) === 5) sfHostNote(a, q, L, nx, nz, st, base, y0, y1, fh);   // Round 189: a panel on a painted shop floor
+        if (ch.wr) { ch.wr.add(a[0], a[1], q[0], q[1], y0, y1, nx, nz, r0, g0, b0, r, g, b, st, base, fh, tint, L, y1 - base, ((-dz) * nx + dx * nz) < 0); continue; }   // Round 270: pulled
         const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, 0, L, y1 - base);
         const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, L, L, y1 - base);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint, L, L, y1 - base);
@@ -31101,6 +31354,7 @@ if (uOlLamp > 0.001) {
       addChunkMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })).castShadow = true;
     }
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
+    for (const w of wallRecs.values()) w.seal();   // Round 270
     flushUploads(true);
     await yieldNow();
     WMS.flush = Math.round(performance.now() - tWF);   // Round 220
@@ -33197,12 +33451,12 @@ if (uOlLamp > 0.001) {
     // ground-contact shading, the wide ring's RING_AO mirrored for this closure: wall
     // quads carry this share of their colour at the two ground verts (1.0 disables)
     const RING_AO = 0.78;
-    const chunks = new Map();
+    const chunks = new Map(), wallRecs = chunks.wallRecs = new Map();   // Round 270: each cell's pulled walls, sealed by uploadRing
     const getChunk = (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let ch = chunks.get(key);
       if (ch && ch.n > 60000) { addChunkMesh(ch.geometry(true), cityMat); ch = null; }   // seal: Uint16 indices, bounded staging
-      if (!ch) { ch = new VBuf(2048); chunks.set(key, ch); }
+      if (!ch) { ch = new VBuf(2048); chunks.set(key, ch); if (WALLS.on) { let w = wallRecs.get(key); if (!w) wallRecs.set(key, (w = new WallRecs())); ch.wr = w; } }
       return ch;
     };
     const palLow = [0xa85e44, 0x9c5540, 0xb47454, 0x8a5040, 0xa25a40, 0xbfad92, 0xb0a38b, 0x969188, 0xc8b79a, 0xa87560, 0xc2b99d, 0x9cb0b3, 0xa3ae90, 0xc6ba86, 0xb98a72, 0xa4553e];
@@ -33227,6 +33481,7 @@ if (uOlLamp > 0.001) {
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
         if (SF_HOST_ON && (st & 31) === 5) sfHostNote(a, q, L, nx, nz, st, base, y0, y1, fh);
+        if (ch.wr) { ch.wr.add(a[0], a[1], q[0], q[1], y0, y1, nx, nz, r0, g0, b0, r, g, b, st, base, fh, tint, L, y1 - base, ((-dz) * nx + dx * nz) < 0); continue; }   // Round 270: pulled
         const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, 0, L, y1 - base);
         const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, L, L, y1 - base);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint, L, L, y1 - base);
@@ -33512,6 +33767,7 @@ if (uOlLamp > 0.001) {
     raisedFlush();   // realism, water: the ring's basins and reservoirs (waterRing)
     await yieldNow();
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
+    if (chunks.wallRecs) for (const w of chunks.wallRecs.values()) w.seal();   // Round 270
     flushUploads(true);
     await yieldNow();
     M.flush = Math.round(performance.now() - tUF); const tUR = performance.now();
@@ -57002,8 +57258,8 @@ float pinOccGate() {
   function pinOccMat() {   // the view-distance override, shared with the building tap (Round 132)
     if (PIN_OCC.mat) return PIN_OCC.mat;
     PIN_OCC.mat = new THREE.ShaderMaterial({
-      uniforms: { uFar: { value: PIN_OCC.far } }, side: THREE.DoubleSide,
-      vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vViewZ;\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n  vViewZ = -mvPosition.z;\n}',
+      uniforms: wallPullOvU({ uFar: { value: PIN_OCC.far } }), side: THREE.DoubleSide,   // Round 270: the pulled walls draw into it too (wallBefore)
+      vertexShader: (WALLS.on ? WALL_PULL_OV : (v) => v)('#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vViewZ;\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n  vViewZ = -mvPosition.z;\n}'),
       fragmentShader: '#include <packing>\n#include <logdepthbuf_pars_fragment>\nuniform float uFar;\nvarying float vViewZ;\nvoid main() {\n#include <logdepthbuf_fragment>\n  gl_FragColor = packDepthToRGBA(clamp(vViewZ / uFar, 0.0, 0.9999));\n}',
     });
     return PIN_OCC.mat;
@@ -57724,7 +57980,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { astc: () => ({ pick: ASTC_PICK, on: astcOn(), ...ASTC, ms: Math.round(ASTC.ms), tones: { grass: texU.uGrassTone.value.toArray().map((v) => +v.toFixed(4)), grass2: texU.uGrassTone2.value.toArray().map((v) => +v.toFixed(4)), grassK: +texU.uGrassK.value.toFixed(3), yard: +texU.uYardTone.value.toFixed(4), stM: texU.uStM.value.toArray().map((v) => +v.toFixed(4)), stBrick: texU.uStBrick.value.toArray().map((v) => +v.toFixed(4)), lawnLin: (vegU.lawnLin || []).map((v) => +v.toFixed(4)) }, sets: FRONTS.set ? Object.keys(FRONTS.set).filter((k) => FRONTS.set[k] && FRONTS.set[k].ready).length : 0, mapCompressed: Object.values(FRONTS.set || {}).filter((r) => r && r.map && r.map.isCompressedTexture).length }), probe4: () => ({ on: PROBE4_ON, ix: PROBE4.ix, ax: PROBE4.ax, db: !!PROBE4.db }), astcProbe, ixWrite, ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { astc: () => ({ pick: ASTC_PICK, on: astcOn(), ...ASTC, ms: Math.round(ASTC.ms), tones: { grass: texU.uGrassTone.value.toArray().map((v) => +v.toFixed(4)), grass2: texU.uGrassTone2.value.toArray().map((v) => +v.toFixed(4)), grassK: +texU.uGrassK.value.toFixed(3), yard: +texU.uYardTone.value.toFixed(4), stM: texU.uStM.value.toArray().map((v) => +v.toFixed(4)), stBrick: texU.uStBrick.value.toArray().map((v) => +v.toFixed(4)), lawnLin: (vegU.lawnLin || []).map((v) => +v.toFixed(4)) }, sets: FRONTS.set ? Object.keys(FRONTS.set).filter((k) => FRONTS.set[k] && FRONTS.set[k].ready).length : 0, mapCompressed: Object.values(FRONTS.set || {}).filter((r) => r && r.map && r.map.isCompressedTexture).length }), probe4: () => ({ on: PROBE4_ON, ix: PROBE4.ix, ax: PROBE4.ax, db: !!PROBE4.db }), astcProbe, ixWrite, ovp: ovpProbe, signals: furnProbe, ovpCars: (x0, x1, z0, z1) => { const out = []; for (const r of trafficBusy) for (const car of r.cars) if (car.x >= x0 && car.x <= x1 && car.z >= z0 && car.z <= z1) out.push([+car.x.toFixed(1), +car.y.toFixed(2), +car.z.toFixed(1), +car.alpha.toFixed(2), car.un ? 1 : 0, car.dir, r.cls, car.id === undefined ? out.length : car.id]); return out; }, gpuMem: PERF.gpuMem, staged: PERF.staged, beaconQuery: PERF.beaconQuery, stepExtra: PERF.stepExtra, glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, elAt, ground: (x, z) => siteY(x, z, 'ground'), collideFly: (x, y, z, vx, vy, vz, secs, fps) => { const p = new V3(x, y, z), v = new V3(), n = Math.round((secs || 1) * (fps || 60)); for (let f = 0; f < n; f++) { v.set(vx, vy, vz); hitFly(p, v, 1 / (fps || 60)); } return [p.x, p.y, p.z].map((q) => +q.toFixed(2)); }, collide: (x, z) => ({ on: HIT.on, tiles: HIT.dense.size + HIT.packed.size, dense: HIT.dense.size, cells: HIT.cells, notes: HIT.notes, kb: Math.round((HIT.bytes + HIT.dense.size * HIT_TILE * HIT_TILE) / 1024), packs: HIT.packs, unpacks: HIT.unpacks, occ: HIT.occN, pushes: HIT.pushes, stops: HIT.stops, lands: HIT.lands, lifts: HIT.lifts, ...(x != null ? { top: +hitTop(Math.floor(x / HIT_CELL), Math.floor(z / HIT_CELL)).toFixed(1), near: +hitMax(x, z, HIT_R, -Infinity, Infinity).toFixed(1) } : {}) }), lbell: () => ({ on: LBELL.on, built: LBELL.built, err: LBELL.err, tris: LBELL.tris, at: LBELL.at, ring: LBELL.ring && LBELL.ring.length, body: LBELL.body && LBELL.body.length, cut: +LBELL.cut.toFixed(2), u: lbU.uLb.value.toArray() }), indhall: () => ({ on: IH_ON, built: !!IH.mesh, tris: IH.tris, art: IH.art, err: IH.err, parts: { ...IH.parts }, u: ihU }), bridges: bridgesProbe, nj: njProbe, olympia: olProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, wallPull: () => ({ want: WALLS.want, on: WALLS.on, meshes: WALLS.meshes, walls: WALLS.walls, texMB: +(WALLS.texB / 1048576).toFixed(1), quadMB: +(WALLS.quadB / 1048576).toFixed(1), idxKB: WALLS.idx ? Math.round(WALL_PER * 12 / 1024) : 0, binds: WALLS.binds, full: WALLS.full }), wallPullCheck, pinOccMat, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

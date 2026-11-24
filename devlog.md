@@ -15175,3 +15175,48 @@ Lambert materials (the red and the eyes; programs the edge box already links, no
 side so no claw or feeler reaches the facade, casting and taking shadows. Its red glows with the lamps at 0.05 + 0.5 of
 the lamp term, under the blade's 0.85, so the shell's shading still reads at night. Captured close from either side along
 Walnut, from the street, at night and from the photo's corner.
+
+## Round 270 — the walls pulled from a texture, phones first (Nov 23)
+
+Mike: "Start the walls" (Stage 4, after Round 264's benchmark; built straight into the app, judged on the phone's own
+beacons). Every wall of the outer districts, the far ring and the towns that went into a cityMat chunk as four 32-byte
+vertices and six Uint16 indices (140 B) is now one 48-byte record in an RGBA32F texture beside its chunk, drawn by one
+shared index of six a wall (196 KB for the whole city) with no vertex stream at all: an indexed draw's gl_VertexID is the
+index, so the wall is gl_VertexID / 4 and the corner gl_VertexID % 4. The caps, roofs, glass chunks, City Hall's walls and
+the core are untouched. Default on a touch device with WebGL 2; `?walls=quads` keeps today's walls anywhere, `?walls=pull`
+pulls them on a computer.
+- `WallRecs` (beside `VBuf`) takes the arguments `VBuf.push` took for the four corners and stores each byte through the
+  same typed array the VBuf wrote it with: the ends; foot, eave, base and the eave's colour; the foot's colour, the style,
+  floor and tint bytes, the length and height in decimetres packed with the normal's bytes and the winding. A cell keeps
+  one across the VBufs it seals and seals itself at 16,383 walls (16,384 would put the last corner on 65,535, WebGL 2's
+  primitive restart, and drop a full mesh's last triangle). The bounding sphere and the vertex depth's measure are made
+  from the records (`vdepthMeasure` finds no positions).
+- `WALLS.mat` is cityMat's twin (its hook called at compile time, so the weather is in it; key `fabric|wx|pull`, with its
+  own vertex-depth twin). `wallPullText` puts the pull first in main and reads position, normal, colour, aSFT, aBase and
+  aFacade from it under their old names; the fragment stage is untouched.
+- The picture is today's, bit for bit at the vertex: `__dbg.wallPullCheck(i)` (`?wallcheck=1`) draws a pulled mesh and the
+  same walls as quads alone, through the real material and through an override writing the attributes as floats: 0 of
+  81,441 covered pixels differ in any attribute, and the lit colour on 222 by about 1e-8. Two faults it found first: a
+  shader's `c / 255.0` lands one float step off GL's own normalized conversion on about a third of the bytes, and the
+  facade hashes its inputs (the tint among them) into per-building variety, so some buildings far off took another look;
+  the bytes now go through two 256-entry tables (`uWpUn`, `uWpSn`, `Math.fround` of c / 255 and max(c / 127, -1)), never
+  a division. And the core's float wall attributes (aWallU, aWallL, aWallH), which no chunk carries, read whatever generic
+  value the context held at their slot, and the pull moved the slots: in the pulled program they are the constant 0 the
+  chunks always meant. Captures at six poses on both paths (entry orbit day and night, South Philly low, Fishtown, West
+  Philly and the north far ring at night) differ from today's only at the live flights' pins, as two runs of today's do.
+- Each wall mesh binds its own texture in its onBeforeRender, onto the unit three gave the sampler, through three's own
+  state; only before that unit is known is the program's whole uniform set uploaded again (once a mesh: forcing it every
+  draw cost 0.5 to 0.8 ms a frame on the Mac). An override (the pins' and the tap's depth image, which share
+  `pinOccMat`, and pickAt) takes `uPullOn` and the texture through uniformsNeedUpdate for the wall's draw and clears it
+  after. A computer's shadow pass, which calls no object hook, casts each wall mesh through a depth material of its own.
+- Measured headless on the phone path: 1,186,970 walls in 202 meshes, 158.5 MB of vertex buffers become 55.9 MB of
+  records; the GPU total at the probe 995.6 to 893.1 MB (buffers 677 to 519, textures 289 to 345), its peak 1,046 to 943.
+  The main render's CPU at three poses 1.68 against 1.74 ms, 1.05 against 1.59, 4.96 against 4.70 (40 to 84 more draws a
+  frame). Pins on the three scripted flights (`pin_flash.mjs`, phone): through 6, 53 and 14 and none deep, as with today's
+  walls. A computer under `?walls=pull`: 1,629,322 walls, 217.5 to 76.5 MB.
+- `wp` on the run beacons (thousands of walls pulled and their records' MB) says which way a phone drew; `pin_through.js`
+  uses the page's own `pinOccMat` so its truth image sees pulled walls.
+Rules it leaves: an attribute the facade's vertex stage reads must be made by `wallPullText` too (it throws if the
+facade's declarations move); a wall written into a cityMat chunk goes through `ch.wr`; an override that draws the city
+takes `wallPullOvU` and `WALL_PULL_OV`; no outer mesh is disposed (the index is shared). Next is Mike's phone: its `gb`
+and `gbs` against the last tier 0 and tier 1 sessions, and whether tier 0 now lives.

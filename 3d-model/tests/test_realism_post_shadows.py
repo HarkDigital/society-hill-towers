@@ -42,7 +42,7 @@ class Switches(unittest.TestCase):
         self.assertIn('if (!SHROLE.done || frameNo % 900 === 0) shadowRoles();', s)   # and again now and then, for late meshes
         f = section(s, '  function shadowRoles() {', '\n  }\n')
         self.assertIn('if (!REAL) return;', f)
-        self.assertIn("if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = !FARSH.wide; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }", f)
+        self.assertIn("if (desk && (m === cityMat || m === outerGlassMat || (m && m === WALLS.mat))) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = !FARSH.wide; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }", f)
         self.assertIn('if (!m.userData.wxSurf || o.isInstancedMesh) return;', f)
         self.assertIn("phoneFlats = isTouch && gfxPick() === 'sharper'", f)   # a phone pays new filter taps only by choice
         # never a recompile: flags only, never a light's castShadow

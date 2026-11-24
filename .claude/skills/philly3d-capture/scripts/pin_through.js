@@ -21,7 +21,8 @@
   gl.getSyncParameter = function (s, p) { if (LAT && p === gl.SYNC_STATUS && FRAME - (born.has(s) ? born.get(s) : FRAME) < LAT) return gl.UNSIGNALED; return gsp(s, p); };
   // the truth capture: the page's occRender for the pins, reproduced
   const FAR = 30000;
-  const occMat = new THREE.ShaderMaterial({
+  // Round 270: the page's own material where it offers it (a pulled wall draws its corners only through it: uPullOn)
+  const occMat = d.pinOccMat ? d.pinOccMat() : new THREE.ShaderMaterial({
     uniforms: { uFar: { value: FAR } }, side: THREE.DoubleSide,
     vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vViewZ;\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n  vViewZ = -mvPosition.z;\n}',
     fragmentShader: '#include <packing>\n#include <logdepthbuf_pars_fragment>\nuniform float uFar;\nvarying float vViewZ;\nvoid main() {\n#include <logdepthbuf_fragment>\n  gl_FragColor = packDepthToRGBA(clamp(vViewZ / uFar, 0.0, 0.9999));\n}',

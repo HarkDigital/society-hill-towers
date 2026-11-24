@@ -90,13 +90,13 @@ console.log(JSON.stringify(out));
 
 class Wiring(unittest.TestCase):
     def test_only_the_facades_are_flagged(self):
-        self.assertEqual(len(re.findall(r'userData\.vdepth = true', SRC)), 2)
+        self.assertEqual(len(re.findall(r'userData\.vdepth = true', SRC)), 3)   # Round 270: the pulled walls' material is cityMat's twin, a facade too
         self.assertIn('  cityMat.userData.vdepth = true;', SRC)
         self.assertIn('        outerGlassMat.userData.vdepth = true;', SRC)
         # coreMat and City Hall's material are clones of cityMat taken after the flag, so they carry it
         self.assertLess(SRC.index('  cityMat.userData.vdepth = true;'), SRC.index('    coreMat = cityMat.clone();'))
         self.assertLess(SRC.index('  cityMat.userData.vdepth = true;'), SRC.index('const hallMat=cityMat.clone()'))
-        self.assertEqual(len(re.findall(r'cityMat\.clone\(\)', SRC)), 2)
+        self.assertEqual(len(re.findall(r'cityMat\.clone\(\)', SRC)), 3)   # Round 270: WALLS.mat too, taken after the flag
 
     def test_the_frame_decides_after_the_camera_and_before_the_render(self):
         fr = cut('  function frame(now, once) {', '\n  setHint();')
