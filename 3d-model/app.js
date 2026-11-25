@@ -964,6 +964,60 @@
     return (linked ? '' : 'L') + out + '.' + red + '.' + Math.round(t3 - t0) + '.' + Math.round(t1 - t0) + '.' + Math.round((t2 || t1) - t1);
   }
   ixProbe();   // Round 255: the open and the read start now, so their answer is in by Ready
+  // ---- Round 276 (Stage 5, the plan's 2.6 second step, Mike: "Yes, go ahead"): the street lettering's fit kept on the device.
+  // The fit's answer is static for a build, a kind of device, a tier and the look (no clock, no feed, no randomness reaches it),
+  // and it cost every launch the street index through the road passes and then the fit (lf 1.2 to 1.84 s on the iPhone before
+  // Round 275). So its arrays go into IndexedDB ('philly3d', store 'kv', key 'labels': one record, replaced, about 6 MB) on a
+  // launch that computes them, and a later launch of the same build, device kind, tier and Graphics choice reads them at
+  // the top of build() (LMEMO_WAIT at most: a late answer is a miss) and builds the street index for every LMEMO_SAMPLE-th
+  // name only: those names are fitted live at the lettering and must match the record to the bit, or the record is deleted (the
+  // launch still draws it: its build wrote it) and the next launch fits afresh. Only for a load whose query carries nothing
+  // that shapes the city (dev, dpr, gfx, cold, coldms, probe, probe4); ?memo=0 refuses. The step beacon carries lm (0 off, 1 a
+  // miss and a write, 2 a hit, 3 a hit that failed its check, 4 no answer in time, 5 a read error) and lq (the read's ms).
+  // __dbg.lmemo(), __dbg.lmemo('clear')
+  const LMEMO_SAMPLE = 50, LMEMO_WAIT = 500;
+  const LMEMO_ON = typeof indexedDB !== 'undefined' && !!indexedDB && typeof BUILD_ID === 'string' && !/[?&]memo=0\b/.test(location.search)
+    && location.search.replace(/^\?/, '').split('&').every((kv) => !kv || /^(dev|dpr|gfx|cold|coldms|probe|probe4)(=|$)/.test(kv));
+  const LMEMO = { on: LMEMO_ON, key: LMEMO_ON ? [BUILD_ID, isTouch ? 't' : 'd', TIER, GFX.pick || ''].join('|') : '', hit: null, lm: 0, lq: 0,
+    checked: 0, bad: 0, wrote: '', db: null };
+  function lmemoDb() {
+    if (LMEMO.db) return LMEMO.db;
+    LMEMO.db = new Promise((res, rej) => {
+      let req;
+      try { req = indexedDB.open('philly3d', 1); } catch (e) { rej(e); return; }
+      req.onupgradeneeded = () => { try { req.result.createObjectStore('kv'); } catch (e) { /* an existing store */ } };
+      req.onerror = () => rej(req.error); req.onblocked = () => rej(new Error('blocked'));
+      req.onsuccess = () => res(req.result);
+    });
+    return LMEMO.db;
+  }
+  function lmemoRead() {
+    if (!LMEMO.on) return Promise.resolve();
+    const t0 = performance.now();
+    const read = lmemoDb().then((db) => new Promise((res, rej) => {
+      const g = db.transaction('kv', 'readonly').objectStore('kv').get('labels');
+      g.onsuccess = () => res(g.result); g.onerror = () => rej(g.error);
+    }));
+    let late = false;
+    return Promise.race([read.then((r) => ['ok', r], () => ['err']), new Promise((res) => setTimeout(() => res(['late']), LMEMO_WAIT))]).then(([st, r]) => {
+      LMEMO.lq = Math.round(performance.now() - t0);
+      if (st === 'late') { late = true; LMEMO.lm = 4; return; }
+      if (st === 'err') { LMEMO.lm = 5; return; }
+      const ok = r && r.k === LMEMO.key && r.pos instanceof Float32Array && r.uv instanceof Float32Array && r.idx instanceof Uint32Array && r.first instanceof Int32Array
+        && r.pos.length % 3 === 0 && r.uv.length * 3 === r.pos.length * 2 && r.first.length === 2 * r.n && r.stats;
+      if (ok) { LMEMO.hit = r; LMEMO.lm = 2; } else LMEMO.lm = 1;
+    }).catch(() => { if (!late) LMEMO.lm = 5; });
+  }
+  function lmemoWrite(rec) {
+    lmemoDb().then((db) => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(rec, 'labels');   // cloned here: the arrays are free to go with their upload
+      tx.oncomplete = () => { LMEMO.wrote = 'ok'; }; tx.onerror = () => { LMEMO.wrote = 'err'; }; tx.onabort = () => { LMEMO.wrote = 'abort'; };
+    }).catch(() => { LMEMO.wrote = 'err'; });
+  }
+  function lmemoDrop() {
+    return lmemoDb().then((db) => new Promise((res) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').delete('labels'); tx.oncomplete = () => res(true); tx.onerror = () => res(false); })).catch(() => false);
+  }
   // ---- Round 229, measurement round two (Stage 1 of the Nov 10 plan: the numbers Stages 3, 4 and 6 are decided on). Fields
   // and timers only: nothing here draws, and no shader text is touched. What the first measurement round (Round 220) could
   // not say, MEASURED from its own beacons: a cold flush is 32 to 34 s on Apple devices and 12 to 57 s on Windows PCs against
@@ -5121,7 +5175,7 @@
   // bake_street_labels.py slides a name along its street to a block it fits in, else letters it smaller)
   const STREET_TEXT_HEIGHT = [1, 0.75, 0.6, 0.45].flatMap((k) => [7, 5.6, 4.4].map((h) => +(h * k).toFixed(3))), STREET_TEXT_CLEARANCE = 0.18;
   let streetSurfaceIndex = null, streetFootprints = [];
-  function initStreetSurfaces() {
+  function initStreetSurfaces(sample = 1) {   // Round 276: a kept fit indexes only every sample-th name (the ones it checks)
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS) return;
     streetSurfaceIndex = new Map();
     const sdf = typeof ST_SDF !== 'undefined' && ST_SDF, list = ST_LABELS.l;
@@ -5132,6 +5186,7 @@
       const f={x:list[i+1],z:list[i+2],dx:Math.cos(br),dz:Math.sin(br),hw,hh,surfaces:[]};
       const ex=Math.abs(f.dx)*hw+Math.abs(f.dz)*hh+0.01,ez=Math.abs(f.dz)*hw+Math.abs(f.dx)*hh+0.01;
       streetFootprints.push(f);
+      if ((i/5) % sample) continue;
       for(let gx=Math.floor((f.x-ex)/100);gx<=Math.floor((f.x+ex)/100);gx++)
         for(let gz=Math.floor((f.z-ez)/100);gz<=Math.floor((f.z+ez)/100);gz++){
           const key=gx+':'+gz;if(!streetSurfaceIndex.has(key))streetSurfaceIndex.set(key,[]);
@@ -12302,7 +12357,7 @@ vec2 wRing(vec2 rc, float tt) {
   // ------------------------------------------------ ground, water, roads, parks
   step('Laying out the ground', () => {
     initTerrainPatches();
-    initStreetSurfaces();
+    initStreetSurfaces(LMEMO.hit ? LMEMO_SAMPLE : 1);
     const groundMat = groundSurfMat();
     GROUND_MEADOW_MAT = groundMat;   // Round 161: Founder's Hall lays its lawn apron in it
     const Z0 = CORE_EXT.z0, Z1 = CORE_EXT.z1;
@@ -34274,7 +34329,7 @@ if (uOlLamp > 0.001) {
     'Raising the outer districts': () => { const W = PERF.wide || {}; return { wd: W.dec, wl: W.loop, wy: W.yld, wf: W.flush }; },   // the junction pass runs in 'Fitting streets', whose beacon carries wj
     'Raising the rest of Philadelphia': () => { const F = PERF.far || {}, K = PERF.roofKitNote || {}; return { fd: F.dec, fl: F.loop, fy: F.yld, fn: F.n, fg: F.ground, ff: F.flush, fr: F.roads, fa: F.areas, rk: K.ms, rkn: K.calls, cq: PERF.clockUs }; },
     'Fitting streets to the terrain': () => { const F = PERF.fit || {}, W = PERF.wide || {}; return { sm: F.ms, sp: F.pave, sf: F.fit, sc: F.sch, wj: W.junc }; },
-    'Lettering the streets': () => { const L = (PERF.streetLabels && PERF.streetLabels.ms) || {}; return { ld: L.decode, lb: L.bands, lt: L.tex, lf: L.fit }; },
+    'Lettering the streets': () => { const L = (PERF.streetLabels && PERF.streetLabels.ms) || {}, M = (PERF.streetLabels && PERF.streetLabels.memo) || {}; return { ld: L.decode, lb: L.bands, lt: L.tex, lf: L.fit, lm: M.lm, lq: M.lq }; },   // Round 276: lm, lq
     'Setting the traffic flowing': () => { const T = PERF.traffic || {}; return { ts: T.sample, tw: T.loop, tl: T.link, tf: T.fleet }; },
     'Cladding the towers': () => { const C = TSKIN.msParts || {}; return { cw: C.wait, cl: C.lay, co: C.other, cf: C.flush }; },
   };
@@ -41317,16 +41372,17 @@ float pinOccGate() {
     const tFit = performance.now();   // Round 220: the label loop
     const pos = [], uv = [], idx = [];
     const stats={placements:L2.length/5,drawn:0,buried:0,missingAtlas:0,triangles:0,warped:0,onDeck:0,warpedAt:[]};
-    for (let i = 0; i + 4 < L2.length; i += 5) {
+    // Round 276: one placement's fit (null where it is not drawn, its counts in S), shared by the full loop and a kept fit's check
+    const fitOne = (i, S) => {
       const r=rects[L2[i]],f=streetFootprints[i/5];
-      if(!r){stats.missingAtlas++;continue;}
+      if(!r){S.missingAtlas++;return null;}
       const inCutName=/expressway/i.test(ST_LABELS.names[L2[i]]||'');
       // the core's I-95 trench (Round 127): its name follows the motorway's own grade down the cut (the core
       // road loop's motY), where it used to float at street level across Dock Street, and under the
       // Foglietta and Vietnam memorial deck it is not painted at all
       const coreCut=(x,z)=>{if(!inCore(x,z))return null;const o=frontOff(x,z);if(o<=TERRAIN.trenchW||o>=TERRAIN.trenchE)return null;
         return trenchLaneY(x,z,siteY(x,z,'road'));};
-      if(inCutName&&coreCut(f.x,f.z)!==null&&capAt(f.x,f.z)){stats.buried++;continue;}
+      if(inCutName&&coreCut(f.x,f.z)!==null&&capAt(f.x,f.z)){S.buried++;return null;}
       const th=STREET_TEXT_HEIGHT[L2[i+4]],hw=th*r[2]/FS/2,hh=th*RH/FS/2;
       // Round 184 coda: whether the label's street is a deck is decided once, along its length (five of nine points within
       // OVP_OWN_R of an aligned deck), not vertex by vertex: a street running beside a deck took the deck's height at every
@@ -41341,17 +41397,46 @@ float pinOccGate() {
         return y;
       };
       // Labels inside covered tunnels remain hidden; their roofs are not pavement.
-      if(siteY(f.x,f.z,'ground')-roadHeight(f.x,f.z)>2.5 && vineCut(f.x,f.z,-2)===null){stats.buried++;continue;}
+      if(siteY(f.x,f.z,'ground')-roadHeight(f.x,f.z)>2.5 && vineCut(f.x,f.z,-2)===null){S.buried++;return null;}
       const mesh=streetLabelGeometry(f,hw,hh,(x,z)=>roadHeight(x,z)+0.38);
       // a label lifted more than 1.5 m off its own street anywhere is warped (Round 184 coda: counted, __dbg.PERF.streetLabels)
-      {let w=0;for(const p of mesh.vertices)w=Math.max(w,p[2]-(roadHeight(p[0],p[1])+0.38));if(w>1.5){stats.warped++;if(stats.warpedAt.length<80)stats.warpedAt.push([ST_LABELS.names[L2[i]],Math.round(f.x),Math.round(f.z),+w.toFixed(1),onDeck?1:0]);}if(onDeck)stats.onDeck++;}
-      const first=pos.length/3,u0=r[0]/AW,u1=(r[0]+r[2])/AW,v1=1-r[1]/AH,v0=1-(r[1]+r[3])/AH;
-      for(let k=0;k<mesh.vertices.length;k++){
-        const p=mesh.vertices[k];pos.push(p[0],p[2],p[1]);
-        uv.push(u0+(u1-u0)*mesh.uv[k*2],v0+(v1-v0)*mesh.uv[k*2+1]);
+      {let w=0;for(const p of mesh.vertices)w=Math.max(w,p[2]-(roadHeight(p[0],p[1])+0.38));if(w>1.5){S.warped++;if(S.warpedAt.length<80)S.warpedAt.push([ST_LABELS.names[L2[i]],Math.round(f.x),Math.round(f.z),+w.toFixed(1),onDeck?1:0]);}if(onDeck)S.onDeck++;}
+      return { mesh, r };
+    };
+    const H = LMEMO.hit, NP = L2.length / 5;
+    let P, U, I, first = null;
+    if (H) {
+      // a kept fit: every LMEMO_SAMPLE-th name (the ones the street index was built for) fitted again, to the bit, or the
+      // record goes (this launch still draws it: its build wrote it)
+      const S = { buried: 0, missingAtlas: 0, warped: 0, onDeck: 0, warpedAt: [] };
+      for (let j = 0; j < NP; j += LMEMO_SAMPLE) {
+        const m = fitOne(j * 5, S), f0 = H.first[2 * j], nv = H.first[2 * j + 1];
+        LMEMO.checked++;
+        if (!m) { if (f0 !== -1) LMEMO.bad++; continue; }
+        const v = m.mesh.vertices;
+        let same = f0 >= 0 && nv === v.length && (f0 + nv) * 3 <= H.pos.length;
+        for (let k = 0; same && k < v.length; k++) { const o = (f0 + k) * 3; same = H.pos[o] === v[k][0] && H.pos[o + 1] === v[k][2] && H.pos[o + 2] === v[k][1]; }
+        if (!same) LMEMO.bad++;
       }
-      for(const k of mesh.index)idx.push(first+k);
-      stats.drawn++;stats.triangles+=mesh.index.length/3;
+      if (LMEMO.bad) { LMEMO.lm = 3; lmemoDrop(); }
+      Object.assign(stats, H.stats);
+      P = H.pos; U = H.uv; I = H.idx; LMEMO.hit = null;
+    } else {
+      if (LMEMO.on) first = new Int32Array(2 * NP).fill(-1);
+      for (let i = 0; i + 4 < L2.length; i += 5) {
+        const m = fitOne(i, stats);
+        if (!m) continue;
+        const { mesh, r } = m;
+        const first0=pos.length/3,u0=r[0]/AW,u1=(r[0]+r[2])/AW,v1=1-r[1]/AH,v0=1-(r[1]+r[3])/AH;
+        for(let k=0;k<mesh.vertices.length;k++){
+          const p=mesh.vertices[k];pos.push(p[0],p[2],p[1]);
+          uv.push(u0+(u1-u0)*mesh.uv[k*2],v0+(v1-v0)*mesh.uv[k*2+1]);
+        }
+        for(const k of mesh.index)idx.push(first0+k);
+        if (first) { first[2 * (i / 5)] = first0; first[2 * (i / 5) + 1] = mesh.vertices.length; }
+        stats.drawn++;stats.triangles+=mesh.index.length/3;
+      }
+      P = new Float32Array(pos); U = new Float32Array(uv); I = new Uint32Array(idx);
     }
     LMS.fit = Math.round(performance.now() - tFit); stats.ms = LMS;   // Round 220
     PERF.streetLabels=stats;
@@ -41359,17 +41444,22 @@ float pinOccGate() {
     if (/[?&]dev=1\b/.test(location.search)) {   // ?dev: the geometry's fingerprint (FNV-1a over the positions' and uvs' float bits and the index), the A/B for ?labelfit=old
       let h = 0x811c9dc5 >>> 0;
       const mix = (u) => { h ^= u; h = Math.imul(h, 16777619) >>> 0; };
-      const fb = new Uint32Array(new Float32Array(pos).buffer), ub = new Uint32Array(new Float32Array(uv).buffer);
+      const fb = new Uint32Array(P.buffer, P.byteOffset, P.length), ub = new Uint32Array(U.buffer, U.byteOffset, U.length);
       for (let k = 0; k < fb.length; k++) mix(fb[k]);
       for (let k = 0; k < ub.length; k++) mix(ub[k]);
-      for (let k = 0; k < idx.length; k++) mix(idx[k]);
-      stats.hash = h.toString(16) + ':' + pos.length + ':' + idx.length;
+      for (let k = 0; k < I.length; k++) mix(I[k]);
+      stats.hash = h.toString(16) + ':' + P.length + ':' + I.length;
+    }
+    stats.memo = { on: LMEMO.on, lm: LMEMO.lm, lq: LMEMO.lq, checked: LMEMO.checked, bad: LMEMO.bad };   // Round 276
+    if (first) {   // Round 276: a launch that fitted keeps the answer for the next one (the stats without this launch's timings)
+      const { ms, quick, hash, memo, ...keep } = stats;
+      lmemoWrite({ k: LMEMO.key, n: NP, pos: P, uv: U, idx: I, first, stats: keep });
     }
     streetSurfaceIndex=null;streetFootprints=[]; // release build-only road intersections
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
-    geo.setIndex(idx);
+    geo.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(U, 2));
+    geo.setIndex(new THREE.BufferAttribute(I, 1));   // Round 276: typed once, kept and drawn from the same arrays (the old JS array took a Uint32 index too: 168k vertices)
     freeOnUpload(geo);   // Round 158: about 6.7 MB; stMesh is only ever shown or hidden, never raycast or rebuilt
     if (sdfMode) {
       // luminance SDF rides in the alphaMap (.g); the 0.5 level-set is the true
@@ -57021,6 +57111,7 @@ float pinOccGate() {
   }
   async function build() {
     if (BOOT_GATE) await bootGate();
+    await lmemoRead();   // Round 276: before 'Laying out the ground' decides how much street index to build
     if (SF_ART_ON) { if (isTouch) sfArtPrefetch(); else sfArtLoad(); }   // Round 189: the storefronts' art downloads while the city is raised (a phone's as bytes only)
     if (BL_ON) bladeArtLoad();   // the realism round two: the blade signs' sheet (54 KB, a phone's 11 KB)
     let failures = 0;
@@ -58364,7 +58455,7 @@ float pinOccGate() {
     if (window.__dbg) window.__dbg.doorLamps = () => ({ on: LAMPDYN.on, n: LAMPDYN.n, doors: LAMPDYN.doors, shops: LAMPDYN.shops, laidDoors: FRONTS.doors ? FRONTS.doors.n : 0, laid: FRONTS.laid, sfHrs: !!SF.hrs, sf: SF.n, nearRenders: LAMPNEAR.renders, nearOn: lampMapU.uLampReal.value.x, lampOn: lampMapU.uLampOn.value, skinWx: SKIN_WX_U.value });   // Round 252
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) Object.assign(window.__dbg, { bankCheck });   // the realism round two (R1): the Schuylkill's banks
-    if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.bshadow = bshProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
+    if (window.__dbg) { window.__dbg.lmemo = (op) => (op === 'clear' ? lmemoDrop() : { ...LMEMO, hit: !!LMEMO.hit, db: !!LMEMO.db }); window.__dbg.veg = vegProbe; window.__dbg.bshadow = bshProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);   // Round 229: Enter lights at this frame's end (enterLight); enterArm, at this block's head, is the page's way in when no animation frame comes

@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 24, 2026, after Round 275 (the street lettering's fit trimmed).
+Last updated: Nov 25, 2026, after Round 276 (the street lettering's fit kept on the device).
 
 ## The ask
 
@@ -69,7 +69,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
 | 2 | The shader train: program diet, roofs by photograph, lit floors, floodlights, snow that stays, the light | Shipped as Round 252 (Nov 13), with Mike's picks from both pages. Left for a later train: the straighter day toe, `?streetfloor=lit`, the buses' lamps. |
 | 3 | Link ahead (the cold load's main fix) | Not started. Built only for an engine where Round 229's probe shows batched linking under half of serial. |
 | 4 | The phone holds the whole city (walls as instance records, ASTC, building shadows) | Started Nov 18: Round 255's probe (ASTC upload, IndexedDB survival) on every phone's beacons. |
-| 5 | Repeat launches, and Ready on the near city | Started: the lettering's fit trimmed (Round 275). |
+| 5 | Repeat launches, and Ready on the near city | The lettering's fit trimmed and kept (Rounds 275, 276). Next: Ready on the near city (computers). |
 | 6 | The Mac's frame | Waits on Mike's flight on the Mac, then once with `?dpr=1`. |
 | Picks | People walking, canopy, junctions, street pace, the Art Museum, twenty towers, tree heights, the Schuylkill's pool | People: first look shipped behind a flag (Round 227). The rest not started. |
 
@@ -170,6 +170,8 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
 - **Rounds 266 to 269** (Mike's asks, outside the stages): SEPTA buses no longer start a turn they do not take; every
   underground L, B and PATCO station with its entrances, pins and timetable card; Bookbinders' blade sign and its lobster.
+- **Round 276** (Stage 5, Mike: "Yes, go ahead"): the lettering's fit kept in IndexedDB per build, device kind, tier and
+  Graphics choice, 74 names refitted and checked to the bit on each reuse; the fit 445 to 13 ms on a reuse. `?memo=0`.
 - **Round 275** (Stage 5, the lettering's first step): two exact shortcuts in the street lettering's fit, the same geometry
   to the bit; the fit 830 to 442 ms on the Mac's phone path (the iPhone's `lf` was 1.2 to 1.84 s). `?labelfit=old`.
 - **Round 274** (Stage 4, Mike: "Yes, both"): the buildings' shadows on a phone, swept on the CPU from the flight's walls
@@ -323,7 +325,7 @@ GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then mem
   Round 264's benchmark), ASTC art in the app, the tier reset (Round 271), building shadows on a phone from the
   collision columns (Round 274); left: sidewalks back on tiers 1 and 2, once the phone's beacons show whether it still
   falls to them.
-- **5, repeat launches and entering sooner:** the street lettering's fit trimmed (Round 275) and then kept on the device; Ready on
+- **5, repeat launches and entering sooner:** the street lettering's fit trimmed (Round 275) and kept on the device (Round 276); Ready on
   the near city on computers, with far buildings arriving after, nearest first (his side by side of the interim look).
 - **6, the Mac's frame:** one unbroken multisampled pass, four hardware shadow lookups for sixteen, the cloud deck's
   pre-march, pin reads spaced, and for slow public machines only the pieces that touch no rule.

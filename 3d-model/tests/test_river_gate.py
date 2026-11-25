@@ -489,7 +489,7 @@ class TheBitmapsAsText(unittest.TestCase):
             self.assertEqual(SRC.count(name + '.bits = cellBits(' + name + ');'), 1, name)
 
     def test_the_bitmap_is_cut_after_the_last_key(self):
-        labels = cut('  function initStreetSurfaces() {', '  function streetLocal(')
+        labels = cut('  function initStreetSurfaces(sample = 1) {', '  function streetLocal(')
         self.assertLess(labels.index('streetSurfaceIndex.set(key,[]);'), labels.index('streetSurfaceIndex.bits = cellBits(streetSurfaceIndex);'))
         self.assertTrue(labels.rstrip().endswith('streetSurfaceIndex.bits = cellBits(streetSurfaceIndex);   // Round 225: streetTriNear\'s bitmap, built once the keys are all in\n  }'), labels[-300:])
         patches = cut('  function initTerrainPatches() {', '  function rememberTerrainRoad(')
@@ -501,9 +501,9 @@ class TheBitmapsAsText(unittest.TestCase):
         self.assertIn('const bin=terrainRoadGrid.get(key);if(!bin)return;', fill)
         self.assertNotIn('.set(', fill)
         # one call each, in the build, the patches' first
-        self.assertEqual(SRC.count('    initTerrainPatches();\n    initStreetSurfaces();\n'), 1)
+        self.assertEqual(SRC.count('    initTerrainPatches();\n    initStreetSurfaces(LMEMO.hit ? LMEMO_SAMPLE : 1);\n'), 1)   # Round 276: a kept fit indexes a sample
         self.assertEqual(len(re.findall(r'(?<![A-Za-z])initTerrainPatches\(\)', SRC)), 2)
-        self.assertEqual(len(re.findall(r'(?<![A-Za-z])initStreetSurfaces\(\)', SRC)), 2)
+        self.assertEqual(len(re.findall(r'(?<![A-Za-z])initStreetSurfaces\(', SRC)), 2)
 
     def test_street_tri_near_builds_no_string(self):
         fn = cut('  function streetTriNear(ax,az,bx,bz,cx,cz) {', '\n  }\n')

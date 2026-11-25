@@ -15356,3 +15356,30 @@ Next for this item: the copy kept on the device (the plan's second step, Indexed
 checked on a sample at each hit), which takes the rest of the fit and the street index off every launch after a build's
 first; it needs a sentence in the privacy policy's "What stays on your device".
 
+## Round 276 — the street lettering's fit kept on the device (Nov 25)
+
+Stage 5's item 2.6, its second step, at Mike's "Yes, go ahead". The fit's answer is static for a build, a device kind, a
+tier and a Graphics choice (no clock, feed or randomness reaches it), so a launch that fits keeps it and the next one reuses it.
+
+- build.py inlines `BUILD_ID`, 16 hex of a sha256 over three.js, app.js, the rebuilds and every data part, after the parts.
+- `LMEMO` (app.js, beside the Round 255 probe): IndexedDB 'philly3d', store 'kv', one record under 'labels' (replaced, never
+  accumulated): the key (build, 't' or 'd', TIER, GFX.pick), the positions, uvs and index as typed arrays, each placement's
+  first vertex and count, and the stats without the timings. About 6 MB (504,669 floats, 336,446, 643,740 indices).
+- Read at the top of `build()` after the boot gate, raced with `LMEMO_WAIT` 500 ms (5 to 35 ms headless). Only for a
+  query that carries nothing that shapes the city (dev, dpr, gfx, cold, coldms, probe, probe4); `?memo=0` refuses.
+- On a hit 'Laying out the ground' indexes only every `LMEMO_SAMPLE`-th name (50: 74 names); the lettering fits those 74 live
+  (the loop body is now `fitOne`, shared with the full loop) and compares them to the record to the bit. Any difference: the
+  record is deleted and the next launch fits afresh; this launch still draws the record (its own build wrote it).
+- The geometry is built from typed arrays in both paths (the miss path's arrays are the ones the record clones).
+- The step beacon carries `lm` (0 off, 1 a miss and a write, 2 a hit, 3 a failed check, 4 no answer in time, 5 a read error)
+  and `lq` (the read's ms), from `PERF.streetLabels.memo`. `__dbg.lmemo()`, `__dbg.lmemo('clear')`.
+- privacy.html's "What stays on your device" names it (updated Nov 25).
+
+Measured headless (M2 Max), four loads in one browser profile, both paths: the first fits (lf 445 ms) and writes; the second
+reads in 8 to 10 ms and the fit is 13 to 14 ms (the step 550 to 110 ms; what is left is the atlas's decode bands), with
+`PERF.streetLabels.hash` the same as the fitted load's (2ea65fd2 phone, fe50ed7f computer); a record with one sampled vertex
+moved 25 cm is caught (`bad` 1, lm 3) and dropped; the fourth fits and writes again. The street index's own cost in the road
+passes is gone on a hit too (unmeasured apart: within the noise of the far steps headless). The gain on the iPhone is every
+launch after a build's first: about 0.6 to 0.9 s on the trimmed fit, judged from `lf` and `lm` on its step beacons. A
+first launch of each build (the one that also pays any cold shader compile) is unchanged.
+

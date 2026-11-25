@@ -279,6 +279,14 @@ let_blob("SIDEWALKS_B64", "sidewalks.b64")
 # follows every data chunk, running as the parser reaches it, so the line
 # advances with the bytes. The transfer maps to 0-70%; app.js's build steps take
 # the line from there.
+# Round 276: the build's own id, for what a device keeps between launches (the street lettering's fit, LMEMO in app.js): a
+# hash of everything inlined that shapes the city, so no build ever reads another build's record
+import hashlib
+_bid = hashlib.sha256()
+for _blob in (three, app, rebuilds, *(js for _, js in DATA_PARTS)):
+    _bid.update(_blob.encode("utf-8"))
+const("BUILD_ID", json.dumps(_bid.hexdigest()[:16]))
+
 PG_JS = ("window.PG = function (i, n) { var l = document.getElementById('loadmsg'); "
          "if (l) l.textContent = 'Downloading Philadelphia, ' + Math.round(i / n * 70) + '%'; "
          "var p = document.getElementById('loadProgress'); if (p) p.value = i / n * 70; };")
