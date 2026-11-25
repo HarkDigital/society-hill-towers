@@ -15291,3 +15291,38 @@ during a locked flight threw (and a press whose pointer had already gone could t
 `capturePointer`, which skips the capture under lock and catches the rest: the drag reads window events either way, and
 a locked flight reads movementX. `tests/test_pointer_capture.py`. JavaScript only; nothing drawn changes.
 
+## Round 274 — the buildings' shadows on a phone (Nov 24)
+
+Stage 4's realism item (the research's AERIAL-6, built to its verifiers' corrections), at Mike's "Yes, both". A phone casts no
+building into a depth pass outside the core, so from the air its streets, lots, parks and roofs lay in full sun beside every
+tower. The flight's walls (HIT, Round 214) already hold every building's roof in 4 m cells on every device, so:
+
+- The CPU sweeps a 1,536-cell window of them (6.1 km) along the sun, one line of cells across the sun at a time from the
+  sunward edge, each cell's shadow carried from the cell before it on its own Bresenham ray (never interpolated, which would
+  spread a tower's shadow sideways), and keeps each cell's INCOMING ceiling (its own roof left out) in HIT's byte scale.
+  The window is centred under the eye in 512 m steps, never on the canopy map's look-ahead (Round 74's hitch), and swept
+  in 3 ms slices a frame into a CPU array while the GPU keeps the last sweep, so nothing blinks. A new sweep when the
+  window moves or the sun turns 0.3 degrees (about every 72 s on the live clock). 28 to 34 ms a sweep on the M2 Max
+  headless (fill and sweep together), about ten frames' slices.
+- The finished sweep is one R8 texture (2.3 MB) drawn into the canopy map's free blue channel under the trees' MAX blend;
+  the canopy map is drawn again when a sweep lands (`BSH.dirty`).
+- The flats already read that texel (`canopyPatch`: the ground, parks, streets, lots, tufts), so they take the shade with no
+  new read; the darker of it and a tree's. The facade program (the city's buildings, the pulled walls, the core's fabric)
+  reads it once (`bshFacadePatch`): a roof over itself, a wall turned to the sun 2.5 m in front of itself (a wall turned
+  away is the light's business). 10 and 11 of 16 texture units. Both fade from 2,450 to 2,700 m from the eye.
+- Strength `uCanSun.w` = the canopy's own sun term (zero at night, under a deck, the sun low) times `BSH_SHADE` 0.55, picked
+  by eye. Inside the phone's live shadow box a surface that takes the real map keeps only that (no stacking in Society Hill).
+- Touch only and not at tier 2 (no canopy map there); a computer's shader text is unchanged. `?bshadow=0` refuses;
+  `__dbg.bshadow(x, z)` reports the sweeps, their cost and a point's ceiling.
+
+Measured on the headless phone path: GPU 807.2 to 809.5 MB, programs 136 to 137, `PERF.failed` empty, no console errors.
+Pixels changed over 8 levels against `?bshadow=0`: Center City from 700 m 14.5%, the entry orbit at 15:00 11.7%, South
+Philly from a roof 11.8%, Rittenhouse from 180 m 8.5%, the orbit at 13:00 6.0%, South Philly from 350 m 5.5%; at night 0.35%
+(noise). The computer path against Round 273: 0.000 to 0.002% over 8 levels. `tests/test_bshadow.py` runs the page's own
+HIT writer and sweep under Node over 500 random towers and four suns: 90 to 94% of shaded cells match a brute 2 m march
+along the true ray within 4 m of height, all but one in 2,829 within one cell of it, none shaded where the true ray sees sky.
+
+Not done: the generated house fronts, tile skins and town strips (their own programs) stay lit inside a shadow; the edge
+is a 4 m cell's, soft at street level; the strength is not calibrated against the computer's real shadow; the phone's frame
+cost is unmeasured on a device (one texture read in the facade program; the beacons' `fg` and `gt` will tell).
+

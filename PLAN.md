@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 24, 2026, after Round 273 (the pointer error under lock).
+Last updated: Nov 24, 2026, after Round 274 (the buildings' shadows on a phone).
 
 ## The ask
 
@@ -170,6 +170,9 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
 - **Rounds 266 to 269** (Mike's asks, outside the stages): SEPTA buses no longer start a turn they do not take; every
   underground L, B and PATCO station with its entrances, pins and timetable card; Bookbinders' blade sign and its lobster.
+- **Round 274** (Stage 4, Mike: "Yes, both"): the buildings' shadows on a phone, swept on the CPU from the flight's walls
+  into the canopy map's blue channel; streets, lots, parks, roofs and sun-facing walls take them. +2.3 MB GPU, one program,
+  a 3 ms slice a frame for about ten frames a sweep. `?bshadow=0`. Judged in the app.
 - **Round 273** (a visitor's beacons): no `setPointerCapture` error on a press under pointer lock. JavaScript only.
 - **Round 272** (Stage 4, Mike: "Yes, start it"): the lots, yards, parks, plazas, water sheets and decks welded
   (`weldGeometry`): one copy of each shared vertex through an index, nothing on screen moved; the phone path's GPU after the
@@ -315,8 +318,9 @@ GPUMEM's format table; Mike's side by side at 4x4 and 6x6 on the phone, then mem
   number in the plan.
 - **4, the phone holds the whole city:** the merged flats welded (Round 272; the masks' item dropped, ASTC holds them), the walls pulled from a
   float texture (Round 270, shipped on phones: 48 B a wall against 140; the 40-byte instance records were refused by
-  Round 264's benchmark), ASTC art in the app, the tier reset (Round 271),
-  sidewalks back on tiers 1 and 2, building shadows on a phone from the collision columns.
+  Round 264's benchmark), ASTC art in the app, the tier reset (Round 271), building shadows on a phone from the
+  collision columns (Round 274); left: sidewalks back on tiers 1 and 2, once the phone's beacons show whether it still
+  falls to them.
 - **5, repeat launches and entering sooner:** the street lettering's fit trimmed and then kept on the device; Ready on
   the near city on computers, with far buildings arriving after, nearest first (his side by side of the interim look).
 - **6, the Mac's frame:** one unbroken multisampled pass, four hardware shadow lookups for sixteen, the cloud deck's
