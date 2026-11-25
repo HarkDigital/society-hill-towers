@@ -15282,3 +15282,12 @@ changed. `measure.mjs` prints `PERF.weld`. Suite 1,613 OK.
 Left of Stage 4: sidewalks back on tiers 1 and 2, building shadows on a phone. Mike's phone's next beacons decide how
 much headroom tier 0 has (Round 271's reset).
 
+## Round 273 — no pointer error under pointer lock (Nov 24)
+
+A public Windows visitor (Chrome 157, a cold load, Ready at 60 s) sent three `err` beacons in 15 s of flight:
+`InvalidStateError: Failed to execute 'setPointerCapture' on 'Element'`. The Pointer Events spec refuses a capture while
+the document holds pointer lock, and the canvas's pointerdown asked for one on every press, locked or not, so every click
+during a locked flight threw (and a press whose pointer had already gone could too). Both calls now go through
+`capturePointer`, which skips the capture under lock and catches the rest: the drag reads window events either way, and
+a locked flight reads movementX. `tests/test_pointer_capture.py`. JavaScript only; nothing drawn changes.
+

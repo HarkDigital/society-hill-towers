@@ -46300,6 +46300,12 @@ if (uOlLamp > 0.001) {
   const lookTouch = { id: -1, x: 0, y: 0 };
   const pinch = { d: 0, x: 0, y: 0 };
 
+  // Round 273 (a Windows visitor's beacons, Nov 24: three InvalidStateErrors in 15 s of flight): the spec refuses a
+  // capture while the document holds pointer lock, and a press can outlive its pointer; the drag needs neither
+  const capturePointer = (id) => {
+    if (document.pointerLockElement) return;
+    try { canvas.setPointerCapture(id); } catch (err) { /* the pointer is gone or locked: the drag runs on window events */ }
+  };
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return; // touch handled separately
     // a press with a panel open waits: a tap only dismisses the panel (pointerup),
@@ -46310,13 +46316,13 @@ if (uOlLamp > 0.001) {
       // always start a drag so looking works even where pointer lock is
       // unavailable (sandboxed iframes) or on cooldown; lock upgrades it
       dragging = true; lastX = e.clientX; lastY = e.clientY;
-      canvas.setPointerCapture(e.pointerId);
+      capturePointer(e.pointerId);
       if (!walk.locked && !panelTap) requestLock();
       return;
     }
     dragging = true; dragBtn = e.button;
     lastX = e.clientX; lastY = e.clientY;
-    canvas.setPointerCapture(e.pointerId);
+    capturePointer(e.pointerId);
   });
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch') return;

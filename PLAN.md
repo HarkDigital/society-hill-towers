@@ -4,7 +4,7 @@ This is the plan the project is working from now, and where it stands. Any sessi
 should read this file first, then `CLAUDE.md` for the rules and `devlog.md` for the round it is about to touch. Keep
 this file current: when a round ships, move its line from "in flight" to "shipped" and correct anything it changed.
 
-Last updated: Nov 24, 2026, after Round 272 (the flats welded: 41 MB less on the phone path).
+Last updated: Nov 24, 2026, after Round 273 (the pointer error under lock).
 
 ## The ask
 
@@ -170,6 +170,7 @@ ranked syntheses and a critique. That record is NOT in git (the folder is ignore
   Round 244's), their pictures as 4x4 twins in the app. Looks now ship on by default with a hatch; no review pages.
 - **Rounds 266 to 269** (Mike's asks, outside the stages): SEPTA buses no longer start a turn they do not take; every
   underground L, B and PATCO station with its entrances, pins and timetable card; Bookbinders' blade sign and its lobster.
+- **Round 273** (a visitor's beacons): no `setPointerCapture` error on a press under pointer lock. JavaScript only.
 - **Round 272** (Stage 4, Mike: "Yes, start it"): the lots, yards, parks, plazas, water sheets and decks welded
   (`weldGeometry`): one copy of each shared vertex through an index, nothing on screen moved; the phone path's GPU after the
   first frames 827 to 786 MB. The masks' item dropped: the app's ASTC twins already hold them at a byte a pixel.
