@@ -15326,3 +15326,33 @@ Not done: the generated house fronts, tile skins and town strips (their own prog
 is a 4 m cell's, soft at street level; the strength is not calibrated against the computer's real shadow; the phone's frame
 cost is unmeasured on a device (one texture read in the facade program; the beacons' `fg` and `gt` will tell).
 
+## Round 275 — the street lettering's fit trimmed (Nov 24)
+
+Stage 5's first item (the plan's 2.6, first step: an exact in-place trim, which serves first visits too). The fit in
+'Lettering the streets' is 1.2 to 1.84 s of every iPhone launch on the beacons (`lf`). A CPU profile of the phone path on
+the M2 Max (headless, the page's own build) put it at about 850 ms: 45% the ground lift (`terrainTriangleLift`, a drape of
+each of 214,580 label triangles over the ground's cells), 29% the pavement lift (`streetSurfaceLift`, the triangle's
+intersection with every remembered surface under it), the rest the grid, the surface heights and the warp check.
+
+Two exact shortcuts, on by default, `?labelfit=old` runs every walk:
+- The ground: a triangle whose lowest corner stands its clearance (plus `LF_EPS` 1 mm) over the highest ground node of the
+  cells its box touches needs no lift (the drawn ground is planar between its nodes). `groundMaxIn` refuses (runs the walk)
+  where the drape could hand a piece to its fallback: a box not inside one grid, touching a hole or a skipped cell. The
+  first cut did not, and moved 10 vertices of one label by the Schuylkill by 5 to 10 mm: there the old fit's lift is float
+  noise (1e-17, the caller's grade less its clearance plus its clearance) which its `lift > 0` turned into its 5 mm nudge.
+- The pavement: a surface's contribution is linear over its overlap with the triangle, so it is at most its highest point
+  over the triangle's lowest corner (cached once a surface) and at most its largest value at the triangle's three corners;
+  one that cannot raise the lift found so far by more than `LF_EPS` is skipped.
+
+On the phone path: 68,442 of 214,580 ground walks run (146,138 answered), 272,330 of 928,991 pavement intersections; the fit
+830 to 442 ms on the Mac (alone, twice each), and the same on the computer path (829 to 442). Under `?dev`
+`PERF.streetLabels.hash` (FNV-1a over the positions', uvs' float bits and the index) reads the same with and without
+`?labelfit=old` on both paths (2ea65fd2 phone, fe50ed7f computer; the two paths' label geometry differs as it did).
+`tests/test_label_fit.py` runs the page's helpers under Node over three random cities (a hole, 6% skipped cells, random
+pavement): the same geometry to the bit. ROAD_STATS' `tris` and `ms` count fewer drapes (the skipped ones), a diagnostic only.
+A first try that read the location's query string inside the loop cost more than it saved: never test a flag per call.
+
+Next for this item: the copy kept on the device (the plan's second step, IndexedDB keyed by build, device class and tier,
+checked on a sample at each hit), which takes the rest of the fit and the street index off every launch after a build's
+first; it needs a sentence in the privacy policy's "What stays on your device".
+

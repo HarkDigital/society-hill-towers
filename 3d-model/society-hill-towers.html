@@ -13038,10 +13038,53 @@ RB.add({
     }
     return lowest&&y===Infinity?-Infinity:y;
   }
+  // Round 275 (Stage 5, the lettering's fit: 1.2 to 1.84 s of every iPhone launch): two exact shortcuts in the fit's two
+  // lifts. A label triangle whose lowest corner stands its clearance over the highest ground node under its box needs no
+  // lift from the ground (the drawn ground is planar between its nodes, so nothing under the triangle is higher; a cell the
+  // drape hands to its fallback reads roadGroundEdgeY, the same nodes), and one standing its clearance over the highest
+  // corner of every remembered surface whose box meets its own needs none from them (a surface's height is a plane over a
+  // convex piece). Both answers were 0 by the full walk too, within LF_EPS of float rounding, so the geometry is the same to
+  // the bit (PERF.streetLabels.hash). The walks they skip were 74% of the fit on the phone path (a CPU profile, Nov 24).
+  // ?labelfit=old runs every walk; it also counts the drapes in ROAD_STATS that this skips
+  const LF_QUICK = typeof location === 'undefined' || !/[?&]labelfit=old\b/.test(location.search), LF_EPS = 1e-3, LF = { tSkip: 0, tRun: 0, sSkip: 0, sRun: 0 };
+  // the highest node of every ground grid's cells the box touches; +Infinity (no shortcut) wherever the drape could hand a
+  // piece to its fallback, whose answer is the caller's own grade less its clearance plus its clearance: float noise either
+  // side of 0, which the fit's `lift > 0` turned into its 5 mm nudge (10 vertices of one label by the Schuylkill, Nov 24).
+  // So the box must lie inside one grid, clear of every hole, and touch no skipped cell of any grid
+  function groundMaxIn(x0, x1, z0, z1) {
+    let y = -Infinity, inside = false;
+    for (let gi = groundGrids.length; gi >= 0; gi--) {
+      const G = gi === groundGrids.length ? coreRoadGround : groundGrids[gi];
+      if (!G || x1 < G.x0 - 1e-6 || x0 > G.x1 + 1e-6 || z1 < G.z0 - 1e-6 || z0 > G.z1 + 1e-6) continue;
+      if (G.hole && x1 > G.hole.x0 - 1e-6 && x0 < G.hole.x1 + 1e-6 && z1 > G.hole.z0 - 1e-6 && z0 < G.hole.z1 + 1e-6) return Infinity;
+      if (x0 > G.x0 + 1e-3 && x1 < G.x1 - 1e-3 && z0 > G.z0 + 1e-3 && z1 < G.z1 - 1e-3) inside = true;
+      const cw = (G.x1 - G.x0) / G.nx, ch = (G.z1 - G.z0) / G.nz, w = G.nx + 1, ys = G.ys;
+      const i0 = clamp(Math.floor((x0 - 1e-6 - G.x0) / cw), 0, G.nx - 1), i1 = clamp(Math.floor((x1 + 1e-6 - G.x0) / cw), 0, G.nx - 1);
+      const j0 = clamp(Math.floor((z0 - 1e-6 - G.z0) / ch), 0, G.nz - 1), j1 = clamp(Math.floor((z1 + 1e-6 - G.z0) / ch), 0, G.nz - 1);
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        if (G.skip && G.skip[j * G.nx + i]) return Infinity;
+        const r = j * w + i, m = Math.max(ys[r], ys[r + 1], ys[r + w], ys[r + w + 1]);
+        if (m > y) y = m;
+      }
+    }
+    return inside ? y : Infinity;
+  }
   function streetSurfaceLift(f,tri,clearance) { // local [along,across,y]
-    const bounds=streetBounds(tri),grade=triangleGrade(...tri);let lift=0;
+    const bounds=streetBounds(tri);
+    const grade=triangleGrade(...tri);let lift=0;
+    const lo=Math.min(tri[0][2],tri[1][2],tri[2][2])-clearance-LF_EPS;
     for(const surface of f.surfaces){
       if(!streetOverlap(bounds,surface.bounds))continue;
+      if (LF_QUICK) {
+        // what this surface could add is linear over its overlap with the triangle (two planes): at most its highest point
+        // over the triangle's lowest corner, and at most its largest value at the triangle's corners. Below the lift so far
+        // by more than float rounding, it cannot raise it
+        if(surface.top===undefined){let t=-Infinity;for(const p of surface.poly){const h=surface.height(p[0],p[1]);if(h>t)t=h;}surface.top=t;}
+        if(surface.top-lo<=lift){LF.sSkip++;continue;}
+        const h=surface.height,a=Math.max(h(tri[0][0],tri[0][1])-tri[0][2],h(tri[1][0],tri[1][1])-tri[1][2],h(tri[2][0],tri[2][1])-tri[2][2])+clearance+LF_EPS;
+        if(a<=lift){LF.sSkip++;continue;}
+        LF.sRun++;
+      }
       for(const p of streetIntersection(surface.poly,tri)){
         const h=surface.height(...p);
         if(h<=grade(...p)+STREET_OVER_MAX)lift=Math.max(lift,h+clearance-grade(...p));
@@ -13068,7 +13111,10 @@ RB.add({
     for(let k=0;k<index.length;k+=3){
       const ids=index.slice(k,k+3),tri=ids.map(i=>vertices[i]);
       const local=tri.map(p=>[...streetLocal(f,p[0],p[1]),p[2]]);
-      const lift=Math.max(terrainTriangleLift(...tri,STREET_TEXT_CLEARANCE),streetSurfaceLift(f,local,STREET_TEXT_CLEARANCE));
+      let tl;
+      if(LF_QUICK && Math.min(tri[0][2],tri[1][2],tri[2][2])-STREET_TEXT_CLEARANCE-LF_EPS>groundMaxIn(Math.min(tri[0][0],tri[1][0],tri[2][0]),Math.max(tri[0][0],tri[1][0],tri[2][0]),Math.min(tri[0][1],tri[1][1],tri[2][1]),Math.max(tri[0][1],tri[1][1],tri[2][1]))){tl=0;LF.tSkip++;}
+      else{tl=terrainTriangleLift(...tri,STREET_TEXT_CLEARANCE);LF.tRun++;}
+      const lift=Math.max(tl,streetSurfaceLift(f,local,STREET_TEXT_CLEARANCE));
       if(lift>0)for(const i of ids)vertices[i][2]+=lift+0.005;
     }
     // Only raise shared vertices. Later triangles cannot undo previous clearance.
@@ -48787,6 +48833,16 @@ float pinOccGate() {
     }
     LMS.fit = Math.round(performance.now() - tFit); stats.ms = LMS;   // Round 220
     PERF.streetLabels=stats;
+    stats.quick = { on: LF_QUICK, ...LF };   // Round 275: the lifts the shortcuts answered and the ones that ran
+    if (/[?&]dev=1\b/.test(location.search)) {   // ?dev: the geometry's fingerprint (FNV-1a over the positions' and uvs' float bits and the index), the A/B for ?labelfit=old
+      let h = 0x811c9dc5 >>> 0;
+      const mix = (u) => { h ^= u; h = Math.imul(h, 16777619) >>> 0; };
+      const fb = new Uint32Array(new Float32Array(pos).buffer), ub = new Uint32Array(new Float32Array(uv).buffer);
+      for (let k = 0; k < fb.length; k++) mix(fb[k]);
+      for (let k = 0; k < ub.length; k++) mix(ub[k]);
+      for (let k = 0; k < idx.length; k++) mix(idx[k]);
+      stats.hash = h.toString(16) + ':' + pos.length + ':' + idx.length;
+    }
     streetSurfaceIndex=null;streetFootprints=[]; // release build-only road intersections
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
